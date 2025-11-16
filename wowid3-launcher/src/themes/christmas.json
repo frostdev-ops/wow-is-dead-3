@@ -1,0 +1,28 @@
+{
+  "name": "Christmas 2024",
+  "colors": {
+    "primary": "#C41E3A",
+    "secondary": "#0F8A5F",
+    "accent": "#FFD700",
+    "background": "#1a0f0f",
+    "snow": "#FFFFFF",
+    "cardBg": "rgba(0, 0, 0, 0.4)",
+    "text": "#FFFFFF",
+    "textMuted": "#CCCCCC"
+  },
+  "animations": {
+    "snowDensity": 100,
+    "snowSpeed": 2,
+    "lightsEnabled": true,
+    "twinkleSpeed": 2
+  },
+  "images": {
+    "background": "/themes/christmas/bg.jpg",
+    "logo": "/themes/christmas/logo.png",
+    "snowflake": "/themes/christmas/snowflake.png"
+  },
+  "fonts": {
+    "heading": "Inter, sans-serif",
+    "body": "Inter, sans-serif"
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "WOWID3 Launcher",
+  "version": "0.1.0",
+  "identifier": "com.wowid3.launcher",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "WOWID3 Launcher - Christmas Edition",
+        "width": 1000,
+        "height": 700,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "transparent": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "appimage", "deb"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": ["wowid3-launcher.sh"],
+    "externalBin": [],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["English"],
+        "displayLanguageSelector": false
+      }
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": false
+      },
+      "deb": {
+        "files": {
+          "/usr/bin/wowid3-launcher-wrapper": "wowid3-launcher.sh"
+        }
+      }
+    }
+  }
+}
