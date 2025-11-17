@@ -3,8 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
-use tauri::{AppHandle, Emitter};
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 
 use super::game_installer::get_installed_version;
@@ -308,99 +306,6 @@ fn get_bundled_java_path() -> PathBuf {
     {
         PathBuf::from("./runtime/java/bin/java")
     }
-}
-
-/// Kill running Minecraft process
-pub async fn kill_game(mut process: Child) -> Result<()> {
-    process.kill().await?;
-    Ok(())
-}
-
-/// Stream Minecraft process output to frontend
-pub async fn stream_process_output(
-    mut process: tokio::process::Child,
-    app_handle: AppHandle,
-) -> Result<()> {
-    // Take stdout and stderr
-    let stdout = process
-        .stdout
-        .take()
-        .context("Failed to capture stdout")?;
-    let stderr = process
-        .stderr
-        .take()
-        .context("Failed to capture stderr")?;
-
-    let app_handle_clone = app_handle.clone();
-
-    // Spawn task to stream stdout
-    tokio::spawn(async move {
-        let reader = BufReader::new(stdout);
-        let mut lines = reader.lines();
-
-        while let Ok(Some(line)) = lines.next_line().await {
-            let _ = app_handle_clone.emit("minecraft-log", LogEvent {
-                level: "info".to_string(),
-                message: line,
-            });
-        }
-    });
-
-    // Spawn task to stream stderr
-    tokio::spawn(async move {
-        let reader = BufReader::new(stderr);
-        let mut lines = reader.lines();
-
-        while let Ok(Some(line)) = lines.next_line().await {
-            // Check for crash indicators
-            let is_error = line.contains("ERROR") ||
-                          line.contains("Exception") ||
-                          line.contains("FATAL");
-
-            let _ = app_handle.emit("minecraft-log", LogEvent {
-                level: if is_error { "error" } else { "warn" }.to_string(),
-                message: line,
-            });
-        }
-    });
-
-    Ok(())
-}
-
-/// Monitor Minecraft process and emit status events
-pub async fn monitor_process(
-    mut process: tokio::process::Child,
-    app_handle: AppHandle,
-) -> Result<i32> {
-    // Wait for process to exit
-    let status = process
-        .wait()
-        .await
-        .context("Failed to wait for process")?;
-
-    let exit_code = status.code().unwrap_or(-1);
-
-    // Emit process exit event
-    let _ = app_handle.emit("minecraft-exit", ProcessExitEvent {
-        exit_code,
-        crashed: exit_code != 0,
-    });
-
-    Ok(exit_code)
-}
-
-/// Event emitted for Minecraft log lines
-#[derive(Debug, Clone, Serialize)]
-pub struct LogEvent {
-    pub level: String,
-    pub message: String,
-}
-
-/// Event emitted when Minecraft process exits
-#[derive(Debug, Clone, Serialize)]
-pub struct ProcessExitEvent {
-    pub exit_code: i32,
-    pub crashed: bool,
 }
 
 /// Analyze crash report and return helpful error message

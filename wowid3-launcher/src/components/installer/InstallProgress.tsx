@@ -107,11 +107,20 @@ export function InstallProgress() {
           </div>
 
           {/* Progress Details */}
-          <div className="flex justify-between text-xs" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
-            <span>
-              {installProgress.current} / {installProgress.total} items
-            </span>
-            <span>{progressPercentage}% complete</span>
+          <div className="space-y-2 text-xs" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
+            <div className="flex justify-between">
+              <span>
+                {installProgress.current} / {installProgress.total} files
+              </span>
+              <span>{progressPercentage}% complete</span>
+            </div>
+            {installProgress.total_bytes > 0 && (
+              <div className="flex justify-between" style={{ color: '#fff', fontSize: '0.75rem' }}>
+                <span>
+                  {(installProgress.current_bytes / (1024 * 1024)).toFixed(1)} / {(installProgress.total_bytes / (1024 * 1024)).toFixed(1)} MB
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Note for Assets Step */}

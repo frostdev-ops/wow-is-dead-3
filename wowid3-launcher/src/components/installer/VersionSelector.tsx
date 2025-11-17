@@ -1,6 +1,5 @@
 import { useMinecraftInstaller } from '../../hooks';
 import { Card } from '../ui/Card';
-import { Button } from '../ui/Button';
 
 export function VersionSelector() {
   const {

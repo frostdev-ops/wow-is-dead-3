@@ -25,8 +25,23 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. tell Vite to ignore watching `src-tauri` and game data directories
+      ignored: (path: string) => {
+        // Ignore all node_modules
+        if (path.includes("node_modules")) return true;
+        // Ignore Tauri source
+        if (path.includes("src-tauri")) return true;
+        // Ignore all game installation directories
+        if (path.includes("game") && !path.includes("game_")) return true;
+        if (path.includes(".minecraft")) return true;
+        if (path.includes("minecraft")) return true;
+        if (path.includes("versions")) return true;
+        if (path.includes("libraries")) return true;
+        if (path.includes("assets")) return true;
+        if (path.includes("natives")) return true;
+        if (path.includes(".cache")) return true;
+        return false;
+      },
     },
   },
 }));
