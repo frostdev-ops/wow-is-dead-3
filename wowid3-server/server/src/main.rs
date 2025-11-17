@@ -1,6 +1,9 @@
+mod api;
 mod config;
 mod models;
+mod storage;
 
+use api::public::{get_latest_manifest, get_manifest_by_version, serve_file, PublicState};
 use axum::{
     response::Json,
     routing::get,
@@ -11,11 +14,6 @@ use serde_json::json;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 use tracing::info;
-
-#[derive(Clone)]
-struct AppState {
-    config: Arc<Config>,
-}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -38,8 +36,8 @@ async fn main() -> anyhow::Result<()> {
     tokio::fs::create_dir_all(config.uploads_path()).await?;
     info!("Storage directories initialized");
 
-    // Create shared state
-    let state = AppState {
+    // Create shared state for public API
+    let public_state = PublicState {
         config: Arc::new(config.clone()),
     };
 
@@ -51,11 +49,18 @@ async fn main() -> anyhow::Result<()> {
         CorsLayer::permissive() // Production
     };
 
-    // Build router
+    // Build public API router
+    let api_routes = Router::new()
+        .route("/api/manifest/latest", get(get_latest_manifest))
+        .route("/api/manifest/:version", get(get_manifest_by_version))
+        .route("/files/:version/*path", get(serve_file))
+        .with_state(public_state);
+
+    // Build main router
     let app = Router::new()
         .route("/health", get(health_check))
-        .layer(cors)
-        .with_state(state);
+        .merge(api_routes)
+        .layer(cors);
 
     // Start server
     let addr = format!("{}:{}", config.api_host, config.api_port);
