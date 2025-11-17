@@ -34,9 +34,6 @@ export const UserMenu = ({ user }: UserMenuProps) => {
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors"
       >
-        <div className="w-8 h-8 bg-red-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
-          {user.username[0].toUpperCase()}
-        </div>
         <span className="text-white font-semibold hidden sm:inline">
           {user.username}
         </span>

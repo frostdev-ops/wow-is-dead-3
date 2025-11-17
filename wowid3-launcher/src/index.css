@@ -5,7 +5,7 @@
   --color-christmas-red: #c41e3a;
   --color-christmas-green: #0f8a5f;
   --color-christmas-gold: #ffd700;
-  --color-christmas-darkBg: #1a0f0f;
+  --color-christmas-darkBg: #2a4268;
   --color-christmas-snow: #ffffff;
 }
 
@@ -51,9 +51,9 @@
   .card {
     background-color: rgba(0, 0, 0, 0.4);
     backdrop-filter: blur(12px);
-    border-radius: 0.75rem;
+    border-radius: 0;
     padding: 1.5rem;
-    border: 1px solid rgba(255, 215, 0, 0.2);
+    border: 1px solid rgb(255, 255, 255);
     box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
   }
 

@@ -4,8 +4,8 @@
   "colors": {
     "primary": "#dc2626",
     "secondary": "#16a34a",
-    "background": "#0f172a",
-    "surface": "#1e293b",
+    "background": "#1e40af",
+    "surface": "#1e3a8a",
     "text": "#f8fafc",
     "accent": "#fbbf24",
     "error": "#ef4444",

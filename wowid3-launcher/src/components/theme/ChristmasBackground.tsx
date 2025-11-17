@@ -127,9 +127,10 @@ export default function ChristmasBackground() {
     <>
       {/* Background gradient */}
       <div
-        className="absolute inset-0 bg-gradient-to-b from-christmas-darkBg via-red-950 to-christmas-darkBg"
+        className="absolute inset-0"
         style={{
-          backgroundImage: `radial-gradient(circle at 50% 50%, rgba(196, 30, 58, 0.1) 0%, transparent 50%)`,
+          background: `linear-gradient(to bottom, #3089bdff 0%, #759fe4ff 50%, #321666ff 100%)`,
+          backgroundImage: `linear-gradient(to bottom, #30a1bdff 0%, #759bd8ff 50%, #3c236bff 100%)`,
         }}
       />
 

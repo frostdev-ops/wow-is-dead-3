@@ -1,3 +1,10 @@
+@font-face {
+  font-family: 'Minecraftia';
+  src: url('/minecraftia-regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
 .logo.vite:hover {
   filter: drop-shadow(0 0 2em #747bff);
 }
@@ -11,8 +18,8 @@
   line-height: 24px;
   font-weight: 400;
 
-  color: #0f0f0f;
-  background-color: #f6f6f6;
+  color: #f6f6f6;
+  background-color: #1e40af;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -98,7 +105,7 @@ button {
 @media (prefers-color-scheme: dark) {
   :root {
     color: #f6f6f6;
-    background-color: #2f2f2f;
+    background-color: #1e40af;
   }
 
   a:hover {
@@ -128,4 +135,37 @@ button {
 
 .animate-slide-in {
   animation: slideIn 0.3s ease-out;
+}
+
+@keyframes gradient-border {
+  0% {
+    border-color: #00d9ff;
+  }
+  50% {
+    border-color: #fbbf24;
+  }
+  100% {
+    border-color: #00d9ff;
+  }
+}
+
+@keyframes gradient-glow {
+  0% {
+    box-shadow: 0 0 20px rgba(0, 217, 255, 0.6), 0 0 40px rgba(0, 217, 255, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(251, 191, 36, 0.6), 0 0 40px rgba(251, 191, 36, 0.3);
+  }
+  100% {
+    box-shadow: 0 0 20px rgba(0, 217, 255, 0.6), 0 0 40px rgba(0, 217, 255, 0.3);
+  }
+}
+
+.btn-gradient-border {
+  border: 2px solid #00d9ff;
+  animation: gradient-border 3s ease-in-out infinite, gradient-glow 3s ease-in-out infinite;
+  font-family: 'Trebuchet MS', sans-serif;
+  font-weight: bold;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
