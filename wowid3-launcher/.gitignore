@@ -25,3 +25,8 @@ dist-ssr
 
 # Bundled JVM runtime (too large for git, download with scripts)
 src-tauri/runtime/
+
+# Audio files (too large for git)
+*.wav
+*.mp3
+*.ogg
