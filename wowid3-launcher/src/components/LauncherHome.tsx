@@ -9,6 +9,7 @@ import { PlayerList } from './PlayerList';
 import { useToast } from './ui/ToastContainer';
 import DeviceCodeModal from './DeviceCodeModal';
 import { SkinViewerComponent } from './SkinViewer';
+import { CatModel } from './CatModel';
 import type { DeviceCodeInfo } from '../hooks/useTauriCommands';
 import { listen } from '@tauri-apps/api/event';
 
@@ -415,6 +416,11 @@ export default function LauncherHome() {
 
         {/* Player List */}
         <PlayerList status={status} />
+        </div>
+
+        {/* Cat Model - Left side of cards */}
+        <div className="absolute right-[calc(50%+380px)] top-[0px]">
+          <CatModel />
         </div>
 
         {/* 3D Skin Viewer - Only show when authenticated */}
