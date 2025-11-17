@@ -1,65 +1,256 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { readFile } from '@tauri-apps/plugin-fs';
 import { useModpack, useServer, useTheme } from './hooks';
 import LauncherHome from './components/LauncherHome';
 import SettingsScreen from './components/SettingsScreen';
 import ChristmasBackground from './components/theme/ChristmasBackground';
 import { ToastProvider } from './components/ui/ToastContainer';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { ChangelogViewer } from './components/ChangelogViewer';
 import './App.css';
+
+const AUDIO_SERVER_URL = 'https://wowid-launcher.frostdev.io/assets/wid3menu.mp3';
+const FALLBACK_AUDIO_URL = '/wid3menu-fallback.mp3';
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<'home' | 'settings'>('home');
   const [isMuted, setIsMuted] = useState(false);
   const [showChangelog, setShowChangelog] = useState(false);
-  const [audio] = useState(() => new Audio('/wid3menu.wav'));
+  const [showChangelogModal, setShowChangelogModal] = useState(false);
+  const [audioState, setAudioState] = useState<'loading' | 'fallback' | 'transitioning' | 'main'>('loading');
+  const [mainAudioReady, setMainAudioReady] = useState(false);
+  const fallbackRef = useRef<HTMLAudioElement>(null);
+  const mainRef = useRef<HTMLAudioElement>(null);
+  const mainBlobUrlRef = useRef<string | null>(null);
+  const retryIntervalRef = useRef<number | null>(null);
   const { checkUpdates, latestManifest } = useModpack();
   const { startPolling } = useServer();
   useTheme(); // Apply theme on mount
 
-  // Mock data for testing
-  const mockManifest = {
-    version: "1.2.3",
-    changelog: [
-      { type: "Added", description: "New Christmas themed background with animated snow" },
-      { type: "Added", description: "Background music player with mute toggle" },
-      { type: "Fixed", description: "Player model now properly sits and is uninteractable" },
-      { type: "Changed", description: "Navigation buttons moved to top-left with icon design" },
-      { type: "Added", description: "Version display with hover changelog in navigation bar" },
-      { type: "Improved", description: "Settings page styling to match Christmas theme" },
-      { type: "Removed", description: "Theme settings - Christmas theme is now permanent" },
-    ]
+  // Crossfade from fallback to main audio
+  const startCrossfade = () => {
+    if (!fallbackRef.current || !mainRef.current || audioState !== 'fallback') return;
+
+    console.log('[Audio] Starting crossfade transition');
+    setAudioState('transitioning');
+
+    const fallback = fallbackRef.current;
+    const main = mainRef.current;
+
+    // Fade out fallback (0.3 → 0 over 2 seconds)
+    const fadeOutSteps = 20;
+    const fadeOutInterval = 2000 / fadeOutSteps;
+    const volumeDecrement = 0.3 / fadeOutSteps;
+    let currentStep = 0;
+
+    const fadeOutTimer = setInterval(() => {
+      if (!fallback) {
+        clearInterval(fadeOutTimer);
+        return;
+      }
+
+      currentStep++;
+      const newVolume = Math.max(0, 0.3 - (volumeDecrement * currentStep));
+      fallback.volume = newVolume;
+
+      if (currentStep >= fadeOutSteps) {
+        clearInterval(fadeOutTimer);
+        fallback.pause();
+        console.log('[Audio] Fallback faded out and paused');
+
+        // Start main audio with fade in
+        main.volume = 0;
+        main.play()
+          .then(() => {
+            console.log('[Audio] Main audio started, fading in');
+
+            // Fade in main (0 → 0.3 over 2 seconds)
+            let fadeInStep = 0;
+            const fadeInInterval = 2000 / fadeOutSteps;
+            const volumeIncrement = 0.3 / fadeOutSteps;
+
+            const fadeInTimer = setInterval(() => {
+              if (!main) {
+                clearInterval(fadeInTimer);
+                return;
+              }
+
+              fadeInStep++;
+              const newVolume = Math.min(0.3, volumeIncrement * fadeInStep);
+              main.volume = newVolume;
+
+              if (fadeInStep >= fadeOutSteps) {
+                clearInterval(fadeInTimer);
+                setAudioState('main');
+                console.log('[Audio] Crossfade complete, main audio playing');
+              }
+            }, fadeInInterval);
+          })
+          .catch(err => {
+            console.log('[Audio] Failed to play main audio:', err);
+            // Resume fallback if main fails
+            fallback.volume = 0.3;
+            fallback.play().catch(console.error);
+            setAudioState('fallback');
+          });
+      }
+    }, fadeOutInterval);
   };
 
-  // Use mock data if real manifest isn't available (for testing)
-  const displayManifest = latestManifest || mockManifest;
+  // Load main audio asynchronously (non-blocking)
+  const loadMainAudio = async () => {
+    try {
+      console.log('[Audio] Starting main audio load (non-blocking)');
 
+      // Check for cached audio
+      const cachedPath = await invoke<string | null>('cmd_get_cached_audio');
+
+      if (cachedPath) {
+        console.log('[Audio] Found cached audio:', cachedPath);
+        try {
+          const fileData = await readFile(cachedPath);
+          const blob = new Blob([fileData], { type: 'audio/mpeg' });
+          const blobUrl = URL.createObjectURL(blob);
+
+          if (mainRef.current) {
+            mainRef.current.src = blobUrl;
+            mainBlobUrlRef.current = blobUrl;
+            setMainAudioReady(true);
+            console.log('[Audio] Main audio ready from cache');
+          }
+          return;
+        } catch (err) {
+          console.log('[Audio] Failed to load cached audio:', err);
+        }
+      }
+
+      // Download audio
+      console.log('[Audio] Starting background download...');
+      const downloadedPath = await invoke<string>('cmd_download_and_cache_audio', {
+        url: AUDIO_SERVER_URL,
+      });
+
+      console.log('[Audio] Download complete:', downloadedPath);
+      const fileData = await readFile(downloadedPath);
+      const blob = new Blob([fileData], { type: 'audio/mpeg' });
+      const blobUrl = URL.createObjectURL(blob);
+
+      if (mainRef.current) {
+        mainRef.current.src = blobUrl;
+        mainBlobUrlRef.current = blobUrl;
+        setMainAudioReady(true);
+        console.log('[Audio] Main audio ready from download');
+      }
+    } catch (err) {
+      console.log('[Audio] Failed to load main audio:', err);
+
+      // Set up retry every 5 minutes
+      if (!retryIntervalRef.current) {
+        console.log('[Audio] Scheduling retry in 5 minutes');
+        retryIntervalRef.current = setInterval(() => {
+          console.log('[Audio] Retrying download...');
+          loadMainAudio();
+        }, 5 * 60 * 1000); // 5 minutes
+      }
+    }
+  };
+
+  // Initialize audio on mount (non-blocking)
   useEffect(() => {
-    // Check for modpack updates on startup
-    checkUpdates().catch(console.error);
+    console.log('[Audio] Initializing audio system (non-blocking)');
 
-    // Start server polling
+    // Start fallback audio after a short delay
+    const fallbackTimer = setTimeout(() => {
+      if (fallbackRef.current && audioState === 'loading') {
+        fallbackRef.current.volume = 0.3;
+        fallbackRef.current.play()
+          .then(() => {
+            console.log('[Audio] Fallback audio started');
+            setAudioState('fallback');
+          })
+          .catch(err => {
+            console.log('[Audio] Failed to start fallback audio:', err);
+          });
+      }
+    }, 100); // Tiny delay to ensure DOM is ready
+
+    // Load main audio in background (don't await)
+    loadMainAudio();
+
+    // Other initialization
+    checkUpdates().catch(console.error);
     startPolling(30);
 
-    // Play background music
-    audio.loop = true;
-    audio.volume = 0.3; // Set volume to 30%
-    audio.play().catch(err => {
-      console.log('[Audio] Failed to autoplay music:', err);
-    });
-
+    // Cleanup
     return () => {
-      audio.pause();
-      audio.currentTime = 0;
+      clearTimeout(fallbackTimer);
+      if (retryIntervalRef.current) {
+        clearInterval(retryIntervalRef.current);
+      }
+      if (mainBlobUrlRef.current) {
+        URL.revokeObjectURL(mainBlobUrlRef.current);
+      }
     };
-  }, []);
+  }, []); // Only run once on component mount
 
+  // Clear retry interval when main audio loads successfully
   useEffect(() => {
-    audio.muted = isMuted;
-  }, [isMuted, audio]);
+    if (mainAudioReady && retryIntervalRef.current) {
+      console.log('[Audio] Main audio loaded, clearing retry interval');
+      clearInterval(retryIntervalRef.current);
+      retryIntervalRef.current = null;
+    }
+  }, [mainAudioReady]);
+
+  // Trigger crossfade when main audio is ready
+  useEffect(() => {
+    if (mainAudioReady && audioState === 'fallback') {
+      console.log('[Audio] Main audio ready, initiating crossfade');
+      startCrossfade();
+    }
+  }, [mainAudioReady, audioState]);
+
+  // Handle mute/unmute for both audio elements
+  useEffect(() => {
+    if (fallbackRef.current) {
+      fallbackRef.current.muted = isMuted;
+    }
+    if (mainRef.current) {
+      mainRef.current.muted = isMuted;
+    }
+    console.log('[Audio] Muted set to:', isMuted);
+  }, [isMuted]);
 
   return (
     <div className="relative w-screen h-screen overflow-hidden">
       <ChristmasBackground />
+
+      {/* Fallback Audio (60-second preview) */}
+      <audio
+        ref={fallbackRef}
+        src={FALLBACK_AUDIO_URL}
+        loop
+        crossOrigin="anonymous"
+        onLoadStart={() => console.log('[Audio] Fallback load started')}
+        onCanPlay={() => console.log('[Audio] Fallback can play')}
+        onPlay={() => console.log('[Audio] Fallback playing')}
+        onPause={() => console.log('[Audio] Fallback paused')}
+        onError={(e) => console.log('[Audio] Fallback error:', e.currentTarget.error)}
+      />
+
+      {/* Main Audio (full track from server) */}
+      <audio
+        ref={mainRef}
+        loop
+        crossOrigin="anonymous"
+        onLoadStart={() => console.log('[Audio] Main load started')}
+        onCanPlay={() => console.log('[Audio] Main can play')}
+        onPlay={() => console.log('[Audio] Main playing')}
+        onPause={() => console.log('[Audio] Main paused')}
+        onError={(e) => console.log('[Audio] Main error:', e.currentTarget.error)}
+      />
+
       <div className="relative z-10 w-full h-full flex flex-col">
         {/* Navigation Cards - Top Left */}
         <div className="absolute top-12 left-4 z-50 flex gap-3">
@@ -126,29 +317,33 @@ function AppContent() {
           </button>
 
           {/* Version Display with Changelog */}
-          {displayManifest && (
-            <button
-              className="p-5 transition-all bg-black bg-opacity-40 text-white hover:bg-opacity-60"
-              style={{
-                backdropFilter: 'blur(12px)',
-                border: '2px solid rgba(255, 255, 255, 0.3)',
-                borderRadius: '0',
-              }}
-              onMouseEnter={() => setShowChangelog(true)}
-              onMouseLeave={() => setShowChangelog(false)}
-              title="Modpack Version - Hover for changelog"
-            >
-              <div className="flex items-center gap-2">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                </svg>
-                <span style={{ fontFamily: "'Trebuchet MS', sans-serif", fontWeight: 'bold', color: '#FFD700' }}>
-                  v{displayManifest.version}
-                </span>
+          {latestManifest && (
+            <div className="relative">
+              <div
+                className="p-5 transition-all bg-black bg-opacity-40 text-white cursor-pointer hover:bg-opacity-60"
+                style={{
+                  backdropFilter: 'blur(12px)',
+                  border: '2px solid rgba(255, 215, 0, 0.3)',
+                  borderRadius: '0',
+                }}
+                onMouseEnter={() => setShowChangelog(true)}
+                onMouseLeave={() => setShowChangelog(false)}
+                onClick={() => latestManifest.changelog && setShowChangelogModal(true)}
+                title="Modpack Version - Hover for preview, click for full changelog"
+              >
+                <div className="flex items-center gap-2">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  <span style={{ fontFamily: "'Trebuchet MS', sans-serif", fontWeight: 'bold', color: '#FFD700' }}>
+                    v{latestManifest.version}
+                  </span>
+                </div>
               </div>
 
               {/* Changelog Tooltip */}
-              {showChangelog && Array.isArray(displayManifest.changelog) && displayManifest.changelog.length > 0 && (
+              {showChangelog && latestManifest.changelog && (
                 <div
                   className="absolute top-full left-0 mt-2 w-96 max-h-96 overflow-y-auto z-50"
                   style={{
@@ -163,24 +358,46 @@ function AppContent() {
                 >
                   <div className="p-4">
                     <h3 className="text-lg font-bold mb-3" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>
-                      Changelog - v{displayManifest.version}
+                      Changelog - v{latestManifest.version}
                     </h3>
                     <div className="space-y-2">
-                      {displayManifest.changelog.map((entry: any, index: number) => (
-                        <div key={index} className="text-sm">
-                          <span className="font-semibold" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
-                            {entry.type}:
-                          </span>
-                          <span className="ml-2 text-white" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
-                            {entry.description}
-                          </span>
-                        </div>
-                      ))}
+                      {latestManifest.changelog.split('\n').slice(0, 7).map((line, index) => {
+                        if (!line.trim()) return null;
+
+                        if (line.startsWith('# ')) {
+                          return (
+                            <h3 key={index} className="text-base font-bold mt-2" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>
+                              {line.substring(2)}
+                            </h3>
+                          );
+                        } else if (line.startsWith('## ')) {
+                          return (
+                            <h4 key={index} className="text-sm font-semibold" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
+                              {line.substring(3)}
+                            </h4>
+                          );
+                        } else if (line.startsWith('- ')) {
+                          return (
+                            <p key={index} className="text-sm ml-3 text-white" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
+                              • {line.substring(2)}
+                            </p>
+                          );
+                        } else {
+                          return (
+                            <p key={index} className="text-sm text-white" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
+                              {line}
+                            </p>
+                          );
+                        }
+                      })}
+                      <p className="text-xs mt-3 text-center" style={{ color: '#fde047', fontFamily: "'Trebuchet MS', sans-serif" }}>
+                        Click for full changelog
+                      </p>
                     </div>
                   </div>
                 </div>
               )}
-            </button>
+            </div>
           )}
         </div>
 
@@ -189,6 +406,16 @@ function AppContent() {
           {activeTab === 'settings' && <SettingsScreen />}
         </div>
       </div>
+
+      {/* Changelog Modal */}
+      {latestManifest && latestManifest.changelog && (
+        <ChangelogViewer
+          currentVersion={latestManifest.version}
+          manifest={latestManifest}
+          isOpen={showChangelogModal}
+          onClose={() => setShowChangelogModal(false)}
+        />
+      )}
     </div>
   );
 }

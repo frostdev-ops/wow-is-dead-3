@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod discord;
+pub mod download_manager;
 pub mod minecraft;
 pub mod minecraft_version;
 pub mod library_manager;
@@ -8,3 +9,4 @@ pub mod fabric_installer;
 pub mod game_installer;
 pub mod server;
 pub mod updater;
+pub mod audio;

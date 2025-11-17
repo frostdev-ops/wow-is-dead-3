@@ -11,6 +11,7 @@ import { useToast } from './ui/ToastContainer';
 import DeviceCodeModal from './DeviceCodeModal';
 import { SkinViewerComponent } from './SkinViewer';
 import { CatModel } from './CatModel';
+import { MinecraftSetup } from './MinecraftSetup';
 import type { DeviceCodeInfo } from '../hooks/useTauriCommands';
 import { listen } from '@tauri-apps/api/event';
 
@@ -208,9 +209,8 @@ export default function LauncherHome() {
       return;
     }
 
-    // Check if Minecraft is installed
+    // Check if Minecraft is installed (shouldn't happen with new UI, but just in case)
     if (!minecraftInstalled || !versionId) {
-      addToast('Please install Minecraft from Settings before playing', 'error');
       console.log('[UI] Minecraft not installed. versionId:', versionId, 'minecraftInstalled:', minecraftInstalled);
       return;
     }
@@ -348,78 +348,89 @@ export default function LauncherHome() {
           </div>
         )}
 
-        {/* Update Badge or Download Progress */}
-        {isDownloading && downloadProgress ? (
-          <div className="p-4" style={{
-            backgroundColor: 'rgba(0, 0, 0, 0.4)',
-            backdropFilter: 'blur(12px)',
-            border: '1px solid rgba(255, 215, 0, 0.3)',
-            borderRadius: '0',
-          }}>
-            <p className="text-white font-semibold mb-3" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>Installing Update...</p>
-            <ProgressBar
-              current={downloadProgress.current}
-              total={downloadProgress.total}
-              showLabel={true}
-              showPercentage={true}
-            />
+        {/* Minecraft Installation or Play Section */}
+        {!minecraftInstalled ? (
+          /* Show installation UI when Minecraft is not installed */
+          <div className="mt-6">
+            <MinecraftSetup />
           </div>
-        ) : updateAvailable ? (
-          <div className="bg-christmas-gold bg-opacity-20 border border-christmas-gold p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-christmas-gold font-semibold">
-                  🎁 Update Available!
-                </p>
-                <p className="text-sm text-gray-300 mt-1">
-                  Version {latestManifest?.version} is ready to install
-                </p>
+        ) : (
+          /* Show normal play flow when Minecraft is installed */
+          <>
+            {/* Update Badge or Download Progress */}
+            {isDownloading && downloadProgress ? (
+              <div className="p-4" style={{
+                backgroundColor: 'rgba(0, 0, 0, 0.4)',
+                backdropFilter: 'blur(12px)',
+                border: '1px solid rgba(255, 215, 0, 0.3)',
+                borderRadius: '0',
+              }}>
+                <p className="text-white font-semibold mb-3" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>Installing Update...</p>
+                <ProgressBar
+                  current={downloadProgress.current}
+                  total={downloadProgress.total}
+                  showLabel={true}
+                  showPercentage={true}
+                />
               </div>
-              {latestManifest && (
-                <button
-                  onClick={() => setShowChangelog(true)}
-                  className="px-3 py-2 text-sm bg-christmas-gold bg-opacity-30 hover:bg-opacity-50 text-christmas-gold rounded transition-colors whitespace-nowrap ml-4"
-                >
-                  View Changes
-                </button>
-              )}
+            ) : updateAvailable ? (
+              <div className="bg-christmas-gold bg-opacity-20 border border-christmas-gold p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-christmas-gold font-semibold">
+                      🎁 Update Available!
+                    </p>
+                    <p className="text-sm text-gray-300 mt-1">
+                      Version {latestManifest?.version} is ready to install
+                    </p>
+                  </div>
+                  {latestManifest && (
+                    <button
+                      onClick={() => setShowChangelog(true)}
+                      className="px-3 py-2 text-sm bg-christmas-gold bg-opacity-30 hover:bg-opacity-50 text-christmas-gold rounded transition-colors whitespace-nowrap ml-4"
+                    >
+                      View Changes
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Changelog Viewer Modal */}
+            {latestManifest && (
+              <ChangelogViewer
+                currentVersion={installedVersion || 'Unknown'}
+                manifest={latestManifest}
+                isOpen={showChangelog}
+                onClose={() => setShowChangelog(false)}
+              />
+            )}
+
+            {/* Device Code Modal */}
+            {deviceCodeInfo && (
+              <DeviceCodeModal
+                deviceCodeInfo={deviceCodeInfo}
+                onCancel={() => setDeviceCodeInfo(null)}
+              />
+            )}
+
+            {/* Play Button */}
+            <div className="flex justify-center mt-6">
+              <button
+                onClick={handlePlayClick}
+                disabled={isLaunching || isDownloading || authLoading}
+                className="btn-primary text-2xl py-8 px-16 disabled:opacity-50 disabled:cursor-not-allowed btn-gradient-border"
+              >
+              {authLoading && 'Authenticating...'}
+              {!authLoading && isLaunching && 'Launching...'}
+              {!authLoading && isDownloading && 'Updating...'}
+              {!authLoading && !isLaunching && !isDownloading && !isAuthenticated && 'Login'}
+              {!authLoading && !isLaunching && !isDownloading && isAuthenticated && updateAvailable && 'Update'}
+              {!authLoading && !isLaunching && !isDownloading && isAuthenticated && !updateAvailable && 'PLAY'}
+              </button>
             </div>
-          </div>
-        ) : null}
-
-        {/* Changelog Viewer Modal */}
-        {latestManifest && (
-          <ChangelogViewer
-            currentVersion={installedVersion || 'Unknown'}
-            manifest={latestManifest}
-            isOpen={showChangelog}
-            onClose={() => setShowChangelog(false)}
-          />
+          </>
         )}
-
-        {/* Device Code Modal */}
-        {deviceCodeInfo && (
-          <DeviceCodeModal
-            deviceCodeInfo={deviceCodeInfo}
-            onCancel={() => setDeviceCodeInfo(null)}
-          />
-        )}
-
-        {/* Play Button */}
-        <div className="flex justify-center mt-6">
-          <button
-            onClick={handlePlayClick}
-            disabled={isLaunching || isDownloading || authLoading}
-            className="btn-primary text-2xl py-8 px-16 disabled:opacity-50 disabled:cursor-not-allowed btn-gradient-border"
-          >
-          {authLoading && 'Authenticating...'}
-          {!authLoading && isLaunching && 'Launching...'}
-          {!authLoading && isDownloading && 'Updating...'}
-          {!authLoading && !isLaunching && !isDownloading && !isAuthenticated && 'Login'}
-          {!authLoading && !isLaunching && !isDownloading && isAuthenticated && updateAvailable && 'Update'}
-          {!authLoading && !isLaunching && !isDownloading && isAuthenticated && !updateAvailable && 'PLAY'}
-          </button>
-        </div>
 
         {/* Server MOTD */}
         {status.online && status.motd && (
@@ -456,15 +467,23 @@ export default function LauncherHome() {
         backdropFilter: 'blur(12px)',
         borderRadius: '0',
         padding: '1.5rem',
-        border: `1px solid ${installedVersion ? '#16a34a' : '#dc2626'}`,
-        boxShadow: `0 0 20px ${installedVersion ? 'rgba(34, 197, 94, 0.5)' : 'rgba(220, 38, 38, 0.5)'}, 0 25px 50px -12px rgb(0 0 0 / 0.25)`
+        border: `1px solid ${installedVersion && minecraftInstalled ? '#16a34a' : '#dc2626'}`,
+        boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.25)'
       }}>
         {/* Version Info */}
-        <div className="flex justify-center text-sm pb-4 opacity-100" style={{ fontFamily: "'Trebuchet MS', sans-serif", fontWeight: 'bold', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
-          <span className="text-white">Installed: </span>
-          <span className="ml-2" style={{ color: installedVersion ? '#16a34a' : '#dc2626' }}>
-            {installedVersion || 'Not installed'}
-          </span>
+        <div className="flex justify-between text-sm pb-4 opacity-100" style={{ fontFamily: "'Trebuchet MS', sans-serif", fontWeight: 'bold', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
+          <div>
+            <span className="text-white">Modpack: </span>
+            <span className="ml-2" style={{ color: installedVersion ? '#16a34a' : '#dc2626' }}>
+              {installedVersion || 'Not installed'}
+            </span>
+          </div>
+          <div>
+            <span className="text-white">Minecraft: </span>
+            <span className="ml-2" style={{ color: minecraftInstalled ? '#16a34a' : '#dc2626' }}>
+              {minecraftInstalled ? (versionId || 'Installed') : 'Not installed'}
+            </span>
+          </div>
         </div>
 
         <div className="grid grid-cols-3 gap-4 pt-4">

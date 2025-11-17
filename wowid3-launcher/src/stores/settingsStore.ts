@@ -43,9 +43,9 @@ export const useSettingsStore = create<SettingsState>()(
       ramAllocation: 12512, // 4GB default
       gameDirectory: './game',
       serverAddress: 'mc.frostdev.io:25565',
-      minecraftVersion: null, // Will be set when user selects
-      fabricEnabled: false,
-      fabricVersion: null,
+      minecraftVersion: '1.20.1', // Default from modpack requirements
+      fabricEnabled: true, // Always enabled for WOWID3 modpack
+      fabricVersion: '0.17.3', // Default from modpack requirements
       autoUpdate: false,
       preferStableFabric: true,
       theme: 'christmas',

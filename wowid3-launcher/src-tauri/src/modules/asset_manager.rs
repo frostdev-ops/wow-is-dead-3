@@ -3,8 +3,11 @@ use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
+use tokio::sync::Mutex;
 
+use super::download_manager::{DownloadManager, DownloadPriority, DownloadTask, HashType};
 use super::minecraft_version::AssetIndex as AssetIndexMeta;
 
 const ASSETS_BASE_URL: &str = "https://resources.download.minecraft.net";
@@ -149,59 +152,103 @@ fn verify_sha1_bytes(bytes: &[u8], expected: &str) -> bool {
     hash == expected
 }
 
-/// Download all assets with progress reporting
+/// Download all assets with progress reporting using DownloadManager
 pub async fn download_all_assets<F>(
     asset_index: &AssetIndex,
     assets_dir: &Path,
-    mut progress_callback: F,
+    progress_callback: F,
 ) -> Result<()>
 where
-    F: FnMut(usize, usize, u64, u64, String),
+    F: FnMut(usize, usize, u64, u64, String) + Send + 'static,
 {
+    tokio::fs::create_dir_all(assets_dir.join("objects")).await?;
+
     let total = asset_index.objects.len();
-    let mut completed = 0;
     let total_bytes: u64 = asset_index.objects.values().map(|obj| obj.size).sum();
-    let mut completed_bytes: u64 = 0;
 
-    // Convert to owned data for async tasks
-    let assets: Vec<AssetObject> = asset_index.objects.values().cloned().collect();
-    let assets_dir = assets_dir.to_path_buf();
+    // Collect all download tasks, filtering out already-downloaded assets
+    let mut download_tasks = Vec::new();
+    let assets_dir_path = assets_dir.to_path_buf();
 
-    // Process in batches of 10 concurrent downloads
-    let batch_size = 10;
+    for asset_object in asset_index.objects.values() {
+        let hash = &asset_object.hash;
+        let subdir = &hash[0..2];
+        let object_dir = assets_dir_path.join("objects").join(subdir);
+        let dest = object_dir.join(hash);
 
-    for chunk in assets.chunks(batch_size) {
-        let mut tasks = Vec::new();
-
-        for object in chunk {
-            let object_clone = object.clone();
-            let dir_clone = assets_dir.clone();
-
-            let task = tokio::spawn(async move {
-                download_asset(&object_clone, &dir_clone).await
-            });
-
-            tasks.push((task, object.size));
-        }
-
-        // Wait for all tasks in this batch to complete
-        for (task, size) in tasks {
-            match task.await {
-                Ok(Ok(())) => {
-                    // Success
-                }
-                Ok(Err(e)) => {
-                    eprintln!("Asset download error: {}", e);
-                }
-                Err(e) => {
-                    eprintln!("Task error: {}", e);
+        // Skip if file exists and hash matches
+        if dest.exists() {
+            if let Ok(bytes) = tokio::fs::read(&dest).await {
+                if verify_sha1_bytes(&bytes, hash) {
+                    continue;
                 }
             }
-            completed += 1;
-            completed_bytes += size;
-            progress_callback(completed, total, completed_bytes, total_bytes, "Downloading assets".to_string());
         }
+
+        // Create subdirectory
+        tokio::fs::create_dir_all(&object_dir).await?;
+
+        let url = format!("{}/{}/{}", ASSETS_BASE_URL, subdir, hash);
+        download_tasks.push(DownloadTask {
+            url,
+            dest,
+            expected_hash: HashType::Sha1(hash.clone()),
+            priority: DownloadPriority::Medium,
+            size: asset_object.size,
+        });
     }
+
+    if download_tasks.is_empty() {
+        return Ok(());
+    }
+
+    // Track progress across all parallel downloads
+    let (progress_tx, mut progress_rx) =
+        tokio::sync::mpsc::channel::<super::download_manager::DownloadProgress>(1000);
+    let completed = Arc::new(Mutex::new(0usize));
+    let completed_bytes = Arc::new(Mutex::new(0u64));
+
+    // Wrap callback in Arc<Mutex<>> to make it thread-safe
+    let callback_mutex = Arc::new(Mutex::new(progress_callback));
+
+    // Spawn progress tracking task
+    let completed_clone = completed.clone();
+    let completed_bytes_clone = completed_bytes.clone();
+    let callback_clone = callback_mutex.clone();
+    let progress_task = tokio::spawn(async move {
+        while let Some(progress) = progress_rx.recv().await {
+            if progress.completed {
+                let mut comp = completed_clone.lock().await;
+                *comp += 1;
+                let mut bytes = completed_bytes_clone.lock().await;
+                *bytes += progress.total_bytes;
+                let current_completed = *comp;
+                let current_bytes = *bytes;
+                drop(comp);
+                drop(bytes);
+
+                let mut callback = callback_clone.lock().await;
+                callback(
+                    current_completed,
+                    total,
+                    current_bytes,
+                    total_bytes,
+                    "Downloading assets".to_string(),
+                );
+            }
+        }
+    });
+
+    // Download all files in parallel using DownloadManager with higher concurrency
+    let concurrency = super::download_manager::calculate_optimal_concurrency();
+    let manager = DownloadManager::new(concurrency, 3)?;
+    manager
+        .download_files(download_tasks, Some(progress_tx))
+        .await
+        .context("Failed to download assets")?;
+
+    // Wait for progress tracking to complete
+    progress_task.await?;
 
     Ok(())
 }

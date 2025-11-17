@@ -2,10 +2,16 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 use sysinfo::Disks;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
+use tokio::sync::Mutex;
+
+use super::download_manager::{
+    calculate_optimal_concurrency, DownloadManager, DownloadPriority, DownloadTask, HashType,
+};
 
 const MAX_DOWNLOAD_RETRIES: u32 = 3;
 const RETRY_DELAY_MS: u64 = 1000;
@@ -315,7 +321,7 @@ pub fn calculate_total_size(files: &[ManifestFile]) -> u64 {
 pub async fn install_modpack(
     manifest: &Manifest,
     game_dir: &PathBuf,
-    progress_callback: impl Fn(usize, usize, String, u64, u64) + Send + Sync,
+    progress_callback: impl Fn(usize, usize, String, u64, u64) + Send + Sync + 'static,
 ) -> Result<()> {
     // Ensure game directory exists
     if !game_dir.exists() {
@@ -343,18 +349,64 @@ pub async fn install_modpack(
         total_bytes / 1024 / 1024
     );
 
-    // Download files with retry logic and track cumulative bytes
+    // Create download manager with optimal concurrency
+    let concurrency = calculate_optimal_concurrency();
+    let download_manager = DownloadManager::new(concurrency, MAX_DOWNLOAD_RETRIES)
+        .context("Failed to create download manager")?;
+
+    // Convert manifest files to download tasks
+    let tasks: Vec<DownloadTask> = files_to_download
+        .iter()
+        .map(|file| DownloadTask {
+            url: file.url.clone(),
+            dest: game_dir.join(&file.path),
+            expected_hash: HashType::Sha256(file.sha256.clone()),
+            priority: DownloadPriority::Low, // Modpack files are lower priority than game files
+            size: file.size,
+        })
+        .collect();
+
+    // Track progress across all parallel downloads
+    let (progress_tx, mut progress_rx) =
+        tokio::sync::mpsc::channel::<super::download_manager::DownloadProgress>(100);
     let total_files = files_to_download.len();
-    let mut bytes_downloaded = 0u64;
+    let bytes_downloaded = Arc::new(Mutex::new(0u64));
+    let files_completed = Arc::new(Mutex::new(0usize));
 
-    for (index, file) in files_to_download.iter().enumerate() {
-        println!("Downloading {}/{}: {}", index + 1, total_files, file.path);
+    // Spawn progress tracking task
+    let bytes_downloaded_clone = bytes_downloaded.clone();
+    let files_completed_clone = files_completed.clone();
+    let progress_task = tokio::spawn(async move {
+        while let Some(progress) = progress_rx.recv().await {
+            if progress.completed {
+                let mut completed = files_completed_clone.lock().await;
+                *completed += 1;
+                let mut bytes = bytes_downloaded_clone.lock().await;
+                *bytes += progress.total_bytes;
+                let current_completed = *completed;
+                let current_bytes = *bytes;
+                drop(completed);
+                drop(bytes);
 
-        download_file_with_retry(file, game_dir, MAX_DOWNLOAD_RETRIES).await?;
+                progress_callback(
+                    current_completed,
+                    total_files,
+                    progress.url.clone(),
+                    current_bytes,
+                    total_bytes,
+                );
+            }
+        }
+    });
 
-        bytes_downloaded += file.size;
-        progress_callback(index + 1, total_files, file.path.clone(), bytes_downloaded, total_bytes);
-    }
+    // Download all files in parallel
+    download_manager
+        .download_files(tasks, Some(progress_tx))
+        .await
+        .context("Failed to download modpack files")?;
+
+    // Wait for progress tracking to complete
+    progress_task.await?;
 
     // Update version file
     update_version_file(game_dir, &manifest.version).await?;
