@@ -192,7 +192,7 @@ export const SkinViewerComponent = ({ username, uuid, skinUrl }: SkinViewerCompo
       style={{
         width: '300px',
         height: '600px',
-        cursor: 'grab',
+        pointerEvents: 'none',
       }}
     />
   );

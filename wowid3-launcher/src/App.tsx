@@ -9,9 +9,29 @@ import './App.css';
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<'home' | 'settings'>('home');
-  const { checkUpdates } = useModpack();
+  const [isMuted, setIsMuted] = useState(false);
+  const [showChangelog, setShowChangelog] = useState(false);
+  const [audio] = useState(() => new Audio('/wid3menu.wav'));
+  const { checkUpdates, latestManifest, installedVersion } = useModpack();
   const { startPolling } = useServer();
   useTheme(); // Apply theme on mount
+
+  // Mock data for testing
+  const mockManifest = {
+    version: "1.2.3",
+    changelog: [
+      { type: "Added", description: "New Christmas themed background with animated snow" },
+      { type: "Added", description: "Background music player with mute toggle" },
+      { type: "Fixed", description: "Player model now properly sits and is uninteractable" },
+      { type: "Changed", description: "Navigation buttons moved to top-left with icon design" },
+      { type: "Added", description: "Version display with hover changelog in navigation bar" },
+      { type: "Improved", description: "Settings page styling to match Christmas theme" },
+      { type: "Removed", description: "Theme settings - Christmas theme is now permanent" },
+    ]
+  };
+
+  // Use mock data if real manifest isn't available (for testing)
+  const displayManifest = latestManifest || mockManifest;
 
   useEffect(() => {
     // Check for modpack updates on startup
@@ -21,7 +41,6 @@ function AppContent() {
     startPolling(30);
 
     // Play background music
-    const audio = new Audio('/wid3menu.wav');
     audio.loop = true;
     audio.volume = 0.3; // Set volume to 30%
     audio.play().catch(err => {
@@ -29,18 +48,21 @@ function AppContent() {
     });
 
     return () => {
-      // Cleanup handled by useServer
       audio.pause();
       audio.currentTime = 0;
     };
   }, []);
+
+  useEffect(() => {
+    audio.muted = isMuted;
+  }, [isMuted, audio]);
 
   return (
     <div className="relative w-screen h-screen overflow-hidden">
       <ChristmasBackground />
       <div className="relative z-10 w-full h-full flex flex-col">
         {/* Navigation Cards - Top Left */}
-        <div className="absolute top-4 left-4 z-50 flex gap-3">
+        <div className="absolute top-12 left-4 z-50 flex gap-3">
           <button
             onClick={() => setActiveTab('home')}
             className={`p-5 transition-all ${
@@ -79,6 +101,90 @@ function AppContent() {
               <circle cx="12" cy="12" r="3" />
             </svg>
           </button>
+          <button
+            onClick={() => setIsMuted(!isMuted)}
+            className="p-5 transition-all bg-black bg-opacity-40 text-white hover:bg-opacity-60"
+            style={{
+              backdropFilter: 'blur(12px)',
+              border: '2px solid rgba(255, 255, 255, 0.3)',
+              borderRadius: '0',
+            }}
+            title={isMuted ? 'Unmute Music' : 'Mute Music'}
+          >
+            {isMuted ? (
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                <line x1="23" y1="9" x2="17" y2="15" />
+                <line x1="17" y1="9" x2="23" y2="15" />
+              </svg>
+            ) : (
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+              </svg>
+            )}
+          </button>
+
+          {/* Version Display with Changelog */}
+          {displayManifest && (
+            <div className="relative">
+              <div
+                className="p-5 transition-all bg-black bg-opacity-40 text-white cursor-pointer hover:bg-opacity-60"
+                style={{
+                  backdropFilter: 'blur(12px)',
+                  border: '2px solid rgba(255, 215, 0, 0.3)',
+                  borderRadius: '0',
+                }}
+                onMouseEnter={() => setShowChangelog(true)}
+                onMouseLeave={() => setShowChangelog(false)}
+                title="Modpack Version - Hover for changelog"
+              >
+                <div className="flex items-center gap-2">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  <span style={{ fontFamily: "'Trebuchet MS', sans-serif", fontWeight: 'bold', color: '#FFD700' }}>
+                    v{displayManifest.version}
+                  </span>
+                </div>
+              </div>
+
+              {/* Changelog Tooltip */}
+              {showChangelog && displayManifest.changelog && (
+                <div
+                  className="absolute top-full left-0 mt-2 w-96 max-h-96 overflow-y-auto z-50"
+                  style={{
+                    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+                    backdropFilter: 'blur(12px)',
+                    border: '2px solid rgba(255, 215, 0, 0.8)',
+                    borderRadius: '0',
+                    boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.5)',
+                  }}
+                  onMouseEnter={() => setShowChangelog(true)}
+                  onMouseLeave={() => setShowChangelog(false)}
+                >
+                  <div className="p-4">
+                    <h3 className="text-lg font-bold mb-3" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>
+                      Changelog - v{displayManifest.version}
+                    </h3>
+                    <div className="space-y-2">
+                      {displayManifest.changelog.map((entry: any, index: number) => (
+                        <div key={index} className="text-sm">
+                          <span className="font-semibold" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
+                            {entry.type}:
+                          </span>
+                          <span className="ml-2 text-white" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
+                            {entry.description}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-auto">

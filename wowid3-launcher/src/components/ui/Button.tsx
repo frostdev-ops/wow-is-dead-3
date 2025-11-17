@@ -15,22 +15,44 @@ export const Button = ({
   disabled,
   ...props
 }: ButtonProps) => {
-  const variantClasses = {
-    primary: 'bg-red-600 hover:bg-red-700 text-white',
-    secondary: 'bg-green-600 hover:bg-green-700 text-white',
-    danger: 'bg-red-900 hover:bg-red-950 text-red-100',
-    outline: 'border-2 border-red-500 text-red-500 hover:bg-red-500 hover:text-white',
+  const variantStyles = {
+    primary: {
+      backgroundColor: 'rgba(255, 215, 0, 0.9)',
+      color: '#000',
+      border: '2px solid rgba(255, 215, 0, 0.8)',
+    },
+    secondary: {
+      backgroundColor: 'rgba(77, 130, 110, 0.65)',
+      color: '#fff',
+      border: '1px solid rgba(255, 255, 255, 0.3)',
+    },
+    danger: {
+      backgroundColor: 'rgba(220, 38, 38, 0.8)',
+      color: '#fff',
+      border: '1px solid rgba(220, 38, 38, 0.9)',
+    },
+    outline: {
+      backgroundColor: 'transparent',
+      color: 'rgba(255, 215, 0, 0.9)',
+      border: '2px solid rgba(255, 215, 0, 0.8)',
+    },
   };
 
   const sizeClasses = {
-    sm: 'px-3 py-1 text-sm',
-    md: 'px-4 py-2 text-base',
-    lg: 'px-6 py-3 text-lg',
+    sm: 'px-3 py-2 text-sm',
+    md: 'px-6 py-3 text-base',
+    lg: 'px-8 py-4 text-lg',
   };
 
   return (
     <button
-      className={`rounded font-semibold transition-all ${variantClasses[variant]} ${sizeClasses[size]} disabled:opacity-50 disabled:cursor-not-allowed`}
+      className={`font-bold transition-all ${sizeClasses[size]} disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-80`}
+      style={{
+        ...variantStyles[variant],
+        borderRadius: '0',
+        fontFamily: "'Trebuchet MS', sans-serif",
+        backdropFilter: 'blur(12px)',
+      }}
       disabled={disabled || isLoading}
       {...props}
     >

@@ -1,32 +1,24 @@
 import { useState } from 'react';
 import { useSettingsStore } from '../stores';
-import { useTheme, getAllThemes } from '../hooks/useTheme';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { Card } from './ui/Card';
 import { useToast } from './ui/ToastContainer';
 
 export default function SettingsScreen() {
-  const { gameDirectory, ramAllocation, serverAddress, manifestUrl, theme, setGameDirectory, setRamAllocation, setServerAddress, setManifestUrl, setTheme } = useSettingsStore();
+  const { gameDirectory, ramAllocation, serverAddress, manifestUrl, setGameDirectory, setRamAllocation, setServerAddress, setManifestUrl } = useSettingsStore();
   const { addToast } = useToast();
-  const { applyTheme } = useTheme();
-  const availableThemes = getAllThemes();
 
   const [tempGameDir, setTempGameDir] = useState(gameDirectory);
   const [tempRam, setTempRam] = useState(ramAllocation);
   const [tempServerAddr, setTempServerAddr] = useState(serverAddress);
   const [tempManifestUrl, setTempManifestUrl] = useState(manifestUrl);
-  const [tempTheme, setTempTheme] = useState<'christmas' | 'dark' | 'light'>(theme);
 
   const handleSave = () => {
     setGameDirectory(tempGameDir);
     setRamAllocation(tempRam);
     setServerAddress(tempServerAddr);
     setManifestUrl(tempManifestUrl);
-    if (tempTheme !== theme) {
-      setTheme(tempTheme);
-      applyTheme(tempTheme);
-    }
     addToast('Settings saved successfully', 'success');
   };
 
@@ -35,17 +27,16 @@ export default function SettingsScreen() {
     setTempRam(ramAllocation);
     setTempServerAddr(serverAddress);
     setTempManifestUrl(manifestUrl);
-    setTempTheme(theme);
   };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-3xl font-bold text-white mb-6">Settings</h1>
+    <div className="p-6 pt-24 max-w-4xl mx-auto">
+      <h1 className="text-3xl font-bold mb-6" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>Settings</h1>
 
       <div className="space-y-6">
         {/* Game Settings */}
         <Card>
-          <h2 className="text-xl font-bold text-white mb-4">Game Settings</h2>
+          <h2 className="text-xl font-bold mb-4" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>Game Settings</h2>
           <div className="space-y-4">
             <Input
               label="Game Directory"
@@ -55,7 +46,7 @@ export default function SettingsScreen() {
               helperText="Where the game will be installed"
             />
             <div>
-              <label className="block text-sm font-semibold text-slate-200 mb-2">
+              <label className="block text-sm font-semibold mb-2" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
                 RAM Allocation: {tempRam}MB
               </label>
               <input
@@ -66,8 +57,11 @@ export default function SettingsScreen() {
                 value={tempRam}
                 onChange={(e) => setTempRam(parseInt(e.target.value))}
                 className="w-full"
+                style={{
+                  accentColor: '#FFD700',
+                }}
               />
-              <p className="text-xs text-slate-400 mt-1">
+              <p className="text-xs mt-1" style={{ color: '#c6ebdaff' }}>
                 Recommended: 4096-8192MB
               </p>
             </div>
@@ -76,7 +70,7 @@ export default function SettingsScreen() {
 
         {/* Server Settings */}
         <Card>
-          <h2 className="text-xl font-bold text-white mb-4">Server Settings</h2>
+          <h2 className="text-xl font-bold mb-4" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>Server Settings</h2>
           <div className="space-y-4">
             <Input
               label="Server Address"
@@ -90,7 +84,7 @@ export default function SettingsScreen() {
 
         {/* Modpack Settings */}
         <Card>
-          <h2 className="text-xl font-bold text-white mb-4">Modpack Settings</h2>
+          <h2 className="text-xl font-bold mb-4" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>Modpack Settings</h2>
           <div className="space-y-4">
             <Input
               label="Manifest URL"
@@ -99,39 +93,6 @@ export default function SettingsScreen() {
               placeholder="https://example.com/manifest.json"
               helperText="URL to the modpack manifest file"
             />
-          </div>
-        </Card>
-
-        {/* Theme Settings */}
-        <Card>
-          <h2 className="text-xl font-bold text-white mb-4">Theme Settings</h2>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-semibold text-slate-200 mb-3">
-                Select Theme
-              </label>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {availableThemes.map((themeOption) => (
-                  <button
-                    key={themeOption.id}
-                    onClick={() => setTempTheme(themeOption.id as 'christmas' | 'dark' | 'light')}
-                    className={`p-4 rounded-lg border-2 transition-all ${
-                      tempTheme === themeOption.id
-                        ? 'border-red-500 bg-slate-700'
-                        : 'border-slate-600 hover:border-slate-500'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="w-8 h-8 rounded"
-                        style={{ backgroundColor: themeOption.colors.primary }}
-                      />
-                      <span className="text-white font-semibold">{themeOption.name}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
         </Card>
 

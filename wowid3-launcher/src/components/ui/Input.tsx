@@ -15,15 +15,25 @@ export const Input = ({
 }: InputProps) => {
   return (
     <div className="w-full">
-      {label && <label className="block text-sm font-semibold text-slate-200 mb-2">{label}</label>}
+      {label && (
+        <label className="block text-sm font-semibold mb-2" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
+          {label}
+        </label>
+      )}
       <input
-        className={`w-full px-3 py-2 rounded bg-slate-700 border border-slate-600 text-white placeholder-slate-400 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 ${
+        className={`w-full px-4 py-3 text-white placeholder-slate-400 focus:outline-none ${
           error ? 'border-red-500' : ''
         } ${className || ''}`}
+        style={{
+          backgroundColor: 'rgba(0, 0, 0, 0.3)',
+          border: error ? '1px solid #ef4444' : '1px solid rgba(255, 215, 0, 0.3)',
+          borderRadius: '0',
+          fontFamily: "'Trebuchet MS', sans-serif",
+        }}
         {...props}
       />
       {error && <p className="text-sm text-red-400 mt-1">{error}</p>}
-      {helperText && !error && <p className="text-sm text-slate-400 mt-1">{helperText}</p>}
+      {helperText && !error && <p className="text-sm mt-1" style={{ color: '#c6ebdaff' }}>{helperText}</p>}
     </div>
   );
 };
