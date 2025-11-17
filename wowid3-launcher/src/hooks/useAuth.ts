@@ -1,17 +1,31 @@
 import { useEffect } from 'react';
 import { useAuthStore } from '../stores';
-import { authenticateMinecraft, getCurrentUser, logout as logoutCommand } from './useTauriCommands';
+import { getCurrentUser, logout as logoutCommand, refreshToken, getDeviceCode, completeDeviceCodeAuth } from './useTauriCommands';
+import type { DeviceCodeInfo } from './useTauriCommands';
 
 export const useAuth = () => {
   const { user, isAuthenticated, isLoading, error, setUser, setLoading, setError, logout: logoutStore } = useAuthStore();
 
-  // Check for existing user on mount
+  // Check for existing user and refresh token on mount
   useEffect(() => {
     const checkUser = async () => {
       try {
         setLoading(true);
         const currentUser = await getCurrentUser();
-        setUser(currentUser);
+        if (currentUser) {
+          // Try to refresh token to ensure it's still valid
+          try {
+            const refreshedUser = await refreshToken();
+            if (refreshedUser) {
+              setUser(refreshedUser);
+            } else {
+              setUser(currentUser);
+            }
+          } catch (refreshErr) {
+            // If refresh fails, use the current user anyway
+            setUser(currentUser);
+          }
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to get user');
       } finally {
@@ -22,16 +36,60 @@ export const useAuth = () => {
     checkUser();
   }, [setUser, setLoading, setError]);
 
+  const startDeviceCodeAuth = async (): Promise<DeviceCodeInfo> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      console.log('[Auth] Starting device code authentication...');
+      const deviceCodeInfo = await getDeviceCode();
+      console.log('[Auth] Device code received:', deviceCodeInfo.user_code);
+
+      return deviceCodeInfo;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to get device code';
+      console.error('[Auth] Device code request failed:', message, err);
+      setError(message);
+      setLoading(false);
+      throw err;
+    }
+  };
+
+  const finishDeviceCodeAuth = async (deviceCode: string, interval: number) => {
+    try {
+      console.log('[Auth] Completing device code authentication...');
+      const profile = await completeDeviceCodeAuth(deviceCode, interval);
+      console.log('[Auth] Device code authentication successful:', profile);
+      setUser(profile);
+      console.log('[Auth] User set in store');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Authentication failed';
+      console.error('[Auth] Device code authentication failed:', message, err);
+      setError(message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const login = async () => {
     try {
       setLoading(true);
       setError(null);
-      const profile = await authenticateMinecraft();
-      setUser(profile);
+
+      console.log('[Auth] Starting Microsoft device code authentication...');
+      // Use device code flow
+      const deviceCodeInfo = await startDeviceCodeAuth();
+
+      // This will be handled by the UI component showing the modal
+      // and calling finishDeviceCodeAuth when ready
+      return deviceCodeInfo;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Authentication failed');
-    } finally {
+      const message = err instanceof Error ? err.message : 'Authentication failed';
+      console.error('[Auth] Authentication failed:', message, err);
+      setError(message);
       setLoading(false);
+      throw err;
     }
   };
 
@@ -51,5 +109,7 @@ export const useAuth = () => {
     error,
     login,
     logout,
+    startDeviceCodeAuth,
+    finishDeviceCodeAuth,
   };
 };

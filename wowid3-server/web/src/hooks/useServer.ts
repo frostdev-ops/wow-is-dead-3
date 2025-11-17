@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import { useServerStore } from "../stores/serverStore";
-import type { ServerState } from "../types/server";
 
 export function useServer() {
   const {

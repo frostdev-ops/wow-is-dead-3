@@ -1,25 +1,13 @@
 export interface ThemeColors {
   primary: string;
   secondary: string;
-  accent: string;
   background: string;
-  snow: string;
-  cardBg: string;
+  surface: string;
   text: string;
-  textMuted: string;
-}
-
-export interface ThemeAnimations {
-  snowDensity: number;
-  snowSpeed: number;
-  lightsEnabled: boolean;
-  twinkleSpeed: number;
-}
-
-export interface ThemeImages {
-  background: string;
-  logo: string;
-  snowflake: string;
+  accent: string;
+  error?: string;
+  success?: string;
+  warning?: string;
 }
 
 export interface ThemeFonts {
@@ -27,10 +15,15 @@ export interface ThemeFonts {
   body: string;
 }
 
+export interface ThemeAnimations {
+  snowfall: boolean;
+  lights: boolean;
+}
+
 export interface Theme {
+  id: string;
   name: string;
   colors: ThemeColors;
-  animations: ThemeAnimations;
-  images: ThemeImages;
   fonts: ThemeFonts;
+  animations: ThemeAnimations;
 }

@@ -10,9 +10,21 @@ export interface LaunchConfig {
   access_token: string;
 }
 
+export interface DeviceCodeInfo {
+  device_code: string;
+  user_code: string;
+  verification_uri: string;
+  expires_in: number;
+  interval: number;
+}
+
 // Authentication commands
 export const authenticateMinecraft = async (): Promise<MinecraftProfile> => {
   return await invoke<MinecraftProfile>('cmd_authenticate');
+};
+
+export const authenticateFromOfficialLauncher = async (): Promise<MinecraftProfile> => {
+  return await invoke<MinecraftProfile>('cmd_authenticate_official_launcher');
 };
 
 export const getCurrentUser = async (): Promise<MinecraftProfile | null> => {
@@ -21,6 +33,18 @@ export const getCurrentUser = async (): Promise<MinecraftProfile | null> => {
 
 export const logout = async (): Promise<void> => {
   return await invoke<void>('cmd_logout');
+};
+
+export const refreshToken = async (): Promise<MinecraftProfile | null> => {
+  return await invoke<MinecraftProfile | null>('cmd_refresh_token');
+};
+
+export const getDeviceCode = async (): Promise<DeviceCodeInfo> => {
+  return await invoke<DeviceCodeInfo>('cmd_get_device_code');
+};
+
+export const completeDeviceCodeAuth = async (deviceCode: string, interval: number): Promise<MinecraftProfile> => {
+  return await invoke<MinecraftProfile>('cmd_complete_device_code_auth', { deviceCode, interval });
 };
 
 // Minecraft launch commands
@@ -47,4 +71,29 @@ export const installModpack = async (
   gameDir: string
 ): Promise<string> => {
   return await invoke<string>('cmd_install_modpack', { manifest, gameDir });
+};
+
+// Discord Rich Presence commands
+export const discordConnect = async (): Promise<void> => {
+  return await invoke<void>('cmd_discord_connect');
+};
+
+export const discordSetPresence = async (details: string, state: string, largeImage?: string): Promise<void> => {
+  return await invoke<void>('cmd_discord_set_presence', { details, state, large_image: largeImage });
+};
+
+export const discordUpdatePresence = async (details: string, state: string): Promise<void> => {
+  return await invoke<void>('cmd_discord_update_presence', { details, state });
+};
+
+export const discordClearPresence = async (): Promise<void> => {
+  return await invoke<void>('cmd_discord_clear_presence');
+};
+
+export const discordDisconnect = async (): Promise<void> => {
+  return await invoke<void>('cmd_discord_disconnect');
+};
+
+export const discordIsConnected = async (): Promise<boolean> => {
+  return await invoke<boolean>('cmd_discord_is_connected');
 };

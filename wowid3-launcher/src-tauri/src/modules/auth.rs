@@ -27,12 +27,14 @@ use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use keyring::Entry;
 use oauth2::{
-    basic::BasicClient, AuthUrl, AuthorizationCode, ClientId, CsrfToken, PkceCodeChallenge,
-    PkceCodeVerifier, RedirectUrl, RefreshToken, Scope, TokenResponse, TokenUrl,
+    basic::BasicClient, AuthUrl, ClientId, CsrfToken, PkceCodeChallenge,
+    PkceCodeVerifier, RedirectUrl, Scope, TokenUrl,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
+use std::path::PathBuf;
 use std::time::{Duration as StdDuration, Instant};
 
 const KEYRING_SERVICE: &str = "wowid3-launcher";
@@ -40,19 +42,17 @@ const KEYRING_USER: &str = "minecraft-auth";
 
 // Microsoft OAuth constants
 /// Microsoft Azure AD client ID for Minecraft authentication.
-///
-/// This is the official client ID used by Minecraft launchers for Microsoft OAuth.
-/// Source: This ID is publicly available and used by the official Minecraft launcher
-/// and other third-party launchers for authenticating with Microsoft accounts.
-const MICROSOFT_CLIENT_ID: &str = "00000000402b5328";
+/// Using MultiMC's client ID which is approved for third-party launchers
+const MICROSOFT_CLIENT_ID: &str = "499546d9-bbfe-4b9b-a086-eb3d75afb78f";
 const MICROSOFT_AUTH_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize";
+const MICROSOFT_DEVICE_CODE_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode";
 const MICROSOFT_TOKEN_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
 const REDIRECT_URI: &str = "http://localhost:23947/callback";
 
 // Xbox Live & Minecraft API endpoints
 const XBOX_LIVE_AUTH_URL: &str = "https://user.auth.xboxlive.com/user/authenticate";
 const XSTS_AUTH_URL: &str = "https://xsts.auth.xboxlive.com/xsts/authorize";
-const MINECRAFT_AUTH_URL: &str = "https://api.minecraftservices.com/authentication/login_with_xbox";
+const MINECRAFT_AUTH_URL: &str = "https://api.minecraftservices.com/launcher/login";
 const MINECRAFT_PROFILE_URL: &str = "https://api.minecraftservices.com/minecraft/profile";
 const MINECRAFT_ENTITLEMENTS_URL: &str = "https://api.minecraftservices.com/entitlements/mcstore";
 
@@ -71,6 +71,24 @@ struct MicrosoftTokenResponse {
     access_token: String,
     refresh_token: Option<String>,
     expires_in: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeviceCodeResponse {
+    device_code: String,
+    user_code: String,
+    verification_uri: String,
+    expires_in: u64,
+    interval: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DeviceCodeInfo {
+    pub device_code: String,
+    pub user_code: String,
+    pub verification_uri: String,
+    pub expires_in: u64,
+    pub interval: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -139,8 +157,8 @@ struct XSTSAuthResponse {
 
 #[derive(Debug, Serialize)]
 struct MinecraftAuthRequest {
-    #[serde(rename = "identityToken")]
-    identity_token: String,
+    xtoken: String,
+    platform: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -170,6 +188,35 @@ struct MinecraftEntitlement {
 #[derive(Debug, Deserialize)]
 struct MinecraftItem {
     name: String,
+}
+
+// Structs for parsing official Minecraft launcher's launcher_profiles.json
+#[derive(Debug, Deserialize)]
+struct LauncherProfiles {
+    #[serde(rename = "authenticationDatabase")]
+    authentication_database: HashMap<String, AuthAccount>,
+    #[serde(rename = "selectedUser")]
+    selected_user: Option<SelectedUser>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SelectedUser {
+    account: String,
+    profile: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct AuthAccount {
+    #[serde(rename = "accessToken")]
+    access_token: String,
+    username: String,
+    profiles: HashMap<String, ProfileInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProfileInfo {
+    #[serde(rename = "displayName")]
+    display_name: String,
 }
 
 /// Start local HTTP server and wait for OAuth callback
@@ -297,34 +344,50 @@ async fn exchange_code_for_token(
     code: String,
     pkce_verifier: PkceCodeVerifier,
 ) -> Result<MicrosoftTokenResponse> {
-    let client = BasicClient::new(
-        ClientId::new(MICROSOFT_CLIENT_ID.to_string()),
-        None,
-        AuthUrl::new(MICROSOFT_AUTH_URL.to_string())?,
-        Some(TokenUrl::new(MICROSOFT_TOKEN_URL.to_string())?),
-    )
-    .set_redirect_uri(RedirectUrl::new(REDIRECT_URI.to_string())?);
+    // Use reqwest directly with a 30 second timeout instead of oauth2's default client
+    let http_client = reqwest::Client::builder()
+        .timeout(StdDuration::from_secs(30))
+        .build()
+        .context("Failed to create HTTP client")?;
 
-    let token_result = client
-        .exchange_code(AuthorizationCode::new(code))
-        .set_pkce_verifier(pkce_verifier)
-        .request_async(oauth2::reqwest::async_http_client)
+    let params = [
+        ("client_id", MICROSOFT_CLIENT_ID),
+        ("code", &code),
+        ("redirect_uri", REDIRECT_URI),
+        ("grant_type", "authorization_code"),
+        ("code_verifier", pkce_verifier.secret()),
+    ];
+
+    let response = http_client
+        .post(MICROSOFT_TOKEN_URL)
+        .form(&params)
+        .send()
         .await
-        .context("Failed to exchange authorization code for access token")?;
+        .context("Failed to send token exchange request to Microsoft")?;
 
-    Ok(MicrosoftTokenResponse {
-        access_token: token_result.access_token().secret().to_string(),
-        refresh_token: token_result.refresh_token().map(|t| t.secret().to_string()),
-        expires_in: token_result
-            .expires_in()
-            .map(|d| d.as_secs())
-            .unwrap_or(3600),
-    })
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!(
+            "Microsoft token exchange failed with status {}: {}",
+            status,
+            text
+        ));
+    }
+
+    let token_response: MicrosoftTokenResponse = response
+        .json()
+        .await
+        .context("Failed to parse Microsoft token response")?;
+
+    Ok(token_response)
 }
 
 /// Authenticate with Xbox Live using Microsoft token
 async fn authenticate_with_xbox_live(ms_access_token: &str) -> Result<(String, String)> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(StdDuration::from_secs(30))
+        .build()?;
 
     let request_body = XboxLiveAuthRequest {
         properties: XboxLiveProperties {
@@ -373,7 +436,9 @@ async fn authenticate_with_xbox_live(ms_access_token: &str) -> Result<(String, S
 
 /// Get XSTS token using Xbox Live token
 async fn get_xsts_token(xbox_token: &str) -> Result<(String, String)> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(StdDuration::from_secs(30))
+        .build()?;
 
     let request_body = XSTSAuthRequest {
         properties: XSTSProperties {
@@ -421,10 +486,15 @@ async fn get_xsts_token(xbox_token: &str) -> Result<(String, String)> {
 
 /// Authenticate with Minecraft using XSTS token
 async fn authenticate_minecraft_token(xsts_token: &str, user_hash: &str) -> Result<String> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(StdDuration::from_secs(30))
+        .build()?;
 
-    let identity_token = format!("XBL3.0 x={};{}", user_hash, xsts_token);
-    let request_body = MinecraftAuthRequest { identity_token };
+    let xtoken = format!("XBL3.0 x={};{}", user_hash, xsts_token);
+    let request_body = MinecraftAuthRequest {
+        xtoken,
+        platform: "PC_LAUNCHER".to_string(),
+    };
 
     let response = client
         .post(MINECRAFT_AUTH_URL)
@@ -454,14 +524,20 @@ async fn authenticate_minecraft_token(xsts_token: &str, user_hash: &str) -> Resu
 
 /// Check if user owns Minecraft
 async fn check_minecraft_ownership(mc_access_token: &str) -> Result<bool> {
-    let client = reqwest::Client::new();
+    println!("DEBUG: check_minecraft_ownership called");
+    let client = reqwest::Client::builder()
+        .timeout(StdDuration::from_secs(30))
+        .build()?;
 
+    println!("DEBUG: Checking Minecraft entitlements");
     let response = client
         .get(MINECRAFT_ENTITLEMENTS_URL)
         .bearer_auth(mc_access_token)
         .send()
         .await
         .context("Failed to check Minecraft ownership")?;
+
+    println!("DEBUG: Entitlements response status: {}", response.status());
 
     if !response.status().is_success() {
         return Ok(false);
@@ -481,14 +557,20 @@ async fn check_minecraft_ownership(mc_access_token: &str) -> Result<bool> {
 
 /// Fetch Minecraft player profile
 async fn get_minecraft_profile(mc_access_token: &str) -> Result<MinecraftProfileResponse> {
-    let client = reqwest::Client::new();
+    println!("DEBUG: get_minecraft_profile called");
+    let client = reqwest::Client::builder()
+        .timeout(StdDuration::from_secs(30))
+        .build()?;
 
+    println!("DEBUG: Fetching Minecraft profile from API");
     let response = client
         .get(MINECRAFT_PROFILE_URL)
         .bearer_auth(mc_access_token)
         .send()
         .await
         .context("Failed to fetch Minecraft profile")?;
+
+    println!("DEBUG: Profile response status: {}", response.status());
 
     if !response.status().is_success() {
         let status = response.status();
@@ -504,6 +586,147 @@ async fn get_minecraft_profile(mc_access_token: &str) -> Result<MinecraftProfile
         .json()
         .await
         .context("Failed to parse Minecraft profile")
+}
+
+/// Request a device code from Microsoft
+async fn request_device_code() -> Result<DeviceCodeResponse> {
+    let http_client = reqwest::Client::builder()
+        .timeout(StdDuration::from_secs(30))
+        .build()
+        .context("Failed to create HTTP client")?;
+
+    let params = [
+        ("client_id", MICROSOFT_CLIENT_ID),
+        ("scope", "XboxLive.signin offline_access"),
+    ];
+
+    let response = http_client
+        .post(MICROSOFT_DEVICE_CODE_URL)
+        .form(&params)
+        .send()
+        .await
+        .context("Failed to request device code from Microsoft")?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!(
+            "Device code request failed with status {}: {}",
+            status,
+            text
+        ));
+    }
+
+    response
+        .json()
+        .await
+        .context("Failed to parse device code response")
+}
+
+/// Poll Microsoft for token after user completes device code authentication
+async fn poll_for_token(device_code: String, interval: u64) -> Result<MicrosoftTokenResponse> {
+    let http_client = reqwest::Client::builder()
+        .timeout(StdDuration::from_secs(30))
+        .build()
+        .context("Failed to create HTTP client")?;
+
+    let params = [
+        ("client_id", MICROSOFT_CLIENT_ID),
+        ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+        ("device_code", device_code.as_str()),
+    ];
+
+    // Poll with the specified interval
+    loop {
+        tokio::time::sleep(StdDuration::from_secs(interval)).await;
+
+        let response = http_client
+            .post(MICROSOFT_TOKEN_URL)
+            .form(&params)
+            .send()
+            .await
+            .context("Failed to poll for token")?;
+
+        if response.status().is_success() {
+            let token_response: MicrosoftTokenResponse = response
+                .json()
+                .await
+                .context("Failed to parse token response")?;
+            return Ok(token_response);
+        }
+
+        // Check for specific errors
+        let error_text = response.text().await.unwrap_or_default();
+
+        if error_text.contains("authorization_pending") {
+            // User hasn't completed auth yet, continue polling
+            println!("Waiting for user to complete authentication...");
+            continue;
+        } else if error_text.contains("authorization_declined") {
+            return Err(anyhow!("User declined the authentication request"));
+        } else if error_text.contains("expired_token") {
+            return Err(anyhow!("Device code expired. Please try again."));
+        } else {
+            return Err(anyhow!("Authentication failed: {}", error_text));
+        }
+    }
+}
+
+/// Get device code info for user to complete authentication
+pub async fn get_device_code() -> Result<DeviceCodeInfo> {
+    let device_code_response = request_device_code().await?;
+
+    Ok(DeviceCodeInfo {
+        device_code: device_code_response.device_code,
+        user_code: device_code_response.user_code,
+        verification_uri: device_code_response.verification_uri,
+        expires_in: device_code_response.expires_in,
+        interval: device_code_response.interval,
+    })
+}
+
+/// Complete authentication after user has entered device code
+pub async fn complete_device_code_auth(device_code: String, interval: u64) -> Result<MinecraftProfile> {
+    // Poll for Microsoft token
+    let ms_token = poll_for_token(device_code, interval).await?;
+    println!("Obtained Microsoft access token via device code");
+
+    // Continue with Xbox Live → XSTS → Minecraft flow (same as before)
+    let (xbox_token, _) = authenticate_with_xbox_live(&ms_token.access_token).await?;
+    println!("Authenticated with Xbox Live");
+
+    let (xsts_token, user_hash) = get_xsts_token(&xbox_token).await?;
+    println!("Obtained XSTS token");
+
+    let mc_access_token = authenticate_minecraft_token(&xsts_token, &user_hash).await?;
+    println!("Authenticated with Minecraft");
+
+    let owns_minecraft = check_minecraft_ownership(&mc_access_token).await?;
+    if !owns_minecraft {
+        return Err(anyhow!("This Microsoft account does not own Minecraft Java Edition"));
+    }
+    println!("Verified Minecraft ownership");
+
+    let profile_response = get_minecraft_profile(&mc_access_token).await?;
+    println!("Fetched player profile: {}", profile_response.name);
+
+    let expires_at = Utc::now() + Duration::seconds(ms_token.expires_in as i64);
+
+    let profile = MinecraftProfile {
+        uuid: profile_response.id,
+        username: profile_response.name,
+        access_token: mc_access_token,
+        skin_url: profile_response
+            .skins
+            .and_then(|skins| skins.first().map(|s| s.url.clone())),
+        refresh_token: ms_token.refresh_token,
+        expires_at: Some(expires_at),
+    };
+
+    save_user_profile(&profile)?;
+    println!("Saved profile to secure storage");
+
+    Ok(profile)
 }
 
 /// Microsoft OAuth authentication flow for Minecraft
@@ -623,32 +846,39 @@ pub async fn refresh_token() -> Result<MinecraftProfile> {
 
     println!("Refreshing expired access token...");
 
-    // Build OAuth client
-    let client = BasicClient::new(
-        ClientId::new(MICROSOFT_CLIENT_ID.to_string()),
-        None,
-        AuthUrl::new(MICROSOFT_AUTH_URL.to_string())?,
-        Some(TokenUrl::new(MICROSOFT_TOKEN_URL.to_string())?),
-    )
-    .set_redirect_uri(RedirectUrl::new(REDIRECT_URI.to_string())?);
+    // Request new token using refresh token with timeout
+    let http_client = reqwest::Client::builder()
+        .timeout(StdDuration::from_secs(30))
+        .build()
+        .context("Failed to create HTTP client")?;
 
-    // Request new token using refresh token
-    let token_result = client
-        .exchange_refresh_token(&RefreshToken::new(refresh_token))
-        .request_async(oauth2::reqwest::async_http_client)
+    let params = [
+        ("client_id", MICROSOFT_CLIENT_ID),
+        ("refresh_token", &refresh_token),
+        ("grant_type", "refresh_token"),
+    ];
+
+    let response = http_client
+        .post(MICROSOFT_TOKEN_URL)
+        .form(&params)
+        .send()
         .await
-        .context("Failed to refresh access token")?;
+        .context("Failed to send refresh token request to Microsoft")?;
 
-    let ms_token = MicrosoftTokenResponse {
-        access_token: token_result.access_token().secret().to_string(),
-        refresh_token: token_result
-            .refresh_token()
-            .map(|t| t.secret().to_string()),
-        expires_in: token_result
-            .expires_in()
-            .map(|d| d.as_secs())
-            .unwrap_or(3600),
-    };
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!(
+            "Token refresh failed with status {}: {}",
+            status,
+            text
+        ));
+    }
+
+    let ms_token: MicrosoftTokenResponse = response
+        .json()
+        .await
+        .context("Failed to parse Microsoft token response")?;
 
     println!("Obtained new Microsoft access token");
 
@@ -673,6 +903,100 @@ pub async fn refresh_token() -> Result<MinecraftProfile> {
     println!("Refreshed tokens saved to secure storage");
 
     Ok(updated_profile)
+}
+
+/// Get the Minecraft directory path based on the current OS
+fn get_minecraft_dir() -> Result<PathBuf> {
+    let minecraft_dir = if cfg!(target_os = "windows") {
+        let appdata = std::env::var("APPDATA")
+            .context("APPDATA environment variable not set")?;
+        PathBuf::from(appdata).join(".minecraft")
+    } else if cfg!(target_os = "macos") {
+        let home = std::env::var("HOME")
+            .context("HOME environment variable not set")?;
+        PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+            .join("minecraft")
+    } else {
+        // Linux
+        let home = std::env::var("HOME")
+            .context("HOME environment variable not set")?;
+        PathBuf::from(home).join(".minecraft")
+    };
+
+    Ok(minecraft_dir)
+}
+
+/// Read and parse the official Minecraft launcher's launcher_profiles.json
+fn read_launcher_profiles() -> Result<LauncherProfiles> {
+    let minecraft_dir = get_minecraft_dir()?;
+    let profiles_path = minecraft_dir.join("launcher_profiles.json");
+
+    println!("Looking for official launcher at: {}", profiles_path.display());
+
+    if !profiles_path.exists() {
+        return Err(anyhow!(
+            "Official Minecraft launcher profiles not found at {}. \
+            Please install and log in to the official Minecraft launcher first.",
+            profiles_path.display()
+        ));
+    }
+
+    let contents = std::fs::read_to_string(&profiles_path)
+        .context("Failed to read launcher_profiles.json")?;
+
+    let profiles: LauncherProfiles = serde_json::from_str(&contents)
+        .context("Failed to parse launcher_profiles.json. The file may be corrupted.")?;
+
+    Ok(profiles)
+}
+
+/// Authenticate using credentials from the official Minecraft launcher
+pub async fn authenticate_from_official_launcher() -> Result<MinecraftProfile> {
+    println!("Attempting to authenticate using official Minecraft launcher credentials...");
+
+    let profiles = read_launcher_profiles()?;
+
+    // Get the selected user account
+    let selected = profiles
+        .selected_user
+        .ok_or_else(|| anyhow!("No user selected in official Minecraft launcher. Please log in to the official launcher first."))?;
+
+    println!("Found selected account: {}", selected.account);
+
+    let account = profiles
+        .authentication_database
+        .get(&selected.account)
+        .ok_or_else(|| anyhow!("Selected account not found in authentication database"))?;
+
+    let profile_info = account
+        .profiles
+        .get(&selected.profile)
+        .ok_or_else(|| anyhow!("Selected profile not found"))?;
+
+    println!("Found profile: {}", profile_info.display_name);
+
+    // Create MinecraftProfile from official launcher data
+    let profile = MinecraftProfile {
+        uuid: selected.profile.clone(),
+        username: profile_info.display_name.clone(),
+        access_token: account.access_token.clone(),
+        skin_url: None,
+        refresh_token: None,
+        expires_at: None,
+    };
+
+    // Store in keyring for persistence
+    save_user_profile(&profile)
+        .context("Failed to store credentials in secure storage")?;
+
+    println!(
+        "Successfully authenticated as {} using official launcher credentials",
+        profile.username
+    );
+
+    Ok(profile)
 }
 
 #[cfg(test)]

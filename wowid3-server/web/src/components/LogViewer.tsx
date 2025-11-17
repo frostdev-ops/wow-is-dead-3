@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -46,6 +46,12 @@ export function LogViewer() {
     autoFollowRef.current = atBottom;
     if (atBottom) {
       setPendingCount(0);
+      // When user scrolls back to bottom, ensure we're exactly at the end
+      requestAnimationFrame(() => {
+        if (autoFollowRef.current) {
+          jumpToBottom(false);
+        }
+      });
     }
   };
 
@@ -56,6 +62,8 @@ export function LogViewer() {
       const buffered = bufferRef.current;
       if (buffered.length === 0) return;
 
+      const wasAtBottom = autoFollowRef.current;
+
       setEntries((prev) => {
         const merged = [...prev, ...buffered];
         bufferRef.current = [];
@@ -64,7 +72,7 @@ export function LogViewer() {
           merged.length > MAX_LINES ? merged.slice(merged.length - MAX_LINES) : merged;
 
         // If user isn't at bottom, track pending count
-        if (!autoFollowRef.current) {
+        if (!wasAtBottom) {
           const added = merged.length - prev.length;
           setPendingCount((c) => c + added);
         }
@@ -72,10 +80,15 @@ export function LogViewer() {
         return trimmed;
       });
 
-      // Smoothly auto-follow only when near the bottom
-      if (autoFollowRef.current) {
-        // Use smooth scroll only once per batch for performance
-        requestAnimationFrame(() => jumpToBottom(true));
+      // Auto-scroll to new logs if user was at the bottom
+      // Use requestAnimationFrame to ensure DOM has updated
+      if (wasAtBottom) {
+        requestAnimationFrame(() => {
+          // Double-check we're still at bottom (user might have scrolled)
+          if (autoFollowRef.current) {
+            jumpToBottom(true);
+          }
+        });
       }
     }, BATCH_MS);
   };
@@ -91,8 +104,17 @@ export function LogViewer() {
         if (!isMounted) return;
         const mapped = res.data.map((text) => ({ id: idRef.current++, text }));
         setEntries(mapped);
-        // Start scrolled to bottom on first load
-        requestAnimationFrame(() => jumpToBottom(false));
+        // Start scrolled to bottom on first load and enable auto-follow
+        autoFollowRef.current = true;
+        requestAnimationFrame(() => {
+          jumpToBottom(false);
+          // Ensure we're at bottom after initial load
+          setTimeout(() => {
+            if (isMounted && autoFollowRef.current) {
+              jumpToBottom(false);
+            }
+          }, 100);
+        });
       })
       .catch(() => {});
 
@@ -127,30 +149,44 @@ export function LogViewer() {
     autoFollowRef.current = true;
     setPendingCount(0);
     jumpToBottom(true);
+    // Ensure we stay at bottom after jumping
+    requestAnimationFrame(() => {
+      if (autoFollowRef.current) {
+        jumpToBottom(false);
+      }
+    });
   };
 
   return (
-    <div className="bg-[#1a0f0f] border-2 border-[#0f8a5f] rounded-xl p-6 h-full flex flex-col backdrop-blur-sm shadow-[0_0_20px_rgba(15,138,95,0.2)]">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-2xl font-bold text-white">Server Logs</h2>
+    <div className="bg-[#1a0f0f] border-2 border-[#0f8a5f] rounded-xl p-6 flex flex-col backdrop-blur-sm shadow-[0_0_20px_rgba(15,138,95,0.2)]">
+      <div className="flex items-center justify-between mb-4 flex-shrink-0 pb-4 border-b border-gray-800/50">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
+          <h2 className="text-2xl font-bold text-white">Server Logs</h2>
+          <span className="text-xs text-gray-500 font-mono bg-gray-900/50 px-2 py-1 rounded border border-gray-800">
+            {entries.length} lines
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-black/30 rounded-lg border border-gray-800">
             <div
-              className={`w-3 h-3 rounded-full ${
-                isConnected ? "bg-green-500 animate-pulse" : "bg-red-500"
-              } shadow-lg`}
+              className={`w-2.5 h-2.5 rounded-full ${
+                isConnected ? "bg-green-500 animate-pulse shadow-lg shadow-green-500/50" : "bg-red-500 shadow-lg shadow-red-500/50"
+              }`}
             />
-            <span className="text-sm text-gray-400 font-medium">
-              {isConnected ? "Connected" : "Disconnected"}
+            <span className="text-xs text-gray-400 font-medium">
+              {isConnected ? "Live" : "Offline"}
             </span>
           </div>
           {pendingCount > 0 && !autoFollowRef.current && (
-            <button
+            <motion.button
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
               onClick={handleJumpToLatest}
-              className="px-3 py-1 rounded bg-[#0f8a5f] text-white font-medium hover:bg-[#0c6b4a] transition-colors"
+              className="px-4 py-1.5 rounded-lg bg-[#0f8a5f] text-white font-medium hover:bg-[#0c6b4a] transition-all shadow-lg shadow-[#0f8a5f]/30 hover:shadow-[#0f8a5f]/50 flex items-center gap-2"
             >
+              <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
               {pendingCount} new
-            </button>
+            </motion.button>
           )}
         </div>
       </div>
@@ -158,178 +194,170 @@ export function LogViewer() {
       <div
         ref={scrollContainerRef}
         onScroll={onScroll}
-        className="flex-1 overflow-y-auto bg-black rounded-lg p-4 font-mono text-sm border border-gray-800 shadow-inner"
-        style={{ willChange: "transform" }}
+        className="overflow-y-auto bg-gradient-to-b from-black via-gray-950 to-black rounded-lg border border-gray-800 shadow-inner relative"
+        style={{ 
+          willChange: "transform",
+          height: "600px",
+          maxHeight: "70vh"
+        }}
       >
+        {/* Subtle grid pattern overlay */}
+        <div 
+          className="absolute inset-0 opacity-[0.03] pointer-events-none"
+          style={{
+            backgroundImage: `
+              linear-gradient(to right, white 1px, transparent 1px),
+              linear-gradient(to bottom, white 1px, transparent 1px)
+            `,
+            backgroundSize: '20px 20px'
+          }}
+        />
+        
         {entries.length === 0 ? (
-          <div className="text-gray-500">No logs available</div>
+          <div className="text-gray-500 p-4 text-center">No logs available</div>
         ) : (
-          <motion.div layout="position">
+          <motion.div layout="position" className="relative z-10">
             <AnimatePresence initial={false}>
-              {entries.map((entry) => (
-                <motion.div
-                  key={entry.id}
-                  layout="position"
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.12, ease: "easeOut" }}
-                  className={formatLogLine(entry.text)}
-                >
-                  <span className="whitespace-pre-wrap">{entry.text}</span>
-                </motion.div>
-              ))}
+              {entries.map((entry, index) => {
+                const { className, bgClassName } = formatLogLine(entry.text);
+                const timestamp = extractTimestamp(entry.text);
+                const lineNumber = index + 1;
+                
+                return (
+                  <motion.div
+                    key={entry.id}
+                    layout="position"
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15, ease: "easeOut" }}
+                    className={`group px-4 py-1.5 ${bgClassName} hover:bg-opacity-30 transition-colors duration-150 border-b border-gray-800/30`}
+                  >
+                    <div className="flex items-start gap-3">
+                      {/* Line number */}
+                      <span className="text-gray-600 text-xs font-mono select-none flex-shrink-0 min-w-[3rem] text-right group-hover:text-gray-500 transition-colors">
+                        {lineNumber.toString().padStart(4, '0')}
+                      </span>
+                      
+                      {/* Timestamp */}
+                      {timestamp && (
+                        <span className="text-gray-500 text-xs font-mono flex-shrink-0 min-w-[4rem]">
+                          {timestamp}
+                        </span>
+                      )}
+                      
+                      {/* Log content */}
+                      <span className={`${className} whitespace-pre-wrap break-words flex-1 font-mono text-[13px] leading-relaxed`}>
+                        {highlightSyntax(entry.text)}
+                      </span>
+                    </div>
+                  </motion.div>
+                );
+              })}
             </AnimatePresence>
           </motion.div>
         )}
-        <div ref={endRef} />
+        <div ref={endRef} className="h-2" />
       </div>
     </div>
   );
 }
 
-function formatLogLine(line: string) {
-  if (line.includes("[STDOUT]")) {
-    return "text-green-400";
-  } else if (line.includes("[STDERR]")) {
-    return "text-red-400";
-  } else if (line.includes("[CMD]")) {
-    return "text-yellow-400";
-  } else if (line.includes("ERROR") || line.includes("error")) {
-    return "text-red-500";
-  } else if (line.includes("WARN") || line.includes("warn")) {
-    return "text-yellow-500";
+function formatLogLine(line: string): { className: string; bgClassName: string } {
+  const lowerLine = line.toLowerCase();
+  
+  // Command logs
+  if (line.includes("[CMD]")) {
+    return { 
+      className: "text-yellow-300 font-semibold", 
+      bgClassName: "bg-yellow-900/20 border-l-2 border-yellow-500/50" 
+    };
   }
-  return "text-gray-300";
+  
+  // Error logs
+  if (lowerLine.includes("error") || line.includes("[STDERR]")) {
+    return { 
+      className: "text-red-300 font-medium", 
+      bgClassName: "bg-red-900/15 border-l-2 border-red-500/50" 
+    };
+  }
+  
+  // Warning logs
+  if (lowerLine.includes("warn") || lowerLine.includes("warning")) {
+    return { 
+      className: "text-yellow-400 font-medium", 
+      bgClassName: "bg-yellow-900/10 border-l-2 border-yellow-500/30" 
+    };
+  }
+  
+  // Success/Info logs
+  if (lowerLine.includes("done") || lowerLine.includes("success") || lowerLine.includes("loaded")) {
+    return { 
+      className: "text-green-300", 
+      bgClassName: "bg-green-900/10 border-l-2 border-green-500/30" 
+    };
+  }
+  
+  // Info/STDOUT logs
+  if (line.includes("[STDOUT]") || lowerLine.includes("info")) {
+    return { 
+      className: "text-blue-300", 
+      bgClassName: "bg-blue-900/10 border-l-2 border-blue-500/20" 
+    };
+  }
+  
+  // Debug logs
+  if (lowerLine.includes("debug") || lowerLine.includes("[debug]")) {
+    return { 
+      className: "text-purple-300", 
+      bgClassName: "bg-purple-900/10 border-l-2 border-purple-500/20" 
+    };
+  }
+  
+  // Default
+  return { 
+    className: "text-gray-300", 
+    bgClassName: "bg-gray-900/5 border-l-2 border-gray-700/20" 
+  };
 }
-import { useEffect, useRef, useState } from "react";
-import axios from "axios";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
+function extractTimestamp(line: string): string | null {
+  // Try to extract Minecraft-style timestamps like [12:34:56] or [HH:mm:ss]
+  const timestampMatch = line.match(/\[(\d{2}:\d{2}:\d{2})\]/);
+  if (timestampMatch) {
+    return timestampMatch[1];
+  }
+  // Try ISO timestamp
+  const isoMatch = line.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/);
+  if (isoMatch) {
+    return isoMatch[1].split('T')[1].split('.')[0]; // Extract time part only
+  }
+  return null;
+}
 
-export function LogViewer() {
-  const [logs, setLogs] = useState<string[]>([]);
-  const [isConnected, setIsConnected] = useState(false);
-  const logEndRef = useRef<HTMLDivElement>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
-
-  const scrollToBottom = () => {
-    if (logEndRef.current) {
-      // Use instant scroll for performance, smooth is expensive
-      logEndRef.current.scrollIntoView({ behavior: "auto" });
+function highlightSyntax(line: string): React.ReactElement {
+  const parts: React.ReactElement[] = [];
+  let lastIndex = 0;
+  
+  // Highlight URLs
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  let match;
+  while ((match = urlRegex.exec(line)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(<span key={lastIndex}>{line.substring(lastIndex, match.index)}</span>);
     }
-  };
-
-  useEffect(() => {
-    let isMounted = true;
-    let abortController = new AbortController();
-
-    // Load initial logs
-    axios
-      .get<string[]>(`${API_BASE}/logs?tail=100`, {
-        signal: abortController.signal,
-      })
-      .then((response) => {
-        if (isMounted) {
-          setLogs(response.data);
-          scrollToBottom();
-        }
-      })
-      .catch((error) => {
-        if (error.name !== 'CanceledError' && isMounted) {
-          console.error("Failed to load logs:", error);
-        }
-      });
-
-    // Connect to SSE stream
-    const eventSource = new EventSource(`${API_BASE}/logs/stream`);
-    eventSourceRef.current = eventSource;
-
-    eventSource.onopen = () => {
-      if (isMounted) {
-        setIsConnected(true);
-      }
-    };
-
-    eventSource.onerror = () => {
-      if (isMounted) {
-        setIsConnected(false);
-      }
-    };
-
-    eventSource.onmessage = (event) => {
-      if (isMounted) {
-        setLogs((prev) => {
-          const newLogs = [...prev, event.data];
-          // Keep only last 500 lines to reduce memory
-          return newLogs.slice(-500);
-        });
-        // Throttle scroll to bottom
-        requestAnimationFrame(() => {
-          if (isMounted) {
-            scrollToBottom();
-          }
-        });
-      }
-    };
-
-    return () => {
-      isMounted = false;
-      abortController.abort();
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
-    };
-  }, []);
-
-  // Remove this effect - we handle scrolling in onmessage callback
-  // Too many re-renders with this effect
-
-  const formatLogLine = (line: string) => {
-    // Color code different log types
-    if (line.includes("[STDOUT]")) {
-      return "text-green-400";
-    } else if (line.includes("[STDERR]")) {
-      return "text-red-400";
-    } else if (line.includes("[CMD]")) {
-      return "text-yellow-400";
-    } else if (line.includes("ERROR") || line.includes("error")) {
-      return "text-red-500";
-    } else if (line.includes("WARN") || line.includes("warn")) {
-      return "text-yellow-500";
-    }
-    return "text-gray-300";
-  };
-
-  return (
-    <div className="bg-[#1a0f0f] border-2 border-[#0f8a5f] rounded-xl p-6 h-full flex flex-col backdrop-blur-sm shadow-[0_0_20px_rgba(15,138,95,0.2)]">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-2xl font-bold text-white">Server Logs</h2>
-        <div className="flex items-center gap-2">
-          <div
-            className={`w-3 h-3 rounded-full ${
-              isConnected ? "bg-green-500 animate-pulse" : "bg-red-500"
-            } shadow-lg`}
-          ></div>
-          <span className="text-sm text-gray-400 font-medium">
-            {isConnected ? "Connected" : "Disconnected"}
-          </span>
-        </div>
-      </div>
-      <div className="flex-1 overflow-y-auto bg-black rounded-lg p-4 font-mono text-sm border border-gray-800 shadow-inner">
-        {logs.length === 0 ? (
-          <div className="text-gray-500">No logs available</div>
-        ) : (
-          logs.map((log, index) => (
-            <div key={index} className={`${formatLogLine(log)} whitespace-pre-wrap`}>
-              {log}
-            </div>
-          ))
-        )}
-        <div ref={logEndRef} />
-      </div>
-    </div>
-  );
+    parts.push(
+      <span key={match.index} className="text-blue-400 underline hover:text-blue-300">
+        {match[0]}
+      </span>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  
+  if (lastIndex < line.length) {
+    parts.push(<span key={lastIndex}>{line.substring(lastIndex)}</span>);
+  }
+  
+  return parts.length > 0 ? <>{parts}</> : <>{line}</>;
 }
 

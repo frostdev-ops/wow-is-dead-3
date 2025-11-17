@@ -41,78 +41,61 @@ impl ServerManager {
         }
 
         *state = ServerState::Starting;
-        drop(state); // Release lock while doing error-prone operations
 
-        // Perform all error-prone operations
-        let result: Result<()> = async {
-            // Find server jar
-            let jar_path = find_jar_file(&self.config.server_dir)?
-                .ok_or_else(|| anyhow::anyhow!("No server jar found in {:?}", self.config.server_dir))?;
+        // Find server jar
+        let jar_path = find_jar_file(&self.config.server_dir)?
+            .ok_or_else(|| anyhow::anyhow!("No server jar found in {:?}", self.config.server_dir))?;
 
-            // Create log channel
-            let (log_tx, mut log_rx) = mpsc::unbounded_channel();
+        // Create log channel
+        let (log_tx, mut log_rx) = mpsc::unbounded_channel();
 
-            // Spawn log collector task
-            let logs = self.logs.clone();
-            tokio::spawn(async move {
-                // Limit to prevent memory issues
-                let max_logs = 500;
-                while let Some(msg) = log_rx.recv().await {
-                    let mut logs_guard = logs.write().await;
-                    logs_guard.push(msg);
-                    // Keep only last N lines - more aggressive cleanup
-                    if logs_guard.len() > max_logs {
-                        let to_remove = logs_guard.len() - max_logs;
-                        logs_guard.drain(0..to_remove);
-                    }
+        // Spawn log collector task
+        let logs = self.logs.clone();
+        tokio::spawn(async move {
+            // Limit to prevent memory issues
+            let max_logs = 500;
+            while let Some(msg) = log_rx.recv().await {
+                let mut logs_guard = logs.write().await;
+                logs_guard.push(msg);
+                // Keep only last N lines - more aggressive cleanup
+                if logs_guard.len() > max_logs {
+                    let to_remove = logs_guard.len() - max_logs;
+                    logs_guard.drain(0..to_remove);
                 }
-            });
-
-            // Start process
-            let process = MinecraftProcess::new(
-                jar_path,
-                self.config.server_dir.clone(),
-                self.config.java_path.clone(),
-                self.config.jvm_args.clone(),
-                self.config.min_ram_mb,
-                self.config.max_ram_mb,
-                log_tx,
-            )?;
-
-            // Store process
-            *self.process.lock().await = Some(process);
-            *self.started_at.write().await = Some(SystemTime::now());
-
-            Ok(())
-        }.await;
-
-        // Handle result and update state appropriately
-        match result {
-            Ok(_) => {
-                *self.state.write().await = ServerState::Running;
-
-                // Monitor process exit
-                let process_handle = self.process.clone();
-                let state_monitor = self.state.clone();
-                let started_at_monitor = self.started_at.clone();
-
-                tokio::spawn(async move {
-                    let mut process_guard = process_handle.lock().await;
-                    if let Some(mut proc) = process_guard.take() {
-                        let _ = proc.wait().await;
-                        *state_monitor.write().await = ServerState::Stopped;
-                        *started_at_monitor.write().await = None;
-                    }
-                });
-
-                Ok(())
             }
-            Err(e) => {
-                // Reset state to Stopped on error
-                *self.state.write().await = ServerState::Stopped;
-                Err(e)
+        });
+
+        // Start process
+        let process = MinecraftProcess::new(
+            jar_path,
+            self.config.server_dir.clone(),
+            self.config.java_path.clone(),
+            self.config.jvm_args.clone(),
+            self.config.min_ram_mb,
+            self.config.max_ram_mb,
+            log_tx,
+        )?;
+
+        // Store process
+        *self.process.lock().await = Some(process);
+        *self.started_at.write().await = Some(SystemTime::now());
+        *state = ServerState::Running;
+
+        // Monitor process exit
+        let process_handle = self.process.clone();
+        let state_monitor = self.state.clone();
+        let started_at_monitor = self.started_at.clone();
+        
+        tokio::spawn(async move {
+            let mut process_guard = process_handle.lock().await;
+            if let Some(mut proc) = process_guard.take() {
+                let _ = proc.wait().await;
+                *state_monitor.write().await = ServerState::Stopped;
+                *started_at_monitor.write().await = None;
             }
-        }
+        });
+
+        Ok(())
     }
 
     pub async fn stop(&self) -> Result<()> {

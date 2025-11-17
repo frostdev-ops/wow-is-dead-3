@@ -1,0 +1,23 @@
+{
+  "id": "light",
+  "name": "Light",
+  "colors": {
+    "primary": "#dc2626",
+    "secondary": "#059669",
+    "background": "#f8fafc",
+    "surface": "#e2e8f0",
+    "text": "#1e293b",
+    "accent": "#f59e0b",
+    "error": "#dc2626",
+    "success": "#16a34a",
+    "warning": "#d97706"
+  },
+  "fonts": {
+    "heading": "Inter",
+    "body": "Inter"
+  },
+  "animations": {
+    "snowfall": false,
+    "lights": false
+  }
+}

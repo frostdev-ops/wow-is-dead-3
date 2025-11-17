@@ -1,6 +1,6 @@
 mod modules;
 
-use modules::auth::{authenticate_minecraft, get_current_user, logout, refresh_token, MinecraftProfile};
+use modules::auth::{authenticate_minecraft, authenticate_from_official_launcher, get_current_user, logout, refresh_token, get_device_code, complete_device_code_auth, MinecraftProfile, DeviceCodeInfo};
 use modules::discord::{DiscordClient, GamePresence};
 use modules::minecraft::{launch_game, LaunchConfig};
 use modules::server::{ping_server, ServerStatus};
@@ -13,6 +13,13 @@ use tauri::{AppHandle, Emitter, State};
 #[tauri::command]
 async fn cmd_authenticate() -> Result<MinecraftProfile, String> {
     authenticate_minecraft()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cmd_authenticate_official_launcher() -> Result<MinecraftProfile, String> {
+    authenticate_from_official_launcher()
         .await
         .map_err(|e| e.to_string())
 }
@@ -32,6 +39,20 @@ async fn cmd_refresh_token() -> Result<MinecraftProfile, String> {
 #[tauri::command]
 fn cmd_logout() -> Result<(), String> {
     logout().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cmd_get_device_code() -> Result<DeviceCodeInfo, String> {
+    get_device_code()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cmd_complete_device_code_auth(device_code: String, interval: u64) -> Result<MinecraftProfile, String> {
+    complete_device_code_auth(device_code, interval)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // Minecraft Launch Commands
@@ -132,9 +153,12 @@ pub fn run() {
         .manage(DiscordClient::new())
         .invoke_handler(tauri::generate_handler![
             cmd_authenticate,
+            cmd_authenticate_official_launcher,
             cmd_get_current_user,
             cmd_refresh_token,
             cmd_logout,
+            cmd_get_device_code,
+            cmd_complete_device_code_auth,
             cmd_launch_game,
             cmd_ping_server,
             cmd_check_updates,
