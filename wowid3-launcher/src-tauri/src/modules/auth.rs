@@ -26,16 +26,10 @@
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use keyring::Entry;
-use oauth2::{
-    basic::BasicClient, AuthUrl, ClientId, CsrfToken, PkceCodeChallenge,
-    PkceCodeVerifier, RedirectUrl, Scope, TokenUrl,
-};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
-use std::net::TcpListener;
 use std::path::PathBuf;
-use std::time::{Duration as StdDuration, Instant};
+use std::time::Duration as StdDuration;
 
 const KEYRING_SERVICE: &str = "wowid3-launcher";
 const KEYRING_USER: &str = "minecraft-auth";
@@ -44,10 +38,8 @@ const KEYRING_USER: &str = "minecraft-auth";
 /// Microsoft Azure AD client ID for Minecraft authentication.
 /// Using MultiMC's client ID which is approved for third-party launchers
 const MICROSOFT_CLIENT_ID: &str = "499546d9-bbfe-4b9b-a086-eb3d75afb78f";
-const MICROSOFT_AUTH_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize";
 const MICROSOFT_DEVICE_CODE_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode";
 const MICROSOFT_TOKEN_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
-const REDIRECT_URI: &str = "http://localhost:23947/callback";
 
 // Xbox Live & Minecraft API endpoints
 const XBOX_LIVE_AUTH_URL: &str = "https://user.auth.xboxlive.com/user/authenticate";
@@ -219,170 +211,6 @@ struct ProfileInfo {
     display_name: String,
 }
 
-/// Start local HTTP server and wait for OAuth callback
-fn start_oauth_server() -> Result<(String, PkceCodeVerifier)> {
-    let listener = TcpListener::bind("127.0.0.1:23947")
-        .context("Failed to bind to port 23947. Is another instance running?")?;
-
-    // Set non-blocking mode for timeout support
-    listener
-        .set_nonblocking(true)
-        .context("Failed to set listener to non-blocking mode")?;
-
-    // Generate PKCE challenge
-    let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
-
-    // Build OAuth client
-    let client = BasicClient::new(
-        ClientId::new(MICROSOFT_CLIENT_ID.to_string()),
-        None,
-        AuthUrl::new(MICROSOFT_AUTH_URL.to_string())?,
-        Some(TokenUrl::new(MICROSOFT_TOKEN_URL.to_string())?),
-    )
-    .set_redirect_uri(RedirectUrl::new(REDIRECT_URI.to_string())?);
-
-    // Generate authorization URL
-    let (auth_url, _csrf_token) = client
-        .authorize_url(CsrfToken::new_random)
-        .add_scope(Scope::new("XboxLive.signin".to_string()))
-        .add_scope(Scope::new("offline_access".to_string()))
-        .set_pkce_challenge(pkce_challenge)
-        .url();
-
-    // Open browser
-    println!("Opening browser for authentication: {}", auth_url);
-    if let Err(e) = open::that(auth_url.as_str()) {
-        eprintln!("Failed to open browser automatically: {}. Please open this URL manually: {}", e, auth_url);
-    }
-
-    // Wait for callback with 5-minute timeout
-    println!("Waiting for OAuth callback on port 23947...");
-    let timeout = StdDuration::from_secs(300); // 5 minutes
-    let start_time = Instant::now();
-
-    loop {
-        // Check if timeout has elapsed
-        if start_time.elapsed() > timeout {
-            return Err(anyhow!(
-                "OAuth authentication timed out after 5 minutes. Please try again."
-            ));
-        }
-
-        // Try to accept a connection (non-blocking)
-        match listener.accept() {
-            Ok((mut stream, _)) => {
-                let mut reader = BufReader::new(&stream);
-                let mut request_line = String::new();
-
-                if let Err(e) = reader.read_line(&mut request_line) {
-                    eprintln!("Failed to read request line: {}", e);
-                    continue;
-                }
-
-                // Parse the request path
-                let request_path = match request_line.split_whitespace().nth(1) {
-                    Some(path) => path,
-                    None => {
-                        eprintln!("Invalid request format, ignoring");
-                        continue;
-                    }
-                };
-
-                // Parse URL and look for authorization code
-                let url = match url::Url::parse(&format!("http://localhost{}", request_path)) {
-                    Ok(url) => url,
-                    Err(_) => {
-                        // Not a valid URL, might be favicon.ico or other browser request
-                        eprintln!("Ignoring non-OAuth request: {}", request_path);
-                        continue;
-                    }
-                };
-
-                // Check if this request has an authorization code
-                if let Some((_, code_value)) = url.query_pairs().find(|(key, _)| key == "code") {
-                    let code = code_value.to_string();
-
-                    // Send success response to browser
-                    let response = "HTTP/1.1 200 OK\r\n\r\n\
-                        <html><body><h1>Authentication Successful!</h1>\
-                        <p>You can close this window and return to the launcher.</p>\
-                        <script>window.close();</script></body></html>";
-
-                    if let Err(e) = stream.write_all(response.as_bytes()) {
-                        eprintln!("Failed to send response to browser: {}", e);
-                    }
-                    if let Err(e) = stream.flush() {
-                        eprintln!("Failed to flush response: {}", e);
-                    }
-
-                    return Ok((code, pkce_verifier));
-                } else {
-                    // Request doesn't have a code parameter, might be favicon or other request
-                    eprintln!("Ignoring request without authorization code: {}", request_path);
-
-                    // Send a simple response to close the connection gracefully
-                    let response = "HTTP/1.1 404 Not Found\r\n\r\n";
-                    let _ = stream.write_all(response.as_bytes());
-                    let _ = stream.flush();
-                    continue;
-                }
-            }
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                // No connection ready yet, sleep briefly and try again
-                std::thread::sleep(StdDuration::from_millis(100));
-                continue;
-            }
-            Err(e) => {
-                return Err(anyhow!("Failed to accept connection: {}", e));
-            }
-        }
-    }
-}
-
-/// Exchange authorization code for Microsoft access token
-async fn exchange_code_for_token(
-    code: String,
-    pkce_verifier: PkceCodeVerifier,
-) -> Result<MicrosoftTokenResponse> {
-    // Use reqwest directly with a 30 second timeout instead of oauth2's default client
-    let http_client = reqwest::Client::builder()
-        .timeout(StdDuration::from_secs(30))
-        .build()
-        .context("Failed to create HTTP client")?;
-
-    let params = [
-        ("client_id", MICROSOFT_CLIENT_ID),
-        ("code", &code),
-        ("redirect_uri", REDIRECT_URI),
-        ("grant_type", "authorization_code"),
-        ("code_verifier", pkce_verifier.secret()),
-    ];
-
-    let response = http_client
-        .post(MICROSOFT_TOKEN_URL)
-        .form(&params)
-        .send()
-        .await
-        .context("Failed to send token exchange request to Microsoft")?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Err(anyhow!(
-            "Microsoft token exchange failed with status {}: {}",
-            status,
-            text
-        ));
-    }
-
-    let token_response: MicrosoftTokenResponse = response
-        .json()
-        .await
-        .context("Failed to parse Microsoft token response")?;
-
-    Ok(token_response)
-}
-
 /// Authenticate with Xbox Live using Microsoft token
 async fn authenticate_with_xbox_live(ms_access_token: &str) -> Result<(String, String)> {
     let client = reqwest::Client::builder()
@@ -524,20 +352,16 @@ async fn authenticate_minecraft_token(xsts_token: &str, user_hash: &str) -> Resu
 
 /// Check if user owns Minecraft
 async fn check_minecraft_ownership(mc_access_token: &str) -> Result<bool> {
-    println!("DEBUG: check_minecraft_ownership called");
     let client = reqwest::Client::builder()
         .timeout(StdDuration::from_secs(30))
         .build()?;
 
-    println!("DEBUG: Checking Minecraft entitlements");
     let response = client
         .get(MINECRAFT_ENTITLEMENTS_URL)
         .bearer_auth(mc_access_token)
         .send()
         .await
         .context("Failed to check Minecraft ownership")?;
-
-    println!("DEBUG: Entitlements response status: {}", response.status());
 
     if !response.status().is_success() {
         return Ok(false);
@@ -557,20 +381,16 @@ async fn check_minecraft_ownership(mc_access_token: &str) -> Result<bool> {
 
 /// Fetch Minecraft player profile
 async fn get_minecraft_profile(mc_access_token: &str) -> Result<MinecraftProfileResponse> {
-    println!("DEBUG: get_minecraft_profile called");
     let client = reqwest::Client::builder()
         .timeout(StdDuration::from_secs(30))
         .build()?;
 
-    println!("DEBUG: Fetching Minecraft profile from API");
     let response = client
         .get(MINECRAFT_PROFILE_URL)
         .bearer_auth(mc_access_token)
         .send()
         .await
         .context("Failed to fetch Minecraft profile")?;
-
-    println!("DEBUG: Profile response status: {}", response.status());
 
     if !response.status().is_success() {
         let status = response.status();
@@ -723,65 +543,6 @@ pub async fn complete_device_code_auth(device_code: String, interval: u64) -> Re
         expires_at: Some(expires_at),
     };
 
-    save_user_profile(&profile)?;
-    println!("Saved profile to secure storage");
-
-    Ok(profile)
-}
-
-/// Microsoft OAuth authentication flow for Minecraft
-pub async fn authenticate_minecraft() -> Result<MinecraftProfile> {
-    println!("Starting Microsoft OAuth authentication...");
-
-    // Step 1: Get authorization code from OAuth flow
-    let (code, pkce_verifier) = start_oauth_server()?;
-    println!("Received authorization code");
-
-    // Step 2: Exchange code for Microsoft access token
-    let ms_token = exchange_code_for_token(code, pkce_verifier).await?;
-    println!("Obtained Microsoft access token");
-
-    // Step 3: Authenticate with Xbox Live
-    let (xbox_token, _xbox_user_hash) = authenticate_with_xbox_live(&ms_token.access_token).await?;
-    println!("Authenticated with Xbox Live");
-
-    // Step 4: Get XSTS token
-    let (xsts_token, user_hash) = get_xsts_token(&xbox_token).await?;
-    println!("Obtained XSTS token");
-
-    // Step 5: Authenticate with Minecraft
-    let mc_access_token = authenticate_minecraft_token(&xsts_token, &user_hash).await?;
-    println!("Authenticated with Minecraft");
-
-    // Step 6: Check game ownership
-    let owns_minecraft = check_minecraft_ownership(&mc_access_token).await?;
-    if !owns_minecraft {
-        return Err(anyhow!(
-            "This Microsoft account does not own Minecraft Java Edition"
-        ));
-    }
-    println!("Verified Minecraft ownership");
-
-    // Step 7: Fetch player profile
-    let profile_response = get_minecraft_profile(&mc_access_token).await?;
-    println!("Fetched player profile: {}", profile_response.name);
-
-    // Calculate token expiration
-    let expires_at = Utc::now() + Duration::seconds(ms_token.expires_in as i64);
-
-    // Build final profile
-    let profile = MinecraftProfile {
-        uuid: profile_response.id,
-        username: profile_response.name,
-        access_token: mc_access_token,
-        skin_url: profile_response
-            .skins
-            .and_then(|skins| skins.first().map(|s| s.url.clone())),
-        refresh_token: ms_token.refresh_token,
-        expires_at: Some(expires_at),
-    };
-
-    // Save to keyring
     save_user_profile(&profile)?;
     println!("Saved profile to secure storage");
 
@@ -1110,14 +871,17 @@ mod tests {
     #[test]
     fn test_minecraft_auth_request_serialization() {
         let request = MinecraftAuthRequest {
-            identity_token: "XBL3.0 x=hash;token".to_string(),
+            xtoken: "XBL3.0 x=hash;token".to_string(),
+            platform: "PC_LAUNCHER".to_string(),
         };
 
         let json = serde_json::to_string(&request).unwrap();
 
-        // Check camelCase for identityToken
-        assert!(json.contains("\"identityToken\""));
+        // Check field names
+        assert!(json.contains("\"xtoken\""));
+        assert!(json.contains("\"platform\""));
         assert!(json.contains("XBL3.0"));
+        assert!(json.contains("PC_LAUNCHER"));
     }
 
     #[test]
@@ -1137,15 +901,14 @@ mod tests {
 
     #[test]
     fn test_constants() {
-        // Verify critical constants are set correctly
-        assert_eq!(MICROSOFT_CLIENT_ID, "00000000402b5328");
-        assert_eq!(REDIRECT_URI, "http://localhost:23947/callback");
+        // Verify critical constants are set correctly (MultiMC's approved client ID)
+        assert_eq!(MICROSOFT_CLIENT_ID, "499546d9-bbfe-4b9b-a086-eb3d75afb78f");
         assert_eq!(KEYRING_SERVICE, "wowid3-launcher");
         assert_eq!(KEYRING_USER, "minecraft-auth");
 
         // Verify API endpoints use HTTPS
-        assert!(MICROSOFT_AUTH_URL.starts_with("https://"));
         assert!(MICROSOFT_TOKEN_URL.starts_with("https://"));
+        assert!(MICROSOFT_DEVICE_CODE_URL.starts_with("https://"));
         assert!(XBOX_LIVE_AUTH_URL.starts_with("https://"));
         assert!(XSTS_AUTH_URL.starts_with("https://"));
         assert!(MINECRAFT_AUTH_URL.starts_with("https://"));

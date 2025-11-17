@@ -1,66 +1,80 @@
 mod api;
+mod config;
 mod models;
-mod modules;
-mod utils;
+mod storage;
 
-use axum::{Router, routing::get};
-use dotenv::dotenv;
-use std::net::SocketAddr;
+use api::public::{get_latest_manifest, get_manifest_by_version, serve_file, PublicState};
+use axum::{
+    response::Json,
+    routing::get,
+    Router,
+};
+use config::Config;
+use serde_json::json;
 use std::sync::Arc;
-use tower_http::cors::{Any, CorsLayer};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-use modules::config::Config;
-use modules::server_manager::ServerManager;
+use tower_http::cors::CorsLayer;
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Load .env file
-    dotenv().ok();
-
     // Initialize tracing
-    tracing_subscriber::registry()
-        .with(
+    tracing_subscriber::fmt()
+        .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "wowid3_server=info,tower_http=debug".into()),
+                .unwrap_or_else(|_| "info".into()),
         )
-        .with(tracing_subscriber::fmt::layer())
         .init();
 
     // Load configuration
     let config = Config::from_env()?;
-    tracing::info!("Starting wowid3-server manager");
-    tracing::info!("Server directory: {:?}", config.server_dir);
-    tracing::info!("API will listen on {}:{}", config.api_host, config.api_port);
+    info!("Loaded configuration");
+    info!("Storage path: {:?}", config.storage_path());
+    info!("API listening on {}:{}", config.api_host, config.api_port);
 
-    // Create server manager
-    let manager = Arc::new(ServerManager::new(config.clone()));
+    // Create storage directories
+    tokio::fs::create_dir_all(config.releases_path()).await?;
+    tokio::fs::create_dir_all(config.uploads_path()).await?;
+    info!("Storage directories initialized");
 
-    // Build application
+    // Create shared state for public API
+    let public_state = PublicState {
+        config: Arc::new(config.clone()),
+    };
+
+    // Build CORS layer
+    let cors = if let Some(origin) = &config.cors_origin {
+        CorsLayer::permissive() // Dev mode
+            .allow_origin(origin.parse::<http::HeaderValue>().unwrap())
+    } else {
+        CorsLayer::permissive() // Production
+    };
+
+    // Build public API router
+    let api_routes = Router::new()
+        .route("/api/manifest/latest", get(get_latest_manifest))
+        .route("/api/manifest/:version", get(get_manifest_by_version))
+        .route("/files/:version/*path", get(serve_file))
+        .with_state(public_state);
+
+    // Build main router
     let app = Router::new()
-        .route("/", get(health_check))
-        .nest("/api/server", api::server::router())
-        .nest("/api/logs", api::logs::router())
-        .nest("/api/stats", api::stats::router())
-        .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any),
-        )
-        .with_state(manager);
+        .route("/health", get(health_check))
+        .merge(api_routes)
+        .layer(cors);
 
     // Start server
-    let addr = SocketAddr::from(([0, 0, 0, 0], config.api_port));
-    tracing::info!("Server manager API listening on http://{}", addr);
-
+    let addr = format!("{}:{}", config.api_host, config.api_port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
+    info!("Server running on {}", addr);
+
     axum::serve(listener, app).await?;
 
     Ok(())
 }
 
-async fn health_check() -> &'static str {
-    "OK"
+async fn health_check() -> Json<serde_json::Value> {
+    Json(json!({
+        "status": "ok",
+        "service": "wowid3-modpack-server"
+    }))
 }
-

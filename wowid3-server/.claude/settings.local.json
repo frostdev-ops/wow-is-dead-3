@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(superpowers:systematic-debugging)",
+      "Bash(/home/james/.cargo/bin/cargo check:*)",
+      "Bash(rustup show:*)",
+      "Bash(PATH=\"/home/james/.cargo/bin:$PATH\" cargo check:*)",
+      "Bash(env -i HOME=/home/james PATH=/home/james/.cargo/bin:/usr/bin bash -c 'cargo --version && cargo check 2>&1':*)",
+      "Bash(ss:*)",
+      "Bash(netstat:*)",
+      "Bash(pgrep:*)",
+      "Bash(env -i HOME=/home/james PATH=/home/james/.cargo/bin:/usr/bin bash -c 'cargo run')",
+      "Bash(journalctl:*)",
+      "Bash(cat:*)",
+      "Bash(./start.sh:*)",
+      "Bash(git checkout:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

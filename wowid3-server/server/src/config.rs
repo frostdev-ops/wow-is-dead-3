@@ -1,0 +1,86 @@
+use serde::Deserialize;
+use std::path::PathBuf;
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Config {
+    #[serde(default = "default_admin_password")]
+    pub admin_password: String,
+
+    #[serde(default = "default_storage_path")]
+    pub storage_path: PathBuf,
+
+    #[serde(default = "default_api_port")]
+    pub api_port: u16,
+
+    #[serde(default = "default_api_host")]
+    pub api_host: String,
+
+    #[serde(default)]
+    pub cors_origin: Option<String>,
+
+    #[serde(default = "default_base_url")]
+    pub base_url: String,
+}
+
+fn default_admin_password() -> String {
+    "changeme".to_string()
+}
+
+fn default_storage_path() -> PathBuf {
+    PathBuf::from("../storage")
+}
+
+fn default_api_port() -> u16 {
+    8080
+}
+
+fn default_api_host() -> String {
+    "0.0.0.0".to_string()
+}
+
+fn default_base_url() -> String {
+    "https://wowid-launcher.frostdev.io".to_string()
+}
+
+impl Config {
+    pub fn from_env() -> anyhow::Result<Self> {
+        dotenvy::dotenv().ok(); // Load .env file if it exists
+
+        let config = envy::from_env::<Config>()?;
+
+        // Validate admin password is set
+        if config.admin_password == "changeme" {
+            eprintln!("WARNING: Using default admin password. Set ADMIN_PASSWORD in .env");
+        }
+
+        Ok(config)
+    }
+
+    pub fn storage_path(&self) -> &PathBuf {
+        &self.storage_path
+    }
+
+    pub fn releases_path(&self) -> PathBuf {
+        self.storage_path.join("releases")
+    }
+
+    pub fn uploads_path(&self) -> PathBuf {
+        self.storage_path.join("uploads")
+    }
+
+    pub fn blacklist_path(&self) -> PathBuf {
+        self.storage_path.join("config-blacklist.txt")
+    }
+
+    pub fn latest_manifest_path(&self) -> PathBuf {
+        self.storage_path.join("latest.json")
+    }
+
+    pub fn release_path(&self, version: &str) -> PathBuf {
+        self.releases_path().join(version)
+    }
+
+    pub fn manifest_path(&self, version: &str) -> PathBuf {
+        self.release_path(version).join("manifest.json")
+    }
+}

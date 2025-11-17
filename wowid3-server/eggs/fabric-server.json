@@ -1,0 +1,232 @@
+{
+  "_comment": "Pterodactyl Egg for Fabric Modded Minecraft Server with Zulu 21 Java",
+  "meta": {
+    "version": "1.0.0",
+    "description": "High-performance Fabric modded Minecraft server with bundled Zulu 21 Java runtime. Optimized for modded servers with performance-tuned JVM arguments.",
+    "author": "WOWID3"
+  },
+  "exported_at": "2025-11-17T00:00:00+00:00",
+  "name": "Fabric Server",
+  "author": "wowid3@example.com",
+  "description": "High-performance Fabric modded Minecraft server with bundled Zulu 21 Java. Optimized JVM settings for modded servers.",
+  "docker_image": "ghcr.io/pterodactyl/yolks:java_21",
+  "config": {
+    "files": {
+      "server.properties": {
+        "parser": "properties",
+        "find": {
+          "server-ip": {
+            "server-ip": "{{server.build.default.ip}}"
+          },
+          "server-port": {
+            "server-port": "{{server.build.default.port}}"
+          },
+          "max-players": {
+            "max-players": "{{SERVER_MAX_PLAYERS}}"
+          },
+          "view-distance": {
+            "view-distance": "{{SERVER_VIEW_DISTANCE}}"
+          },
+          "simulation-distance": {
+            "simulation-distance": "{{SERVER_SIMULATION_DISTANCE}}"
+          },
+          "difficulty": {
+            "difficulty": "{{SERVER_DIFFICULTY}}"
+          },
+          "hardcore": {
+            "hardcore": "{{SERVER_HARDCORE}}"
+          },
+          "pvp": {
+            "pvp": "{{SERVER_PVP}}"
+          },
+          "online-mode": {
+            "online-mode": "{{SERVER_ONLINE_MODE}}"
+          },
+          "white-list": {
+            "white-list": "{{SERVER_WHITELIST}}"
+          },
+          "motd": {
+            "motd": "{{SERVER_MOTD}}"
+          }
+        }
+      }
+    },
+    "startup": {
+      "done": "Done \\([0-9]+\\.[0-9]+s\\)! For help, type \"help\"",
+      "userInteraction": []
+    },
+    "stop": "stop",
+    "logs": {
+      "custom": false,
+      "location": "logs/latest.log"
+    },
+    "extends": null
+  },
+  "scripts": {
+    "installation": {
+      "script": "#!/bin/bash\n# Fabric Server Installation Script\n# Verifies Java installation and sets up server environment\n\n# Verify Java installation (Zulu 21)\necho \"Verifying Java installation...\"\nif ! command -v java &> /dev/null; then\n    echo \"ERROR: Java is not installed or not in PATH\"\n    exit 1\nfi\n\n# Check Java version\necho \"Java version:\"\njava -version\n\n# Verify it's Java 21 or higher\nJAVA_VERSION=$(java -version 2>&1 | head -n 1 | cut -d'\"' -f2 | cut -d'.' -f1)\nif [ \"$JAVA_VERSION\" -lt 21 ]; then\n    echo \"WARNING: Java version is less than 21. Recommended: Java 21+\"\nfi\n\n# Check for server.jar\nif [ ! -f \"{{SERVER_JARFILE}}\" ]; then\n    echo \"WARNING: {{SERVER_JARFILE}} not found. Please upload your server JAR file.\"\n    echo \"Expected location: $(pwd)/{{SERVER_JARFILE}}\"\nfi\n\n# Create necessary directories\necho \"Creating server directories...\"\nmkdir -p world logs mods config kubejs/server_scripts kubejs/startup_scripts\n\n# Set up EULA if not present\nif [ ! -f \"eula.txt\" ]; then\n    echo \"Creating eula.txt...\"\n    echo \"eula=true\" > eula.txt\nfi\n\n# Create initial server.properties if not present\nif [ ! -f \"server.properties\" ]; then\n    echo \"Creating default server.properties...\"\n    cat > server.properties << 'EOF'\n#Minecraft server properties\nmotd=A Minecraft Server\nserver-port=25565\nmax-players=20\nonline-mode=true\nwhite-list=false\npvp=true\ndifficulty=easy\nhardcore=false\nview-distance=10\nsimulation-distance=10\nspawn-protection=16\nmax-tick-time=60000\nenable-command-block=false\nenable-query=false\nenable-rcon=false\nresource-pack=\nresource-pack-prompt=\nEOF\nfi\n\n# Set proper permissions\necho \"Setting file permissions...\"\nchmod 755 .\nchmod 644 eula.txt server.properties 2>/dev/null || true\nfind . -type d -exec chmod 755 {} \\;\nfind . -type f -exec chmod 644 {} \\;\nchmod +x {{SERVER_JARFILE}} 2>/dev/null || true\n\n# Verify installation\necho \"Installation complete!\"\necho \"Server JAR: {{SERVER_JARFILE}}\"\necho \"Java: $(which java)\"\necho \"Java Version: $(java -version 2>&1 | head -n 1)\"\n",
+      "container": "ubuntu:22.04",
+      "entrypoint": "bash"
+    }
+  },
+  "variables": [
+    {
+      "name": "SERVER_JARFILE",
+      "description": "The name of the server JAR file to run",
+      "env_variable": "SERVER_JARFILE",
+      "default_value": "server.jar",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|regex:/^[\\w\\d._-]+\\.jar$/",
+      "required": true,
+      "server_value": null,
+      "display_name": "Server JAR File"
+    },
+    {
+      "name": "JVM_ARGS",
+      "description": "Additional JVM arguments for optimal performance. Default includes G1GC tuning for modded servers.",
+      "env_variable": "JVM_ARGS",
+      "default_value": "-XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=32M -XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC -XX:+AlwaysPreTouch -Dfile.encoding=UTF-8 -Duser.country=US -Duser.language=en",
+      "user_viewable": true,
+      "user_editable": false,
+      "rules": "string|max:5000",
+      "required": false,
+      "server_value": null,
+      "display_name": "JVM Arguments"
+    },
+    {
+      "name": "MIN_MEMORY",
+      "description": "Minimum heap size in MB. Should be equal to or less than MAX_MEMORY. Defaults to SERVER_MEMORY if not set.",
+      "env_variable": "MIN_MEMORY",
+      "default_value": "{{SERVER_MEMORY}}",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|integer|min:512|max:32768",
+      "required": true,
+      "server_value": null,
+      "display_name": "Minimum Memory (MB)"
+    },
+    {
+      "name": "MAX_MEMORY",
+      "description": "Maximum heap size in MB. This is typically set to SERVER_MEMORY.",
+      "env_variable": "MAX_MEMORY",
+      "default_value": "{{SERVER_MEMORY}}",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|integer|min:512|max:32768",
+      "required": true,
+      "server_value": null,
+      "display_name": "Maximum Memory (MB)"
+    },
+    {
+      "name": "SERVER_MAX_PLAYERS",
+      "description": "Maximum number of players that can join the server",
+      "env_variable": "SERVER_MAX_PLAYERS",
+      "default_value": "20",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|integer|min:1|max:2147483647",
+      "required": true,
+      "server_value": null,
+      "display_name": "Max Players"
+    },
+    {
+      "name": "SERVER_VIEW_DISTANCE",
+      "description": "View distance in chunks (2-32)",
+      "env_variable": "SERVER_VIEW_DISTANCE",
+      "default_value": "10",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|integer|min:2|max:32",
+      "required": true,
+      "server_value": null,
+      "display_name": "View Distance"
+    },
+    {
+      "name": "SERVER_SIMULATION_DISTANCE",
+      "description": "Simulation distance in chunks (2-32)",
+      "env_variable": "SERVER_SIMULATION_DISTANCE",
+      "default_value": "10",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|integer|min:2|max:32",
+      "required": true,
+      "server_value": null,
+      "display_name": "Simulation Distance"
+    },
+    {
+      "name": "SERVER_DIFFICULTY",
+      "description": "Server difficulty (peaceful, easy, normal, hard)",
+      "env_variable": "SERVER_DIFFICULTY",
+      "default_value": "easy",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|in:peaceful,easy,normal,hard",
+      "required": true,
+      "server_value": null,
+      "display_name": "Difficulty"
+    },
+    {
+      "name": "SERVER_HARDCORE",
+      "description": "Enable hardcore mode (true/false)",
+      "env_variable": "SERVER_HARDCORE",
+      "default_value": "false",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|in:true,false",
+      "required": true,
+      "server_value": null,
+      "display_name": "Hardcore Mode"
+    },
+    {
+      "name": "SERVER_PVP",
+      "description": "Enable PvP (true/false)",
+      "env_variable": "SERVER_PVP",
+      "default_value": "true",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|in:true,false",
+      "required": true,
+      "server_value": null,
+      "display_name": "PvP"
+    },
+    {
+      "name": "SERVER_ONLINE_MODE",
+      "description": "Enable online mode (Mojang authentication) (true/false)",
+      "env_variable": "SERVER_ONLINE_MODE",
+      "default_value": "true",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|in:true,false",
+      "required": true,
+      "server_value": null,
+      "display_name": "Online Mode"
+    },
+    {
+      "name": "SERVER_WHITELIST",
+      "description": "Enable whitelist (true/false)",
+      "env_variable": "SERVER_WHITELIST",
+      "default_value": "false",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|in:true,false",
+      "required": true,
+      "server_value": null,
+      "display_name": "Whitelist"
+    },
+    {
+      "name": "SERVER_MOTD",
+      "description": "Message of the day displayed in server list",
+      "env_variable": "SERVER_MOTD",
+      "default_value": "A Minecraft Server",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:59",
+      "required": true,
+      "server_value": null,
+      "display_name": "MOTD"
+    }
+  ],
+  "startup": "java -Xms{{MIN_MEMORY}}M -Xmx{{MAX_MEMORY}}M {{JVM_ARGS}} -jar {{SERVER_JARFILE}} nogui"
+}
+
