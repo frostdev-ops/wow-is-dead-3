@@ -1,17 +1,41 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
-    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/* Christmas theme CSS variables */
+@theme {
+  --color-christmas-red: #c41e3a;
+  --color-christmas-green: #0f8a5f;
+  --color-christmas-gold: #ffd700;
+  --color-christmas-darkBg: #1a0f0f;
+  --color-christmas-snow: #ffffff;
 }
 
-#root {
-  min-height: 100vh;
+@layer base {
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
+      "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: var(--color-christmas-darkBg);
+    color: white;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+}
+
+@layer utilities {
+  .card-glow {
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.1), 0 0 40px rgba(255, 215, 0, 0.05);
+  }
+
+  .text-gradient {
+    background: linear-gradient(135deg, var(--color-christmas-gold), var(--color-christmas-green));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
 }
 

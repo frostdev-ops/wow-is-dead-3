@@ -24,7 +24,8 @@ export function useServer() {
     fetchStats();
 
     // Poll every 2 seconds when server is running
-    const startPolling = () => {
+    if (status?.state === "running") {
+      // Clear any existing interval
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
@@ -33,25 +34,21 @@ export function useServer() {
         fetchStatus();
         fetchStats();
       }, 2000);
-    };
+    } else {
+      // Clear interval when not running
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    }
 
-    const stopPolling = () => {
+    return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
     };
-
-    if (status?.state === "running") {
-      startPolling();
-    } else {
-      stopPolling();
-    }
-
-    return () => {
-      stopPolling();
-    };
-  }, [status?.state, fetchStatus, fetchStats]);
+  }, [status?.state]); // Only depend on state, not functions
 
   const canStart = status?.state === "stopped";
   const canStop = status?.state === "running";

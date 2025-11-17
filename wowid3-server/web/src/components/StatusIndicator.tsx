@@ -7,26 +7,26 @@ interface StatusIndicatorProps {
 export function StatusIndicator({ state }: StatusIndicatorProps) {
   if (!state) {
     return (
-      <div className="flex items-center gap-2">
-        <div className="w-3 h-3 rounded-full bg-gray-400 animate-pulse"></div>
-        <span className="text-gray-400">Unknown</span>
+      <div className="flex items-center gap-2 px-3 py-1 bg-black/30 rounded-full border border-gray-700">
+        <div className="w-2.5 h-2.5 rounded-full bg-gray-500 animate-pulse"></div>
+        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Unknown</span>
       </div>
     );
   }
 
   const config = {
-    stopped: { color: "bg-gray-500", label: "Stopped" },
-    starting: { color: "bg-yellow-500 animate-pulse", label: "Starting" },
-    running: { color: "bg-green-500", label: "Running" },
-    stopping: { color: "bg-red-500 animate-pulse", label: "Stopping" },
+    stopped: { color: "bg-gray-500", label: "Stopped", textColor: "text-gray-400" },
+    starting: { color: "bg-yellow-500 animate-pulse", label: "Starting", textColor: "text-yellow-400" },
+    running: { color: "bg-green-500", label: "Running", textColor: "text-green-400" },
+    stopping: { color: "bg-red-500 animate-pulse", label: "Stopping", textColor: "text-red-400" },
   };
 
-  const { color, label } = config[state] || config.stopped;
+  const { color, label, textColor } = config[state] || config.stopped;
 
   return (
-    <div className="flex items-center gap-2">
-      <div className={`w-3 h-3 rounded-full ${color}`}></div>
-      <span className="text-sm font-medium capitalize">{label}</span>
+    <div className={`flex items-center gap-2 px-3 py-1 bg-black/30 rounded-full border border-gray-700`}>
+      <div className={`w-2.5 h-2.5 rounded-full ${color} shadow-lg`}></div>
+      <span className={`text-xs font-semibold uppercase tracking-wide ${textColor}`}>{label}</span>
     </div>
   );
 }

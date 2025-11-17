@@ -32,27 +32,36 @@ async fn get_logs(
 
 async fn stream_logs(
     State(manager): State<Arc<ServerManager>>,
-) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+) -> Sse<impl Stream<Item = Result<Event, Infallible>> + Send + 'static> {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
-    // Send initial logs
-    let initial_logs = manager.get_logs(None).await;
+    // Send initial logs (limit to prevent huge initial send)
+    let initial_logs = manager.get_logs(Some(100)).await;
     for log in initial_logs {
-        let _ = tx.send(log);
+        let _ = tx.send(log); // Ignore errors, receiver might have disconnected
     }
 
     // Spawn task to periodically check for new logs
     let manager_clone = Arc::clone(&manager);
+    let tx_clone = tx.clone();
     tokio::spawn(async move {
-        let mut last_count = 0;
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(500));
+        let mut last_count = manager_clone.get_logs(None).await.len();
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(1000)); // Increased to 1s
+        
         loop {
             interval.tick().await;
+            
+            // Check if receiver is still alive before doing work
+            if tx_clone.is_closed() {
+                break;
+            }
+            
             let logs = manager_clone.get_logs(None).await;
             if logs.len() > last_count {
                 // Send only new logs
                 for log in logs.iter().skip(last_count) {
-                    if tx.send(log.clone()).is_err() {
+                    if tx_clone.send(log.clone()).is_err() {
+                        // Receiver dropped, stop
                         return;
                     }
                 }
@@ -62,7 +71,7 @@ async fn stream_logs(
     });
 
     let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx)
-        .map(|log| Ok(Event::default().data(log)));
+        .map(|log| Ok::<Event, Infallible>(Event::default().data(log)));
 
     Sse::new(stream)
 }

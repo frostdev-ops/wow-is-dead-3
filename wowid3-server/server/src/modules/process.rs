@@ -48,6 +48,7 @@ impl MinecraftProcess {
             .arg(&jar_path)
             .arg("nogui")
             .current_dir(&server_dir)
+            .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 

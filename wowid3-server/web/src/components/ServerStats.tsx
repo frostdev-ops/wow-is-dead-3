@@ -30,40 +30,40 @@ export function ServerStats() {
 
   if (!stats) {
     return (
-      <div className="bg-christmas-darkBg border border-christmas-green rounded-lg p-6">
-        <h2 className="text-2xl font-bold text-christmas-snow mb-4">Statistics</h2>
+      <div className="bg-[#1a0f0f] border-2 border-[#0f8a5f] rounded-xl p-6 backdrop-blur-sm shadow-[0_0_20px_rgba(15,138,95,0.2)]">
+        <h2 className="text-2xl font-bold text-white mb-4">Statistics</h2>
         <p className="text-gray-400">Loading...</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-christmas-darkBg border border-christmas-green rounded-lg p-6">
-      <h2 className="text-2xl font-bold text-christmas-snow mb-4">Statistics</h2>
+    <div className="bg-[#1a0f0f] border-2 border-[#0f8a5f] rounded-xl p-6 backdrop-blur-sm shadow-[0_0_20px_rgba(15,138,95,0.2)]">
+      <h2 className="text-2xl font-bold text-white mb-6">Statistics</h2>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div>
-          <div className="text-sm text-gray-400">Uptime</div>
-          <div className="text-lg font-semibold text-christmas-snow">
+        <div className="bg-black/30 rounded-lg p-4 border border-gray-800">
+          <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">Uptime</div>
+          <div className="text-xl font-bold text-[#ffd700]">
             {formatUptime(stats.status.uptime_seconds)}
           </div>
         </div>
-        <div>
-          <div className="text-sm text-gray-400">Memory Usage</div>
-          <div className="text-lg font-semibold text-christmas-snow">
+        <div className="bg-black/30 rounded-lg p-4 border border-gray-800">
+          <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">Memory</div>
+          <div className="text-xl font-bold text-[#0f8a5f]">
             {formatBytes(stats.memory_usage_mb)}
           </div>
         </div>
-        <div>
-          <div className="text-sm text-gray-400">CPU Usage</div>
-          <div className="text-lg font-semibold text-christmas-snow">
+        <div className="bg-black/30 rounded-lg p-4 border border-gray-800">
+          <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">CPU</div>
+          <div className="text-xl font-bold text-[#ffd700]">
             {stats.cpu_usage_percent !== null
               ? `${stats.cpu_usage_percent.toFixed(1)}%`
               : "N/A"}
           </div>
         </div>
-        <div>
-          <div className="text-sm text-gray-400">Players</div>
-          <div className="text-lg font-semibold text-christmas-snow">
+        <div className="bg-black/30 rounded-lg p-4 border border-gray-800">
+          <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">Players</div>
+          <div className="text-xl font-bold text-[#0f8a5f]">
             {stats.player_count !== null && stats.max_players !== null
               ? `${stats.player_count}/${stats.max_players}`
               : stats.player_count !== null
@@ -72,9 +72,9 @@ export function ServerStats() {
           </div>
         </div>
         {stats.tps !== null && (
-          <div>
-            <div className="text-sm text-gray-400">TPS</div>
-            <div className="text-lg font-semibold text-christmas-snow">
+          <div className="bg-black/30 rounded-lg p-4 border border-gray-800">
+            <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">TPS</div>
+            <div className="text-xl font-bold text-[#ffd700]">
               {stats.tps.toFixed(1)}
             </div>
           </div>

@@ -343,3 +343,245 @@ pub async fn start_server_polling(
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::thread;
+
+    /// Helper function to write a VarInt for testing
+    fn write_test_varint(value: i32) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        let mut val = value;
+        loop {
+            let mut temp = (val & 0x7F) as u8;
+            val >>= 7;
+            if val != 0 {
+                temp |= 0x80;
+            }
+            bytes.push(temp);
+            if val == 0 {
+                break;
+            }
+        }
+        bytes
+    }
+
+    /// Mock Minecraft server for testing
+    fn start_mock_server(port: u16, response_json: String) -> thread::JoinHandle<()> {
+        thread::spawn(move || {
+            let listener = TcpListener::bind(format!("127.0.0.1:{}", port))
+                .expect("Failed to bind mock server");
+            listener
+                .set_nonblocking(false)
+                .expect("Failed to set blocking");
+
+            if let Ok((mut stream, _)) = listener.accept() {
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .ok();
+                stream
+                    .set_write_timeout(Some(Duration::from_secs(2)))
+                    .ok();
+
+                // Read handshake packet
+                let mut buf = [0u8; 1024];
+                if stream.read(&mut buf).is_ok() {
+                    // Read status request packet
+                    if stream.read(&mut buf).is_ok() {
+                        // Send status response
+                        let json_bytes = response_json.as_bytes();
+                        let json_len = write_test_varint(json_bytes.len() as i32);
+
+                        // Calculate total packet length (packet ID + string length + string data)
+                        let packet_data_len = 1 + json_len.len() + json_bytes.len();
+                        let packet_len = write_test_varint(packet_data_len as i32);
+
+                        // Write packet
+                        stream.write_all(&packet_len).ok();
+                        stream.write_all(&[0x00]).ok(); // Packet ID
+                        stream.write_all(&json_len).ok();
+                        stream.write_all(json_bytes).ok();
+                        stream.flush().ok();
+                    }
+                }
+            }
+        })
+    }
+
+    #[tokio::test]
+    async fn test_parse_address_with_port() {
+        let result = parse_address("localhost:25565");
+        assert!(result.is_ok());
+        let (host, port) = result.unwrap();
+        assert_eq!(host, "localhost");
+        assert_eq!(port, 25565);
+    }
+
+    #[tokio::test]
+    async fn test_parse_address_without_port() {
+        let result = parse_address("localhost");
+        assert!(result.is_ok());
+        let (host, port) = result.unwrap();
+        assert_eq!(host, "localhost");
+        assert_eq!(port, 25565); // Default port
+    }
+
+    #[tokio::test]
+    async fn test_parse_address_invalid_port() {
+        let result = parse_address("localhost:invalid");
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_extract_motd_text_string() {
+        let json = serde_json::json!("Simple MOTD");
+        let motd = extract_motd_text(&json);
+        assert_eq!(motd, "Simple MOTD");
+    }
+
+    #[tokio::test]
+    async fn test_extract_motd_text_object() {
+        let json = serde_json::json!({
+            "text": "Server MOTD"
+        });
+        let motd = extract_motd_text(&json);
+        assert_eq!(motd, "Server MOTD");
+    }
+
+    #[tokio::test]
+    async fn test_extract_motd_text_with_extra() {
+        let json = serde_json::json!({
+            "text": "",
+            "extra": [
+                {"text": "Hello "},
+                {"text": "World"}
+            ]
+        });
+        let motd = extract_motd_text(&json);
+        assert_eq!(motd, "Hello World");
+    }
+
+    #[tokio::test]
+    async fn test_ping_server_offline() {
+        // Try to ping a server that definitely doesn't exist
+        let status = ping_server("localhost:54321").await.unwrap();
+        assert_eq!(status.online, false);
+        assert!(status.player_count.is_none());
+        assert!(status.max_players.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_ping_server_invalid_address() {
+        let status = ping_server("invalid:port:address").await.unwrap();
+        assert_eq!(status.online, false);
+        assert!(status.motd.is_some());
+        assert!(status.motd.unwrap().contains("Invalid address"));
+    }
+
+    #[tokio::test]
+    async fn test_ping_server_online() {
+        // Find an available port
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let response_json = r#"{
+            "version": {"name": "1.20.4"},
+            "players": {"max": 20, "online": 5, "sample": [
+                {"name": "Player1", "id": "uuid1"},
+                {"name": "Player2", "id": "uuid2"}
+            ]},
+            "description": {"text": "Test Server"}
+        }"#;
+
+        let _server = start_mock_server(port, response_json.to_string());
+
+        // Give server time to start
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let status = ping_server(&format!("127.0.0.1:{}", port))
+            .await
+            .unwrap();
+
+        assert_eq!(status.online, true);
+        assert_eq!(status.player_count, Some(5));
+        assert_eq!(status.max_players, Some(20));
+        assert_eq!(status.players.len(), 2);
+        assert_eq!(status.players[0], "Player1");
+        assert_eq!(status.players[1], "Player2");
+        assert_eq!(status.version, Some("1.20.4".to_string()));
+        assert_eq!(status.motd, Some("Test Server".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_get_player_list() {
+        // Find an available port
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let response_json = r#"{
+            "version": {"name": "1.20.4"},
+            "players": {"max": 20, "online": 3, "sample": [
+                {"name": "Alice", "id": "uuid1"},
+                {"name": "Bob", "id": "uuid2"},
+                {"name": "Charlie", "id": "uuid3"}
+            ]},
+            "description": "Test Server"
+        }"#;
+
+        let _server = start_mock_server(port, response_json.to_string());
+
+        // Give server time to start
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let players = get_player_list(&format!("127.0.0.1:{}", port))
+            .await
+            .unwrap();
+
+        assert_eq!(players.len(), 3);
+        assert_eq!(players[0], "Alice");
+        assert_eq!(players[1], "Bob");
+        assert_eq!(players[2], "Charlie");
+    }
+
+    #[tokio::test]
+    async fn test_varint_encoding() {
+        // Test VarInt encoding/decoding
+        let test_values = vec![0, 1, 127, 128, 255, 256, 32767, -1];
+
+        for value in test_values {
+            let bytes = write_test_varint(value);
+            assert!(!bytes.is_empty());
+            assert!(bytes.len() <= 5);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_server_timeout() {
+        // Create a server that accepts but never responds
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        thread::spawn(move || {
+            if let Ok((stream, _)) = listener.accept() {
+                // Accept connection but never send data
+                thread::sleep(Duration::from_secs(10));
+                drop(stream);
+            }
+        });
+
+        // Give server time to start
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Should timeout and return offline status
+        let status = ping_server(&format!("127.0.0.1:{}", port))
+            .await
+            .unwrap();
+
+        assert_eq!(status.online, false);
+    }
+}
