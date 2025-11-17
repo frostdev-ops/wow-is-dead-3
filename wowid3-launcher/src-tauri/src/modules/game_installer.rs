@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use super::asset_manager;
 use super::fabric_installer;
@@ -30,7 +32,7 @@ pub struct InstallProgress {
 /// Install Minecraft (vanilla or Fabric)
 pub async fn install_minecraft<F>(
     config: InstallConfig,
-    mut progress_callback: F,
+    progress_callback: F,
 ) -> Result<VersionMeta>
 where
     F: FnMut(InstallProgress) + Send + 'static,
@@ -38,28 +40,37 @@ where
     let game_dir = &config.game_dir;
     let cache_dir = game_dir.join(".cache");
 
+    // Wrap callback in Arc<Mutex<>> for thread-safe sharing
+    let progress_callback = Arc::new(Mutex::new(progress_callback));
+
     // Step 1: Fetch version metadata
-    progress_callback(InstallProgress {
-        step: "version_meta".to_string(),
-        current: 0,
-        total: 5,
-        current_bytes: 0,
-        total_bytes: 0,
-        message: format!("Fetching metadata for Minecraft {}", config.game_version),
-    });
+    {
+        let mut callback = progress_callback.lock().await;
+        callback(InstallProgress {
+            step: "version_meta".to_string(),
+            current: 0,
+            total: 5,
+            current_bytes: 0,
+            total_bytes: 0,
+            message: format!("Fetching metadata for Minecraft {}", config.game_version),
+        });
+    }
 
     let mut version_meta = get_version_meta(&config.game_version, &cache_dir).await?;
 
     // Step 2: Handle Fabric if requested
     if let Some(fabric_version) = &config.fabric_version {
-        progress_callback(InstallProgress {
-            step: "fabric".to_string(),
-            current: 1,
-            total: 5,
-            current_bytes: 0,
-            total_bytes: 0,
-            message: format!("Installing Fabric loader {}", fabric_version),
-        });
+        {
+            let mut callback = progress_callback.lock().await;
+            callback(InstallProgress {
+                step: "fabric".to_string(),
+                current: 1,
+                total: 5,
+                current_bytes: 0,
+                total_bytes: 0,
+                message: format!("Installing Fabric loader {}", fabric_version),
+            });
+        }
 
         let fabric_profile = fabric_installer::get_fabric_profile(
             &config.game_version,
@@ -78,14 +89,17 @@ where
     }
 
     // Step 3: Download client JAR
-    progress_callback(InstallProgress {
-        step: "client".to_string(),
-        current: 2,
-        total: 5,
-        current_bytes: 0,
-        total_bytes: 0,
-        message: "Downloading Minecraft client".to_string(),
-    });
+    {
+        let mut callback = progress_callback.lock().await;
+        callback(InstallProgress {
+            step: "client".to_string(),
+            current: 2,
+            total: 5,
+            current_bytes: 0,
+            total_bytes: 0,
+            message: "Downloading Minecraft client".to_string(),
+        });
+    }
 
     let versions_dir = game_dir.join("versions").join(&version_meta.id);
     tokio::fs::create_dir_all(&versions_dir).await?;
@@ -99,14 +113,17 @@ where
     .await?;
 
     // Step 4: Download libraries
-    progress_callback(InstallProgress {
-        step: "libraries".to_string(),
-        current: 3,
-        total: 5,
-        current_bytes: 0,
-        total_bytes: 0,
-        message: format!("Downloading {} libraries", version_meta.libraries.len()),
-    });
+    {
+        let mut callback = progress_callback.lock().await;
+        callback(InstallProgress {
+            step: "libraries".to_string(),
+            current: 3,
+            total: 5,
+            current_bytes: 0,
+            total_bytes: 0,
+            message: format!("Downloading {} libraries", version_meta.libraries.len()),
+        });
+    }
 
     let libraries_dir = game_dir.join("libraries");
     let features = HashMap::new(); // Default features (can be extended later)
@@ -124,27 +141,35 @@ where
     .await?;
 
     // Step 5: Download assets
-    progress_callback(InstallProgress {
-        step: "assets".to_string(),
-        current: 4,
-        total: 5,
-        current_bytes: 0,
-        total_bytes: 0,
-        message: "Downloading assets".to_string(),
-    });
+    {
+        let mut callback = progress_callback.lock().await;
+        callback(InstallProgress {
+            step: "assets".to_string(),
+            current: 4,
+            total: 5,
+            current_bytes: 0,
+            total_bytes: 0,
+            message: "Downloading assets".to_string(),
+        });
+    }
 
     let assets_dir = game_dir.join("assets");
     let asset_index = asset_manager::download_asset_index(&version_meta.asset_index, &assets_dir)
         .await?;
 
-    asset_manager::download_all_assets(&asset_index, &assets_dir, |current, total, current_bytes, total_bytes, msg| {
-        progress_callback(InstallProgress {
-            step: "assets".to_string(),
-            current: current as u64,
-            total: total as u64,
-            current_bytes,
-            total_bytes,
-            message: msg,
+    let progress_callback_clone = progress_callback.clone();
+    asset_manager::download_all_assets(&asset_index, &assets_dir, move |current, total, current_bytes, total_bytes, msg| {
+        let callback = progress_callback_clone.clone();
+        tokio::spawn(async move {
+            let mut cb = callback.lock().await;
+            cb(InstallProgress {
+                step: "assets".to_string(),
+                current: current as u64,
+                total: total as u64,
+                current_bytes,
+                total_bytes,
+                message: msg,
+            });
         });
     })
     .await?;
@@ -155,14 +180,17 @@ where
     tokio::fs::write(&version_json_path, version_json).await?;
 
     // Complete
-    progress_callback(InstallProgress {
-        step: "complete".to_string(),
-        current: 5,
-        total: 5,
-        current_bytes: 0,
-        total_bytes: 0,
-        message: "Installation complete".to_string(),
-    });
+    {
+        let mut callback = progress_callback.lock().await;
+        callback(InstallProgress {
+            step: "complete".to_string(),
+            current: 5,
+            total: 5,
+            current_bytes: 0,
+            total_bytes: 0,
+            message: "Installation complete".to_string(),
+        });
+    }
 
     Ok(version_meta)
 }
