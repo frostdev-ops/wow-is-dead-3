@@ -82,49 +82,21 @@ export const SkinViewerComponent = ({ username, uuid, skinUrl }: SkinViewerCompo
             console.log(`[SkinViewer] Rotated ${part.name} to sitting position`);
           }
 
-          // Adjust arms to rest on legs
+          // Adjust arms to extend forward (like resting on knees)
           if (part.name === 'leftArm') {
-            part.rotation.x = 0.3;
-            part.rotation.z = 0.1;
+            part.rotation.x = -0.8; // Extend forward
+            part.rotation.z = 0.2; // Angle outward slightly
           }
           if (part.name === 'rightArm') {
-            part.rotation.x = 0.3;
-            part.rotation.z = -0.1;
-
-            // Add a Minecraft cookie to the right hand
-            try {
-              // Get THREE.js constructors from existing skin3d objects to avoid version conflicts
-              const BoxGeometry = part.geometry.constructor;
-              const MeshBasicMaterial = part.material.constructor;
-              const Mesh = part.constructor;
-
-              // Create cookie geometry (flat square like Minecraft cookie)
-              const cookieGeometry = new BoxGeometry(4, 4, 1);
-
-              // Cookie texture color (brown cookie color)
-              const cookieMaterial = new MeshBasicMaterial({
-                color: 0xC68642, // Cookie brown
-              });
-
-              const cookie = new Mesh(cookieGeometry, cookieMaterial);
-
-              // Position cookie at the end of the arm (in the hand)
-              cookie.position.set(0, -8, 2); // Adjust to be at hand position
-              cookie.rotation.x = Math.PI / 6; // Tilt it a bit
-              cookie.rotation.z = Math.PI / 8;
-
-              part.add(cookie);
-              console.log('[SkinViewer] Added cookie to right hand');
-            } catch (err) {
-              console.error('[SkinViewer] Error adding cookie:', err);
-            }
+            part.rotation.x = -0.8; // Extend forward
+            part.rotation.z = -0.2; // Angle outward slightly
           }
 
-          // Slight body lean back
+          // Body rotation
           if (part.name === 'body') {
-            part.rotation.x = -0.1;
+            part.rotation.x = -0.2; // Slight backward lean
           }
-        });
+        })
       };
 
       // Try setting pose with delays to ensure model is loaded
