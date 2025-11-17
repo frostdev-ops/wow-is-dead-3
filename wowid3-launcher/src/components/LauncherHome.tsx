@@ -314,8 +314,8 @@ export default function LauncherHome() {
           {authLoading && 'Authenticating...'}
           {!authLoading && isLaunching && 'Launching...'}
           {!authLoading && isDownloading && 'Updating...'}
-          {!authLoading && !isLaunching && !isDownloading && !isAuthenticated && 'Login & Play'}
-          {!authLoading && !isLaunching && !isDownloading && isAuthenticated && updateAvailable && 'Update & Play'}
+          {!authLoading && !isLaunching && !isDownloading && !isAuthenticated && 'Login'}
+          {!authLoading && !isLaunching && !isDownloading && isAuthenticated && updateAvailable && 'Update'}
           {!authLoading && !isLaunching && !isDownloading && isAuthenticated && !updateAvailable && 'PLAY'}
           </button>
         </div>

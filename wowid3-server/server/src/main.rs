@@ -1,15 +1,22 @@
 mod api;
 mod config;
+mod middleware;
 mod models;
 mod storage;
 
+use api::admin::{
+    create_release, delete_release, get_blacklist, list_releases, login, update_blacklist,
+    upload_files, AdminState as AdminApiState,
+};
 use api::public::{get_latest_manifest, get_manifest_by_version, serve_file, PublicState};
 use axum::{
+    middleware as axum_middleware,
     response::Json,
-    routing::get,
+    routing::{delete, get, post, put},
     Router,
 };
 use config::Config;
+use middleware::auth::auth_middleware;
 use serde_json::json;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
@@ -34,11 +41,21 @@ async fn main() -> anyhow::Result<()> {
     // Create storage directories
     tokio::fs::create_dir_all(config.releases_path()).await?;
     tokio::fs::create_dir_all(config.uploads_path()).await?;
+    tokio::fs::create_dir_all(config.uploads_path()).await?;
     info!("Storage directories initialized");
+
+    let config_arc = Arc::new(config.clone());
 
     // Create shared state for public API
     let public_state = PublicState {
-        config: Arc::new(config.clone()),
+        config: config_arc.clone(),
+    };
+
+    // Create shared state for admin API
+    let admin_password = std::env::var("ADMIN_PASSWORD").unwrap_or_else(|_| "changeme".to_string());
+    let admin_state = AdminApiState {
+        config: config_arc.clone(),
+        admin_password: Arc::new(admin_password),
     };
 
     // Build CORS layer
@@ -50,16 +67,27 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // Build public API router
-    let api_routes = Router::new()
+    let public_routes = Router::new()
         .route("/api/manifest/latest", get(get_latest_manifest))
         .route("/api/manifest/:version", get(get_manifest_by_version))
         .route("/files/:version/*path", get(serve_file))
         .with_state(public_state);
 
+    // Build admin API router (with auth middleware)
+    let admin_routes = Router::new()
+        .route("/api/admin/login", post(login))
+        .route("/api/admin/upload", post(upload_files))
+        .route("/api/admin/releases", post(create_release).get(list_releases))
+        .route("/api/admin/releases/:version", delete(delete_release))
+        .route("/api/admin/blacklist", get(get_blacklist).put(update_blacklist))
+        .layer(middleware::from_fn(auth_middleware))
+        .with_state(admin_state);
+
     // Build main router
     let app = Router::new()
         .route("/health", get(health_check))
-        .merge(api_routes)
+        .merge(public_routes)
+        .merge(admin_routes)
         .layer(cors);
 
     // Start server
