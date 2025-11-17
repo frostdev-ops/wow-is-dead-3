@@ -1,23 +1,28 @@
 #!/bin/bash
-# WOWID3 Launcher Wrapper Script
-# Handles Wayland/X11 detection and sets appropriate environment variables
+
+# WOWID3 Launcher wrapper script for Wayland
+# This script sets the necessary environment variables for Wayland compatibility
+
+# Fix for WebKit DMABUF renderer issues on Wayland (especially with NVIDIA GPUs)
+export WEBKIT_DISABLE_DMABUF_RENDERER=1
+
+# Use the new GL renderer for better Wayland compatibility
+export GSK_RENDERER=ngl
+
+# Allow fallback from Wayland to X11 if needed
+export GDK_BACKEND=wayland,x11
+
+# Disable WebKit compositing mode for better window management stability
+export WEBKIT_DISABLE_COMPOSITING_MODE=1
+
+# Prefer GL over GLES for better stability
+export GDK_DEBUG=gl-prefer-gl
+
+# Explicitly set session type
+export XDG_SESSION_TYPE=wayland
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Determine the session type
-if [ -n "$WAYLAND_DISPLAY" ]; then
-    # Running on Wayland
-    export WEBKIT_DISABLE_DMABUF_RENDERER=1
-    export GSK_RENDERER=ngl
-    export GDK_BACKEND=wayland,x11
-elif [ -n "$DISPLAY" ]; then
-    # Running on X11
-    export GDK_BACKEND=x11
-else
-    # Fallback to X11
-    export GDK_BACKEND=x11
-fi
-
-# Launch the actual application
-exec "$SCRIPT_DIR/wowid3-launcher" "$@"
+# Run the launcher
+exec "$SCRIPT_DIR/src-tauri/target/release/wowid3-launcher" "$@"

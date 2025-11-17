@@ -36,3 +36,8 @@ wowid3-launcher/CLAUDE.md
 wowid3-launcher/package-lock.json
 wowid3-launcher/.claude/settings.local.json
 wowid3-launcher/src-tauri/Cargo.toml
+wowid3-server/eggs/fabric-server.json
+wowid3-server/server/target/release/.fingerprint/*
+wowid3-server/server/target/release/.fingerprint/
+wowid3-server/server/target/release/build/*
+wowid3-server/server/target/release/*

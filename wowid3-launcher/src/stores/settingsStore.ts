@@ -32,7 +32,7 @@ export const useSettingsStore = create<SettingsState>()(
       gameDirectory: './game',
       serverAddress: 'your-server.com:25565',
       theme: 'christmas',
-      manifestUrl: 'https://your-server.com/wowid3/manifest.json',
+      manifestUrl: 'https://wowid-launcher.frostdev.io/api/manifest/latest',
 
       setJavaPath: (path) => set({ javaPath: path }),
       setRamAllocation: (ram) => set({ ramAllocation: ram }),

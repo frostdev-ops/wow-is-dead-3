@@ -1,0 +1,22 @@
+[Unit]
+Description=WOWID3 Modpack Server
+After=network.target
+
+[Service]
+Type=simple
+User=wowid3
+WorkingDirectory=/opt/wowid3-server
+Environment="API_PORT=5566"
+Environment="API_HOST=127.0.0.1"
+Environment="STORAGE_PATH=/opt/wowid3-server/storage"
+Environment="RUST_LOG=info"
+# Update ADMIN_PASSWORD on deployment
+Environment=ADMIN_PASSWORD=EmoBeemo6716!
+ExecStart=/opt/wowid3-server/wowid3-modpack-server
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -14,7 +14,7 @@ import { listen } from '@tauri-apps/api/event';
 
 export default function LauncherHome() {
   const { user, isAuthenticated, login, finishDeviceCodeAuth, isLoading: authLoading, error: authError } = useAuth();
-  const { installedVersion, latestManifest, updateAvailable, isDownloading, downloadProgress, install, error: modpackError } = useModpack();
+  const { installedVersion, latestManifest, updateAvailable, isDownloading, downloadProgress, checkUpdates, install, error: modpackError } = useModpack();
   const { status } = useServer();
   const { ramAllocation, gameDirectory } = useSettingsStore();
   const { addToast } = useToast();
@@ -55,6 +55,32 @@ export default function LauncherHome() {
       addToast(`Welcome back, ${user.username}!`, 'success');
     }
   }, [isAuthenticated, user, authLoading, addToast]);
+
+  // Auto-check for updates and install modpack
+  useEffect(() => {
+    const checkAndInstall = async () => {
+      if (!isAuthenticated || authLoading || isDownloading) return;
+
+      try {
+        // Check for updates
+        console.log('[Modpack] Checking for updates...');
+        await checkUpdates();
+        console.log('[Modpack] Update check complete. Installed:', installedVersion, 'Latest:', latestManifest?.version);
+
+        // Auto-install if no modpack is installed or update is available
+        if (!installedVersion || updateAvailable) {
+          console.log('[Modpack] Auto-installing modpack...');
+          addToast(installedVersion ? 'Updating modpack...' : 'Installing modpack...', 'info');
+          await install();
+          addToast('Modpack installed successfully!', 'success');
+        }
+      } catch (err) {
+        console.error('[Modpack] Failed to check/install:', err);
+      }
+    };
+
+    checkAndInstall();
+  }, [isAuthenticated, authLoading, installedVersion, checkUpdates, install, isDownloading, updateAvailable, latestManifest, addToast]);
 
   // Listen for Minecraft events
   useEffect(() => {
