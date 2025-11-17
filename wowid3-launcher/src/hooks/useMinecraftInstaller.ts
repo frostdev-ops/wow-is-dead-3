@@ -2,9 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import {
   listMinecraftVersions,
-  getLatestRelease,
   getFabricLoaders,
-  getLatestFabricLoader,
   installMinecraft,
   isVersionInstalled,
 } from './useTauriCommands';
@@ -79,7 +77,7 @@ export function useMinecraftInstaller(): UseMinecraftInstallerReturn {
       : selectedVersion
     : null;
 
-  // Load Minecraft versions
+  // Load Minecraft versions (for display/reference only)
   const loadVersions = useCallback(async () => {
     try {
       setIsLoadingVersions(true);
@@ -88,21 +86,17 @@ export function useMinecraftInstaller(): UseMinecraftInstallerReturn {
       const versionList = await listMinecraftVersions('release');
       setVersions(versionList);
 
-      // Auto-select latest release if no version selected
-      if (!selectedVersion && versionList.length > 0) {
-        const latest = await getLatestRelease();
-        setSelectedVersionState(latest);
-        setMinecraftVersion(latest);
-      }
+      // Note: Version is now preset from settingsStore defaults (1.20.1)
+      // No auto-selection needed as versions are driven by modpack requirements
     } catch (err) {
       setError(`Failed to load Minecraft versions: ${err}`);
       console.error('[MinecraftInstaller] Failed to load versions:', err);
     } finally {
       setIsLoadingVersions(false);
     }
-  }, [selectedVersion, setMinecraftVersion]);
+  }, []);
 
-  // Load Fabric loaders for a specific game version
+  // Load Fabric loaders for a specific game version (for display/reference only)
   const loadFabricLoaders = useCallback(async (gameVersion: string) => {
     try {
       setIsLoadingFabric(true);
@@ -117,19 +111,15 @@ export function useMinecraftInstaller(): UseMinecraftInstallerReturn {
 
       setFabricLoaders(filteredLoaders);
 
-      // Auto-select latest stable loader
-      if (filteredLoaders.length > 0 && !selectedFabricLoader) {
-        const latestLoader = await getLatestFabricLoader(gameVersion);
-        setSelectedFabricLoaderState(latestLoader.version);
-        setFabricVersion(latestLoader.version);
-      }
+      // Note: Fabric loader version is now preset from settingsStore defaults (0.17.3)
+      // No auto-selection needed as versions are driven by modpack requirements
     } catch (err) {
       setError(`Failed to load Fabric loaders: ${err}`);
       console.error('[MinecraftInstaller] Failed to load Fabric loaders:', err);
     } finally {
       setIsLoadingFabric(false);
     }
-  }, [preferStableFabric, selectedFabricLoader, setFabricVersion]);
+  }, [preferStableFabric]);
 
   // Check if version is installed
   const checkInstalled = useCallback(

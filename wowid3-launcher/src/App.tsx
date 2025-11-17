@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
-import { useModpack, useServer, useTheme, useAudio } from './hooks';
+import { useEffect, useState, useRef } from 'react';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import { invoke } from '@tauri-apps/api/core';
+import { useModpack, useServer, useTheme } from './hooks';
 import LauncherHome from './components/LauncherHome';
 import SettingsScreen from './components/SettingsScreen';
 import ChristmasBackground from './components/theme/ChristmasBackground';
@@ -8,33 +10,92 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { ChangelogViewer } from './components/ChangelogViewer';
 import './App.css';
 
+const AUDIO_SERVER_URL = 'https://wowid-launcher.frostdev.io/assets/wid3menu.mp3';
+const FALLBACK_AUDIO_URL = '/wid3menu-fallback.mp3';
+
 function AppContent() {
   const [activeTab, setActiveTab] = useState<'home' | 'settings'>('home');
   const [isMuted, setIsMuted] = useState(false);
   const [showChangelog, setShowChangelog] = useState(false);
   const [showChangelogModal, setShowChangelogModal] = useState(false);
-  const { audio } = useAudio();
+  const [audioSrc, setAudioSrc] = useState<string>(FALLBACK_AUDIO_URL);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const { checkUpdates, latestManifest } = useModpack();
   const { startPolling } = useServer();
   useTheme(); // Apply theme on mount
 
+  // Initialize audio on mount
   useEffect(() => {
-    // Check for modpack updates on startup
-    checkUpdates().catch(console.error);
+    const initAudio = async () => {
+      try {
+        console.log('[Audio] Initializing audio...');
 
-    // Start server polling
+        // Set volume on audio element
+        if (audioRef.current) {
+          audioRef.current.volume = 0.3;
+          console.log('[Audio] Set volume to 0.3');
+        }
+
+        // Check for cached audio
+        const cachedPath = await invoke<string | null>('cmd_get_cached_audio');
+        if (cachedPath) {
+          console.log('[Audio] Found cached audio:', cachedPath);
+          const audioUrl = convertFileSrc(cachedPath);
+          console.log('[Audio] Converted to URL:', audioUrl);
+          setAudioSrc(audioUrl);
+          return;
+        }
+
+        console.log('[Audio] No cached audio, using fallback');
+        setAudioSrc(FALLBACK_AUDIO_URL);
+
+        // Download audio in background
+        try {
+          console.log('[Audio] Starting background download...');
+          const downloadedPath = await invoke<string>('cmd_download_and_cache_audio', {
+            url: AUDIO_SERVER_URL,
+          });
+          console.log('[Audio] Download complete:', downloadedPath);
+          const audioUrl = convertFileSrc(downloadedPath);
+          console.log('[Audio] Converted downloaded to URL:', audioUrl);
+          setAudioSrc(audioUrl);
+        } catch (err) {
+          console.log('[Audio] Download failed, keeping fallback:', err);
+        }
+      } catch (err) {
+        console.log('[Audio] Initialization error:', err);
+      }
+    };
+
+    // Initialize audio and check for updates
+    initAudio();
+    checkUpdates().catch(console.error);
     startPolling(30);
   }, []); // Only run once on component mount
 
   useEffect(() => {
-    if (audio) {
-      audio.muted = isMuted;
+    if (audioRef.current) {
+      audioRef.current.muted = isMuted;
+      console.log('[Audio] Muted set to:', isMuted);
     }
-  }, [isMuted, audio]);
+  }, [isMuted]);
 
   return (
     <div className="relative w-screen h-screen overflow-hidden">
       <ChristmasBackground />
+      {/* Background Music */}
+      <audio
+        ref={audioRef}
+        src={audioSrc}
+        autoPlay
+        loop
+        crossOrigin="anonymous"
+        onLoadStart={() => console.log('[Audio] Load started for:', audioSrc)}
+        onCanPlay={() => console.log('[Audio] Can play:', audioSrc)}
+        onPlay={() => console.log('[Audio] Playing:', audioSrc)}
+        onPause={() => console.log('[Audio] Paused')}
+        onError={(e) => console.log('[Audio] Error:', e.currentTarget.error)}
+      />
       <div className="relative z-10 w-full h-full flex flex-col">
         {/* Navigation Cards - Top Left */}
         <div className="absolute top-12 left-4 z-50 flex gap-3">

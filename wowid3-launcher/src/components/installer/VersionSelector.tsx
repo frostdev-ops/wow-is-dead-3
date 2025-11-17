@@ -3,16 +3,9 @@ import { Card } from '../ui/Card';
 
 export function VersionSelector() {
   const {
-    versions,
     selectedVersion,
-    setSelectedVersion,
-    isLoadingVersions,
     fabricEnabled,
-    setFabricEnabled,
-    fabricLoaders,
     selectedFabricLoader,
-    setSelectedFabricLoader,
-    isLoadingFabric,
     isInstalled,
     error,
     clearError,
@@ -49,95 +42,32 @@ export function VersionSelector() {
         </div>
       )}
 
-      {/* Version Selector */}
-      <div className="mb-4">
-        <label className="block text-sm font-semibold mb-2" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
-          Minecraft Version
-        </label>
-        <select
-          value={selectedVersion || ''}
-          onChange={(e) => setSelectedVersion(e.target.value)}
-          disabled={isLoadingVersions}
-          className="w-full px-4 py-3 text-white"
-          style={{
-            backgroundColor: 'rgba(0, 0, 0, 0.3)',
-            border: '1px solid rgba(255, 215, 0, 0.3)',
-            borderRadius: '0',
-            fontFamily: "'Trebuchet MS', sans-serif",
-          }}
-        >
-          {isLoadingVersions ? (
-            <option>Loading versions...</option>
-          ) : (
-            <>
-              <option value="" disabled>
-                Select a version
-              </option>
-              {versions.map((version) => (
-                <option key={version.id} value={version.id}>
-                  {version.id} ({version.version_type})
-                </option>
-              ))}
-            </>
-          )}
-        </select>
-      </div>
-
-      {/* Fabric Toggle */}
-      <div className="mb-4">
-        <label className="flex items-center gap-3 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={fabricEnabled}
-            onChange={(e) => setFabricEnabled(e.target.checked)}
-            className="w-5 h-5"
-            style={{
-              accentColor: '#FFD700',
-            }}
-          />
+      {/* Version Information (Read-Only) */}
+      <div className="mb-4 p-4" style={{
+        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+        border: '1px solid rgba(255, 215, 0, 0.5)',
+        borderRadius: '0',
+      }}>
+        <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-semibold" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
-            Install with Fabric Mod Loader
+            Minecraft Version:
           </span>
-        </label>
-      </div>
-
-      {/* Fabric Loader Selector */}
-      {fabricEnabled && (
-        <div className="mb-4">
-          <label className="block text-sm font-semibold mb-2" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
-            Fabric Loader Version
-          </label>
-          <select
-            value={selectedFabricLoader || ''}
-            onChange={(e) => setSelectedFabricLoader(e.target.value)}
-            disabled={isLoadingFabric || fabricLoaders.length === 0}
-            className="w-full px-4 py-3 text-white"
-            style={{
-              backgroundColor: 'rgba(0, 0, 0, 0.3)',
-              border: '1px solid rgba(255, 215, 0, 0.3)',
-              borderRadius: '0',
-              fontFamily: "'Trebuchet MS', sans-serif",
-            }}
-          >
-            {isLoadingFabric ? (
-              <option>Loading Fabric loaders...</option>
-            ) : fabricLoaders.length === 0 ? (
-              <option>No Fabric loaders available</option>
-            ) : (
-              <>
-                <option value="" disabled>
-                  Select a loader version
-                </option>
-                {fabricLoaders.map((loader) => (
-                  <option key={loader.version} value={loader.version}>
-                    {loader.version} {loader.stable ? '(Stable)' : '(Beta)'}
-                  </option>
-                ))}
-              </>
-            )}
-          </select>
+          <span className="text-base font-bold" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>
+            {selectedVersion}
+          </span>
         </div>
-      )}
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-semibold" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
+            Fabric Loader:
+          </span>
+          <span className="text-base font-bold" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>
+            {fabricEnabled ? selectedFabricLoader : 'Disabled'}
+          </span>
+        </div>
+        <p className="text-xs mt-3 text-center" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif", opacity: 0.7 }}>
+          Versions are preset by modpack requirements
+        </p>
+      </div>
 
       {/* Installation Status */}
       {selectedVersion && (

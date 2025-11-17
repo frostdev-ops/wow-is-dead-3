@@ -27,9 +27,12 @@ export function useAudio(enabled: boolean = true) {
 
     // Create audio element if it doesn't exist
     if (!audioRef.current) {
+      console.log('[Audio] Creating audio element');
       audioRef.current = new Audio();
       audioRef.current.loop = true;
       audioRef.current.volume = 0.3;
+      audioRef.current.crossOrigin = 'anonymous';
+      console.log('[Audio] Audio element created with settings - loop:', audioRef.current.loop, 'volume:', audioRef.current.volume);
     }
 
     const audio = audioRef.current;
