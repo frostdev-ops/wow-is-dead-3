@@ -1,10 +1,15 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
+
+use super::game_installer::get_installed_version;
+use super::library_manager;
+use super::minecraft_version::{Argument, ArgumentValue};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LaunchConfig {
@@ -16,7 +21,191 @@ pub struct LaunchConfig {
     pub access_token: String,
 }
 
-/// Launch Minecraft with the specified configuration
+/// Launch Minecraft with version metadata (new system)
+pub async fn launch_game_with_metadata(
+    config: LaunchConfig,
+    version_id: &str,
+) -> Result<Child> {
+    let game_dir = &config.game_dir;
+
+    // Load version metadata
+    let version_meta = get_installed_version(game_dir, version_id)
+        .await
+        .context("Failed to load version metadata")?;
+
+    let java_path = config
+        .java_path
+        .unwrap_or_else(|| get_bundled_java_path());
+
+    // Verify Java exists
+    if !java_path.exists() {
+        return Err(anyhow::anyhow!(
+            "Java runtime not found at {:?}. Please ensure Java is installed or the bundled JVM is present.",
+            java_path
+        ));
+    }
+
+    // Build classpath
+    let libraries_dir = game_dir.join("libraries");
+    let client_jar = game_dir
+        .join("versions")
+        .join(&version_meta.id)
+        .join(format!("{}.jar", version_meta.id));
+
+    let features = HashMap::new();
+    let classpath = library_manager::build_classpath(
+        &version_meta.libraries,
+        &libraries_dir,
+        &client_jar,
+        &features,
+    )?;
+
+    // Prepare argument substitution map
+    let mut arg_map = HashMap::new();
+    arg_map.insert("auth_player_name".to_string(), config.username.clone());
+    arg_map.insert("version_name".to_string(), version_meta.id.clone());
+    arg_map.insert("game_directory".to_string(), game_dir.display().to_string());
+    arg_map.insert("assets_root".to_string(), game_dir.join("assets").display().to_string());
+    arg_map.insert("assets_index_name".to_string(), version_meta.asset_index.id.clone());
+    arg_map.insert("auth_uuid".to_string(), config.uuid.clone());
+    arg_map.insert("auth_access_token".to_string(), config.access_token.clone());
+    arg_map.insert("user_type".to_string(), "msa".to_string());
+    arg_map.insert("version_type".to_string(), version_meta.version_type.clone());
+    arg_map.insert("natives_directory".to_string(), game_dir.join("natives").display().to_string());
+    arg_map.insert("launcher_name".to_string(), "wowid3-launcher".to_string());
+    arg_map.insert("launcher_version".to_string(), "1.0.0".to_string());
+    arg_map.insert("classpath".to_string(), classpath.clone());
+
+    // Build JVM arguments
+    let mut jvm_args = vec![
+        format!("-Xmx{}M", config.ram_mb),
+        format!("-Xms{}M", config.ram_mb / 2),
+        "-XX:+UseG1GC".to_string(),
+        "-XX:+UnlockExperimentalVMOptions".to_string(),
+        "-XX:G1NewSizePercent=20".to_string(),
+        "-XX:G1ReservePercent=20".to_string(),
+        "-XX:MaxGCPauseMillis=50".to_string(),
+        "-XX:G1HeapRegionSize=32M".to_string(),
+    ];
+
+    // Add JVM arguments from version metadata
+    if let Some(arguments) = &version_meta.arguments {
+        for arg in &arguments.jvm {
+            jvm_args.extend(resolve_argument(arg, &arg_map, &features));
+        }
+    } else {
+        // Legacy format: add default JVM args
+        jvm_args.push(format!("-Djava.library.path={}", arg_map.get("natives_directory").unwrap()));
+        jvm_args.push("-cp".to_string());
+        jvm_args.push(classpath.clone());
+    }
+
+    // Build game arguments
+    let mut game_args = Vec::new();
+
+    if let Some(arguments) = &version_meta.arguments {
+        for arg in &arguments.game {
+            game_args.extend(resolve_argument(arg, &arg_map, &features));
+        }
+    } else if let Some(minecraft_arguments) = &version_meta.minecraft_arguments {
+        // Legacy format (pre-1.13)
+        for arg in minecraft_arguments.split_whitespace() {
+            game_args.push(substitute_argument(arg, &arg_map));
+        }
+    }
+
+    // Construct command
+    let mut cmd = Command::new(&java_path);
+
+    // Add JVM arguments
+    for arg in jvm_args {
+        cmd.arg(arg);
+    }
+
+    // Add main class
+    cmd.arg(&version_meta.main_class);
+
+    // Add game arguments
+    for arg in game_args {
+        cmd.arg(arg);
+    }
+
+    // Set working directory
+    cmd.current_dir(&game_dir);
+
+    // Capture stdout/stderr for log streaming
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    let child = cmd
+        .spawn()
+        .context("Failed to spawn Minecraft process")?;
+
+    Ok(child)
+}
+
+/// Resolve an argument (handles rules and variables)
+fn resolve_argument(
+    arg: &Argument,
+    arg_map: &HashMap<String, String>,
+    features: &HashMap<String, bool>,
+) -> Vec<String> {
+    match arg {
+        Argument::String(s) => vec![substitute_argument(s, arg_map)],
+        Argument::Object { rules, value } => {
+            // Check if rules allow this argument
+            if evaluate_argument_rules(rules, features) {
+                match value {
+                    ArgumentValue::String(s) => vec![substitute_argument(s, arg_map)],
+                    ArgumentValue::Array(arr) => arr
+                        .iter()
+                        .map(|s| substitute_argument(s, arg_map))
+                        .collect(),
+                }
+            } else {
+                vec![]
+            }
+        }
+    }
+}
+
+/// Evaluate argument rules
+fn evaluate_argument_rules(
+    rules: &[super::minecraft_version::Rule],
+    features: &HashMap<String, bool>,
+) -> bool {
+    let mut allowed = false;
+
+    for rule in rules {
+        if library_manager::should_download_library(
+            &super::minecraft_version::Library {
+                name: String::new(),
+                downloads: None,
+                rules: Some(vec![rule.clone()]),
+                natives: None,
+                extract: None,
+            },
+            features,
+        ) {
+            allowed = rule.action == "allow";
+        }
+    }
+
+    allowed
+}
+
+/// Substitute variables in an argument string
+fn substitute_argument(arg: &str, arg_map: &HashMap<String, String>) -> String {
+    let mut result = arg.to_string();
+
+    for (key, value) in arg_map {
+        let placeholder = format!("${{{}}}", key);
+        result = result.replace(&placeholder, value);
+    }
+
+    result
+}
+
+/// Launch Minecraft with the specified configuration (legacy function)
 pub async fn launch_game(config: LaunchConfig) -> Result<Child> {
     let java_path = config
         .java_path

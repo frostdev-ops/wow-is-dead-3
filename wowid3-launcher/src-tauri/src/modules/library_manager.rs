@@ -1,0 +1,446 @@
+use anyhow::{Context, Result};
+use sha1::{Digest, Sha1};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use tokio::io::AsyncWriteExt;
+use zip::ZipArchive;
+
+use super::minecraft_version::{Library, Rule};
+
+/// Current OS name for rule evaluation
+fn get_os_name() -> &'static str {
+    #[cfg(target_os = "windows")]
+    {
+        "windows"
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "linux"
+    }
+    #[cfg(target_os = "macos")]
+    {
+        "osx"
+    }
+}
+
+/// Current architecture for rule evaluation
+fn get_arch() -> &'static str {
+    #[cfg(target_arch = "x86")]
+    {
+        "x86"
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        "x86_64"
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        "aarch64"
+    }
+}
+
+/// Evaluate if a rule applies to the current system
+fn evaluate_rule(rule: &Rule, features: &HashMap<String, bool>) -> bool {
+    let action_allow = rule.action == "allow";
+
+    // Check OS rule
+    if let Some(os_rule) = &rule.os {
+        if let Some(os_name) = &os_rule.name {
+            let matches = os_name == get_os_name();
+            if !matches {
+                return !action_allow; // OS doesn't match, invert action
+            }
+        }
+
+        if let Some(arch) = &os_rule.arch {
+            let matches = arch == get_arch();
+            if !matches {
+                return !action_allow;
+            }
+        }
+    }
+
+    // Check feature rules
+    if let Some(rule_features) = &rule.features {
+        for (feature, required) in rule_features {
+            let has_feature = features.get(feature).copied().unwrap_or(false);
+            if has_feature != *required {
+                return !action_allow;
+            }
+        }
+    }
+
+    action_allow
+}
+
+/// Check if a library should be downloaded for the current system
+pub fn should_download_library(library: &Library, features: &HashMap<String, bool>) -> bool {
+    if let Some(rules) = &library.rules {
+        // Start with disallow by default if rules exist
+        let mut allowed = false;
+
+        for rule in rules {
+            if evaluate_rule(rule, features) {
+                allowed = rule.action == "allow";
+            }
+        }
+
+        allowed
+    } else {
+        // No rules means always download
+        true
+    }
+}
+
+/// Convert Maven coordinates to file path
+/// Example: "com.mojang:logging:1.0.0" -> "com/mojang/logging/1.0.0/logging-1.0.0.jar"
+pub fn maven_to_path(maven: &str) -> String {
+    let parts: Vec<&str> = maven.split(':').collect();
+    if parts.len() != 3 {
+        return maven.to_string();
+    }
+
+    let group = parts[0].replace('.', "/");
+    let artifact = parts[1];
+    let version = parts[2];
+
+    format!("{}/{}/{}/{}-{}.jar", group, artifact, version, artifact, version)
+}
+
+/// Convert Maven coordinates to URL for Minecraft libraries
+pub fn maven_to_url(maven: &str, base_url: &str) -> String {
+    let path = maven_to_path(maven);
+    format!("{}/{}", base_url.trim_end_matches('/'), path)
+}
+
+/// Download a file with SHA1 verification
+pub async fn download_file_verified(
+    url: &str,
+    dest: &Path,
+    expected_sha1: Option<&str>,
+) -> Result<()> {
+    // Create parent directories
+    if let Some(parent) = dest.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+
+    // Skip if file exists and matches hash
+    if dest.exists() {
+        if let Some(sha1) = expected_sha1 {
+            if verify_sha1(dest, sha1).await? {
+                return Ok(());
+            }
+        }
+    }
+
+    // Download file
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()?;
+
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .context(format!("Failed to download {}", url))?;
+
+    if !response.status().is_success() {
+        return Err(anyhow::anyhow!(
+            "Failed to download {}: HTTP {}",
+            url,
+            response.status()
+        ));
+    }
+
+    let bytes = response.bytes().await?;
+
+    // Verify SHA1 if provided
+    if let Some(expected) = expected_sha1 {
+        let mut hasher = Sha1::new();
+        hasher.update(&bytes);
+        let hash = format!("{:x}", hasher.finalize());
+
+        if hash != expected {
+            return Err(anyhow::anyhow!(
+                "SHA1 mismatch for {}: expected {}, got {}",
+                url,
+                expected,
+                hash
+            ));
+        }
+    }
+
+    // Write file
+    let mut file = tokio::fs::File::create(dest).await?;
+    file.write_all(&bytes).await?;
+
+    Ok(())
+}
+
+/// Verify SHA1 hash of a file
+pub async fn verify_sha1(path: &Path, expected: &str) -> Result<bool> {
+    let bytes = tokio::fs::read(path).await?;
+    let mut hasher = Sha1::new();
+    hasher.update(&bytes);
+    let hash = format!("{:x}", hasher.finalize());
+    Ok(hash == expected)
+}
+
+/// Download a library to the libraries directory
+pub async fn download_library(
+    library: &Library,
+    libraries_dir: &Path,
+    features: &HashMap<String, bool>,
+) -> Result<Vec<PathBuf>> {
+    if !should_download_library(library, features) {
+        return Ok(vec![]);
+    }
+
+    let mut downloaded_paths = Vec::new();
+
+    // Download main artifact
+    if let Some(downloads) = &library.downloads {
+        if let Some(artifact) = &downloads.artifact {
+            let dest = libraries_dir.join(&artifact.path);
+            download_file_verified(&artifact.url, &dest, Some(&artifact.sha1)).await?;
+            downloaded_paths.push(dest);
+        }
+
+        // Download native libraries
+        if let Some(natives) = &library.natives {
+            let os_name = get_os_name();
+            if let Some(native_key) = natives.get(os_name) {
+                if let Some(classifiers) = &downloads.classifiers {
+                    if let Some(native_artifact) = classifiers.get(native_key) {
+                        let dest = libraries_dir.join(&native_artifact.path);
+                        download_file_verified(
+                            &native_artifact.url,
+                            &dest,
+                            Some(&native_artifact.sha1),
+                        )
+                        .await?;
+                        downloaded_paths.push(dest);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(downloaded_paths)
+}
+
+/// Download all libraries for a version
+pub async fn download_all_libraries(
+    libraries: &[Library],
+    libraries_dir: &Path,
+    features: &HashMap<String, bool>,
+) -> Result<Vec<PathBuf>> {
+    let mut all_paths = Vec::new();
+
+    // Download libraries in parallel (10 at a time)
+    let mut tasks = Vec::new();
+
+    for library in libraries {
+        let lib = library.clone();
+        let dir = libraries_dir.to_path_buf();
+        let feat = features.clone();
+
+        let task = tokio::spawn(async move { download_library(&lib, &dir, &feat).await });
+
+        tasks.push(task);
+
+        // Process in batches of 10
+        if tasks.len() >= 10 {
+            for task in tasks.drain(..) {
+                match task.await {
+                    Ok(Ok(paths)) => all_paths.extend(paths),
+                    Ok(Err(e)) => eprintln!("Library download error: {}", e),
+                    Err(e) => eprintln!("Task error: {}", e),
+                }
+            }
+        }
+    }
+
+    // Process remaining tasks
+    for task in tasks {
+        match task.await {
+            Ok(Ok(paths)) => all_paths.extend(paths),
+            Ok(Err(e)) => eprintln!("Library download error: {}", e),
+            Err(e) => eprintln!("Task error: {}", e),
+        }
+    }
+
+    Ok(all_paths)
+}
+
+/// Extract native libraries from JAR files
+pub async fn extract_natives(
+    libraries: &[Library],
+    libraries_dir: &Path,
+    natives_dir: &Path,
+    features: &HashMap<String, bool>,
+) -> Result<()> {
+    tokio::fs::create_dir_all(natives_dir).await?;
+
+    for library in libraries {
+        if !should_download_library(library, features) {
+            continue;
+        }
+
+        // Check if this is a native library
+        if library.natives.is_some() {
+            if let Some(downloads) = &library.downloads {
+                let os_name = get_os_name();
+                if let Some(native_key) = library.natives.as_ref().and_then(|n| n.get(os_name)) {
+                    if let Some(classifiers) = &downloads.classifiers {
+                        if let Some(native_artifact) = classifiers.get(native_key) {
+                            let native_jar = libraries_dir.join(&native_artifact.path);
+
+                            if native_jar.exists() {
+                                extract_native_jar(&native_jar, natives_dir, &library.extract)
+                                    .await?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Extract a native JAR file
+async fn extract_native_jar(
+    jar_path: &Path,
+    dest_dir: &Path,
+    extract_rules: &Option<super::minecraft_version::Extract>,
+) -> Result<()> {
+    let file = std::fs::File::open(jar_path)?;
+    let mut archive = ZipArchive::new(file)?;
+
+    // Build exclusion list
+    let mut exclusions = vec!["META-INF/".to_string()];
+    if let Some(extract) = extract_rules {
+        if let Some(exclude) = &extract.exclude {
+            exclusions.extend(exclude.iter().cloned());
+        }
+    }
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        let name = file.name().to_string();
+
+        // Check exclusions
+        let should_exclude = exclusions.iter().any(|ex| name.starts_with(ex));
+        if should_exclude {
+            continue;
+        }
+
+        let out_path = dest_dir.join(&name);
+
+        if file.is_dir() {
+            std::fs::create_dir_all(&out_path)?;
+        } else {
+            if let Some(parent) = out_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+
+            let mut out_file = std::fs::File::create(&out_path)?;
+            std::io::copy(&mut file, &mut out_file)?;
+
+            // Set executable permissions on Unix
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let perms = std::fs::Permissions::from_mode(0o755);
+                std::fs::set_permissions(&out_path, perms)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Build classpath string from libraries
+pub fn build_classpath(
+    libraries: &[Library],
+    libraries_dir: &Path,
+    client_jar: &Path,
+    features: &HashMap<String, bool>,
+) -> Result<String> {
+    let mut classpath_entries = Vec::new();
+
+    // Add all library JARs
+    for library in libraries {
+        if !should_download_library(library, features) {
+            continue;
+        }
+
+        if let Some(downloads) = &library.downloads {
+            if let Some(artifact) = &downloads.artifact {
+                let lib_path = libraries_dir.join(&artifact.path);
+                if lib_path.exists() {
+                    classpath_entries.push(lib_path.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    // Add client JAR
+    if client_jar.exists() {
+        classpath_entries.push(client_jar.to_string_lossy().to_string());
+    }
+
+    // Get platform-specific separator
+    let separator = if cfg!(target_os = "windows") {
+        ";"
+    } else {
+        ":"
+    };
+
+    Ok(classpath_entries.join(separator))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_maven_to_path() {
+        let path = maven_to_path("com.mojang:logging:1.0.0");
+        assert_eq!(path, "com/mojang/logging/1.0.0/logging-1.0.0.jar");
+    }
+
+    #[test]
+    fn test_maven_to_url() {
+        let url = maven_to_url(
+            "com.mojang:logging:1.0.0",
+            "https://libraries.minecraft.net/",
+        );
+        assert_eq!(
+            url,
+            "https://libraries.minecraft.net/com/mojang/logging/1.0.0/logging-1.0.0.jar"
+        );
+    }
+
+    #[test]
+    fn test_get_os_name() {
+        let os = get_os_name();
+        assert!(os == "windows" || os == "linux" || os == "osx");
+    }
+
+    #[test]
+    fn test_should_download_library_no_rules() {
+        let library = Library {
+            name: "test:lib:1.0".to_string(),
+            downloads: None,
+            rules: None,
+            natives: None,
+            extract: None,
+        };
+
+        let features = HashMap::new();
+        assert!(should_download_library(&library, &features));
+    }
+}

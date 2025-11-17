@@ -793,7 +793,7 @@ mod integration_tests {
             ],
         };
 
-        let result = install_modpack(&manifest, &temp_dir.path().to_path_buf(), |current, total, filename| {
+        let result = install_modpack(&manifest, &temp_dir.path().to_path_buf(), |current, total, filename, _current_bytes, _total_bytes| {
             // Verify progress callback is called with reasonable values
             assert!(current <= total);
             assert!(total == 2); // We have 2 files
@@ -863,7 +863,7 @@ mod integration_tests {
             ],
         };
 
-        let result = install_modpack(&manifest, &temp_dir.path().to_path_buf(), |current, total, filename| {
+        let result = install_modpack(&manifest, &temp_dir.path().to_path_buf(), |current, total, filename, _current_bytes, _total_bytes| {
             // Only mod2.jar needs downloading, so total should be 1
             assert_eq!(total, 1);
             assert_eq!(current, 1);
@@ -912,7 +912,7 @@ mod integration_tests {
             }],
         };
 
-        let result = install_modpack(&manifest, &temp_dir.path().to_path_buf(), |_current, _total, _filename| {
+        let result = install_modpack(&manifest, &temp_dir.path().to_path_buf(), |_current, _total, _filename, _current_bytes, _total_bytes| {
             // Should never be called since no downloads needed
             panic!("Progress callback should not be called when no files need downloading");
         })

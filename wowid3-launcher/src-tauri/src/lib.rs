@@ -2,7 +2,10 @@ mod modules;
 
 use modules::auth::{authenticate_from_official_launcher, get_current_user, logout, refresh_token, get_device_code, complete_device_code_auth, MinecraftProfile, DeviceCodeInfo};
 use modules::discord::{DiscordClient, GamePresence};
-use modules::minecraft::{launch_game, analyze_crash, LaunchConfig};
+use modules::minecraft::{launch_game, launch_game_with_metadata, analyze_crash, LaunchConfig};
+use modules::minecraft_version::{list_versions, get_latest_release, get_latest_snapshot, VersionInfo};
+use modules::fabric_installer::{get_fabric_loaders, get_latest_fabric_loader, FabricLoader};
+use modules::game_installer::{install_minecraft, is_version_installed, InstallConfig};
 use modules::server::{ping_server, ServerStatus};
 use modules::updater::{check_for_updates, get_installed_version, install_modpack, Manifest};
 use serde::Serialize;
@@ -144,6 +147,150 @@ async fn cmd_launch_game(app: AppHandle, config: LaunchConfig) -> Result<String,
     Ok("Game launched successfully".to_string())
 }
 
+#[tauri::command]
+async fn cmd_launch_game_with_metadata(
+    app: AppHandle,
+    config: LaunchConfig,
+    version_id: String,
+) -> Result<String, String> {
+    // Store game_dir for crash analysis
+    let game_dir = config.game_dir.clone();
+
+    // Launch the game process
+    let mut process = launch_game_with_metadata(config, &version_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Take stdout and stderr for streaming (same as cmd_launch_game)
+    let stdout = process.stdout.take();
+    let stderr = process.stderr.take();
+
+    if let Some(stdout) = stdout {
+        let app_stdout = app.clone();
+        tokio::spawn(async move {
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            let reader = BufReader::new(stdout);
+            let mut lines = reader.lines();
+
+            while let Ok(Some(line)) = lines.next_line().await {
+                let _ = app_stdout.emit("minecraft-log", serde_json::json!({
+                    "level": "info",
+                    "message": line
+                }));
+            }
+        });
+    }
+
+    if let Some(stderr) = stderr {
+        let app_stderr = app.clone();
+        tokio::spawn(async move {
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            let reader = BufReader::new(stderr);
+            let mut lines = reader.lines();
+
+            while let Ok(Some(line)) = lines.next_line().await {
+                let is_error = line.contains("ERROR") ||
+                              line.contains("Exception") ||
+                              line.contains("FATAL");
+
+                let _ = app_stderr.emit("minecraft-log", serde_json::json!({
+                    "level": if is_error { "error" } else { "warn" },
+                    "message": line
+                }));
+            }
+        });
+    }
+
+    let app_monitor = app.clone();
+    tokio::spawn(async move {
+        match process.wait().await {
+            Ok(status) => {
+                let exit_code = status.code().unwrap_or(-1);
+                let crashed = exit_code != 0;
+
+                let _ = app_monitor.emit("minecraft-exit", serde_json::json!({
+                    "exit_code": exit_code,
+                    "crashed": crashed
+                }));
+
+                if crashed {
+                    if let Ok(crash_msg) = analyze_crash(&game_dir).await {
+                        let _ = app_monitor.emit("minecraft-crash", serde_json::json!({
+                            "message": crash_msg
+                        }));
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Error waiting for process: {}", e);
+            }
+        }
+    });
+
+    Ok("Game launched successfully".to_string())
+}
+
+// Minecraft Version Commands
+#[tauri::command]
+async fn cmd_list_minecraft_versions(version_type: Option<String>) -> Result<Vec<VersionInfo>, String> {
+    list_versions(version_type.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cmd_get_latest_release() -> Result<String, String> {
+    get_latest_release()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cmd_get_latest_snapshot() -> Result<String, String> {
+    get_latest_snapshot()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// Fabric Commands
+#[tauri::command]
+async fn cmd_get_fabric_loaders(game_version: String) -> Result<Vec<FabricLoader>, String> {
+    get_fabric_loaders(&game_version)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cmd_get_latest_fabric_loader(game_version: String) -> Result<FabricLoader, String> {
+    get_latest_fabric_loader(&game_version)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// Minecraft Installation Commands
+#[tauri::command]
+async fn cmd_install_minecraft(
+    app: AppHandle,
+    config: InstallConfig,
+) -> Result<String, String> {
+    install_minecraft(config, move |progress| {
+        let _ = app.emit("minecraft-install-progress", progress);
+    })
+    .await
+    .map(|_| "Installation complete".to_string())
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cmd_is_version_installed(
+    game_dir: PathBuf,
+    version_id: String,
+) -> Result<bool, String> {
+    is_version_installed(&game_dir, &version_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // Discord Rich Presence Commands
 #[tauri::command]
 async fn cmd_discord_connect(discord: State<'_, DiscordClient>) -> Result<(), String> {
@@ -275,6 +422,14 @@ pub fn run() {
             cmd_get_device_code,
             cmd_complete_device_code_auth,
             cmd_launch_game,
+            cmd_launch_game_with_metadata,
+            cmd_list_minecraft_versions,
+            cmd_get_latest_release,
+            cmd_get_latest_snapshot,
+            cmd_get_fabric_loaders,
+            cmd_get_latest_fabric_loader,
+            cmd_install_minecraft,
+            cmd_is_version_installed,
             cmd_ping_server,
             cmd_check_updates,
             cmd_get_installed_version,
