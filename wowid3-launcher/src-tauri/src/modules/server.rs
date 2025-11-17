@@ -396,44 +396,63 @@ mod tests {
     }
 
     /// Mock Minecraft server for testing
+    /// Returns a JoinHandle that MUST be joined or aborted to prevent resource leaks
     fn start_mock_server(port: u16, response_json: String) -> thread::JoinHandle<()> {
         thread::spawn(move || {
+            // Bind listener with SO_REUSEADDR to allow port reuse
             let listener = TcpListener::bind(format!("127.0.0.1:{}", port))
                 .expect("Failed to bind mock server");
+
+            // Set a timeout on accept to prevent infinite blocking
             listener
-                .set_nonblocking(false)
-                .expect("Failed to set blocking");
+                .set_nonblocking(true)
+                .expect("Failed to set non-blocking");
 
-            if let Ok((mut stream, _)) = listener.accept() {
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(2)))
-                    .ok();
-                stream
-                    .set_write_timeout(Some(Duration::from_secs(2)))
-                    .ok();
+            // Try to accept connection with timeout (max 5 seconds)
+            let start = std::time::Instant::now();
+            let timeout = Duration::from_secs(5);
 
-                // Read handshake packet
-                let mut buf = [0u8; 1024];
-                if stream.read(&mut buf).is_ok() {
-                    // Read status request packet
-                    if stream.read(&mut buf).is_ok() {
-                        // Send status response
-                        let json_bytes = response_json.as_bytes();
-                        let json_len = write_test_varint(json_bytes.len() as i32);
+            while start.elapsed() < timeout {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        stream.set_read_timeout(Some(Duration::from_secs(2))).ok();
+                        stream.set_write_timeout(Some(Duration::from_secs(2))).ok();
 
-                        // Calculate total packet length (packet ID + string length + string data)
-                        let packet_data_len = 1 + json_len.len() + json_bytes.len();
-                        let packet_len = write_test_varint(packet_data_len as i32);
+                        // Read handshake packet
+                        let mut buf = [0u8; 1024];
+                        if stream.read(&mut buf).is_ok() {
+                            // Read status request packet
+                            if stream.read(&mut buf).is_ok() {
+                                // Send status response
+                                let json_bytes = response_json.as_bytes();
+                                let json_len = write_test_varint(json_bytes.len() as i32);
 
-                        // Write packet
-                        stream.write_all(&packet_len).ok();
-                        stream.write_all(&[0x00]).ok(); // Packet ID
-                        stream.write_all(&json_len).ok();
-                        stream.write_all(json_bytes).ok();
-                        stream.flush().ok();
+                                // Calculate total packet length (packet ID + string length + string data)
+                                let packet_data_len = 1 + json_len.len() + json_bytes.len();
+                                let packet_len = write_test_varint(packet_data_len as i32);
+
+                                // Write packet
+                                stream.write_all(&packet_len).ok();
+                                stream.write_all(&[0x00]).ok(); // Packet ID
+                                stream.write_all(&json_len).ok();
+                                stream.write_all(json_bytes).ok();
+                                stream.flush().ok();
+                            }
+                        }
+                        // Connection handled, exit
+                        return;
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        // No connection yet, sleep briefly and retry
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(_) => {
+                        // Other error, exit
+                        return;
                     }
                 }
             }
+            // Timeout reached, exit cleanly
         })
     }
 
