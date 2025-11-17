@@ -20,8 +20,10 @@ pub struct InstallConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstallProgress {
     pub step: String,
-    pub current: u64,
-    pub total: u64,
+    pub current: u64,           // Current files downloaded
+    pub total: u64,             // Total files to download
+    pub current_bytes: u64,     // Current bytes downloaded
+    pub total_bytes: u64,       // Total bytes to download
     pub message: String,
 }
 
@@ -41,6 +43,8 @@ where
         step: "version_meta".to_string(),
         current: 0,
         total: 5,
+        current_bytes: 0,
+        total_bytes: 0,
         message: format!("Fetching metadata for Minecraft {}", config.game_version),
     });
 
@@ -52,6 +56,8 @@ where
             step: "fabric".to_string(),
             current: 1,
             total: 5,
+            current_bytes: 0,
+            total_bytes: 0,
             message: format!("Installing Fabric loader {}", fabric_version),
         });
 
@@ -76,6 +82,8 @@ where
         step: "client".to_string(),
         current: 2,
         total: 5,
+        current_bytes: 0,
+        total_bytes: 0,
         message: "Downloading Minecraft client".to_string(),
     });
 
@@ -95,6 +103,8 @@ where
         step: "libraries".to_string(),
         current: 3,
         total: 5,
+        current_bytes: 0,
+        total_bytes: 0,
         message: format!("Downloading {} libraries", version_meta.libraries.len()),
     });
 
@@ -118,6 +128,8 @@ where
         step: "assets".to_string(),
         current: 4,
         total: 5,
+        current_bytes: 0,
+        total_bytes: 0,
         message: "Downloading assets".to_string(),
     });
 
@@ -125,11 +137,13 @@ where
     let asset_index = asset_manager::download_asset_index(&version_meta.asset_index, &assets_dir)
         .await?;
 
-    asset_manager::download_all_assets(&asset_index, &assets_dir, |current, total, msg| {
+    asset_manager::download_all_assets(&asset_index, &assets_dir, |current, total, current_bytes, total_bytes, msg| {
         progress_callback(InstallProgress {
             step: "assets".to_string(),
             current: current as u64,
             total: total as u64,
+            current_bytes,
+            total_bytes,
             message: msg,
         });
     })
@@ -145,6 +159,8 @@ where
         step: "complete".to_string(),
         current: 5,
         total: 5,
+        current_bytes: 0,
+        total_bytes: 0,
         message: "Installation complete".to_string(),
     });
 

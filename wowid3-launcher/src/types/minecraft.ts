@@ -33,8 +33,10 @@ export interface LaunchConfig {
 
 export interface InstallProgress {
   step: string;      // "version_meta" | "fabric" | "client" | "libraries" | "assets" | "complete"
-  current: number;   // Current progress
-  total: number;     // Total items
+  current: number;   // Current files downloaded
+  total: number;     // Total files to download
+  current_bytes: number;  // Current bytes downloaded
+  total_bytes: number;    // Total bytes to download
   message: string;   // Human-readable message
 }
 

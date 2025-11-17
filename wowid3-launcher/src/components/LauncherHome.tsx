@@ -470,7 +470,7 @@ export default function LauncherHome() {
         <div className="grid grid-cols-3 gap-4 pt-4">
           <div className="text-center">
             <p className="text-2xl font-bold" style={{ color: installedVersion ? '#16a34a' : '#dc2626' }}>
-              {latestManifest?.files.length || 0}
+              {latestManifest?.files.filter((f: any) => f.path?.endsWith('.jar')).length || 0}
             </p>
             <p className="text-xs text-gray-400">Mods</p>
           </div>

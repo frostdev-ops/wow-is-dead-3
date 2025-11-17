@@ -156,10 +156,12 @@ pub async fn download_all_assets<F>(
     mut progress_callback: F,
 ) -> Result<()>
 where
-    F: FnMut(usize, usize, String),
+    F: FnMut(usize, usize, u64, u64, String),
 {
     let total = asset_index.objects.len();
     let mut completed = 0;
+    let total_bytes: u64 = asset_index.objects.values().map(|obj| obj.size).sum();
+    let mut completed_bytes: u64 = 0;
 
     // Convert to owned data for async tasks
     let assets: Vec<AssetObject> = asset_index.objects.values().cloned().collect();
@@ -179,11 +181,11 @@ where
                 download_asset(&object_clone, &dir_clone).await
             });
 
-            tasks.push(task);
+            tasks.push((task, object.size));
         }
 
         // Wait for all tasks in this batch to complete
-        for task in tasks {
+        for (task, size) in tasks {
             match task.await {
                 Ok(Ok(())) => {
                     // Success
@@ -196,7 +198,8 @@ where
                 }
             }
             completed += 1;
-            progress_callback(completed, total, "Downloading assets".to_string());
+            completed_bytes += size;
+            progress_callback(completed, total, completed_bytes, total_bytes, "Downloading assets".to_string());
         }
     }
 
