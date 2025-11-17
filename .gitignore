@@ -41,3 +41,5 @@ wowid3-server/server/target/release/.fingerprint/*
 wowid3-server/server/target/release/.fingerprint/
 wowid3-server/server/target/release/build/*
 wowid3-server/server/target/release/*
+wowid3-launcher/src-tauri/game/*
+wowid3-launcher/src-tauri/game/

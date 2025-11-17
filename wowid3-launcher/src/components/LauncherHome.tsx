@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { useAuth, useModpack, useServer, useDiscord, launchGame } from '../hooks';
+import { useAuth, useModpack, useServer, useDiscord, useMinecraftInstaller } from '../hooks';
+import { launchGameWithMetadata } from '../hooks/useTauriCommands';
 import { useSettingsStore } from '../stores';
 import { UserMenu } from './UserMenu';
 import { LoadingSpinner } from './ui/LoadingSpinner';
@@ -20,6 +21,7 @@ export default function LauncherHome() {
   const { ramAllocation, gameDirectory } = useSettingsStore();
   const { addToast } = useToast();
   const { isConnected: discordConnected, isConnecting: discordConnecting, error: discordError, setPresence, clearPresence, connect: connectDiscord } = useDiscord();
+  const { versionId, isInstalled: minecraftInstalled } = useMinecraftInstaller();
   const [isLaunching, setIsLaunching] = useState(false);
   const [showChangelog, setShowChangelog] = useState(false);
   const [deviceCodeInfo, setDeviceCodeInfo] = useState<DeviceCodeInfo | null>(null);
@@ -206,6 +208,13 @@ export default function LauncherHome() {
       return;
     }
 
+    // Check if Minecraft is installed
+    if (!minecraftInstalled || !versionId) {
+      addToast('Please install Minecraft from Settings before playing', 'error');
+      console.log('[UI] Minecraft not installed. versionId:', versionId, 'minecraftInstalled:', minecraftInstalled);
+      return;
+    }
+
     if (updateAvailable) {
       await install();
     }
@@ -222,19 +231,20 @@ export default function LauncherHome() {
         );
       }
 
-      await launchGame({
+      console.log('[UI] Launching Minecraft with version:', versionId);
+      await launchGameWithMetadata({
         ram_mb: ramAllocation,
         game_dir: gameDirectory,
         username: user.username,
         uuid: user.uuid,
         access_token: user.access_token,
-      });
+      }, versionId);
 
       // Note: isLaunching is now cleared by minecraft-exit event
       // Discord presence is also cleared by minecraft-exit event
     } catch (error) {
       console.error('Failed to launch game:', error);
-      addToast('Failed to launch game', 'error');
+      addToast(`Failed to launch game: ${error}`, 'error');
       setIsLaunching(false);
     }
   };

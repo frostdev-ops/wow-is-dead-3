@@ -25,8 +25,17 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. tell Vite to ignore watching `src-tauri` and Minecraft directories
+      ignored: [
+        "**/src-tauri/**",
+        "**/.minecraft/**",
+        "**/minecraft/**",
+        "**/versions/**",
+        "**/libraries/**",
+        "**/assets/**",
+        "**/natives/**",
+        "**/.cache/**",
+      ],
     },
   },
 }));

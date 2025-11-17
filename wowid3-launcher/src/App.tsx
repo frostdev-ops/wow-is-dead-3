@@ -12,7 +12,7 @@ function AppContent() {
   const [isMuted, setIsMuted] = useState(false);
   const [showChangelog, setShowChangelog] = useState(false);
   const [audio] = useState(() => new Audio('/wid3menu.wav'));
-  const { checkUpdates, latestManifest, installedVersion } = useModpack();
+  const { checkUpdates, latestManifest } = useModpack();
   const { startPolling } = useServer();
   useTheme(); // Apply theme on mount
 
