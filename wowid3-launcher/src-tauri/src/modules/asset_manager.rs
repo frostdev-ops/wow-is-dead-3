@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tokio::io::AsyncWriteExt;
 
 use super::minecraft_version::AssetIndex as AssetIndexMeta;
@@ -21,9 +21,6 @@ pub struct AssetObject {
     pub hash: String,
     pub size: u64,
 }
-
-/// Progress callback for asset downloads
-pub type ProgressCallback = Box<dyn Fn(usize, usize, String) + Send + Sync>;
 
 /// Download and parse asset index
 pub async fn download_asset_index(
@@ -206,37 +203,6 @@ where
     Ok(())
 }
 
-/// Get the path to an asset by its key
-pub fn get_asset_path(asset_index: &AssetIndex, key: &str, assets_dir: &Path) -> Option<PathBuf> {
-    asset_index.objects.get(key).map(|obj| {
-        let subdir = &obj.hash[0..2];
-        assets_dir.join("objects").join(subdir).join(&obj.hash)
-    })
-}
-
-/// Check if all assets are downloaded
-pub async fn verify_assets(asset_index: &AssetIndex, assets_dir: &Path) -> Result<bool> {
-    for (_name, object) in &asset_index.objects {
-        let hash = &object.hash;
-        let subdir = &hash[0..2];
-        let path = assets_dir.join("objects").join(subdir).join(hash);
-
-        if !path.exists() {
-            return Ok(false);
-        }
-
-        // Optionally verify hash (can be slow for large asset sets)
-        // Uncomment if you want strict verification
-        /*
-        let bytes = tokio::fs::read(&path).await?;
-        if !verify_sha1_bytes(&bytes, hash) {
-            return Ok(false);
-        }
-        */
-    }
-
-    Ok(true)
-}
 
 #[cfg(test)]
 mod tests {

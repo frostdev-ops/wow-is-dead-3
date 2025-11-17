@@ -25,9 +25,6 @@ pub struct InstallProgress {
     pub message: String,
 }
 
-/// Progress callback type
-pub type ProgressCallback = Box<dyn Fn(InstallProgress) + Send + Sync>;
-
 /// Install Minecraft (vanilla or Fabric)
 pub async fn install_minecraft<F>(
     config: InstallConfig,
@@ -178,18 +175,6 @@ pub async fn get_installed_version(game_dir: &Path, version_id: &str) -> Result<
         .context("Failed to parse version metadata")?;
 
     Ok(meta)
-}
-
-/// Update/reinstall a version (downloads only missing or corrupted files)
-pub async fn update_minecraft<F>(
-    config: InstallConfig,
-    progress_callback: F,
-) -> Result<VersionMeta>
-where
-    F: FnMut(InstallProgress),
-{
-    // For now, just reinstall (delta updates can be added later)
-    install_minecraft(config, progress_callback).await
 }
 
 #[cfg(test)]

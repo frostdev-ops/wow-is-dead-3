@@ -156,7 +156,6 @@ struct MinecraftAuthRequest {
 #[derive(Debug, Deserialize)]
 struct MinecraftAuthResponse {
     access_token: String,
-    expires_in: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -169,7 +168,6 @@ struct MinecraftProfileResponse {
 #[derive(Debug, Deserialize)]
 struct MinecraftSkin {
     url: String,
-    variant: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -201,7 +199,6 @@ struct SelectedUser {
 struct AuthAccount {
     #[serde(rename = "accessToken")]
     access_token: String,
-    username: String,
     profiles: HashMap<String, ProfileInfo>,
 }
 

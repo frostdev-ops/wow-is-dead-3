@@ -80,14 +80,6 @@ fn read_varint(stream: &mut TcpStream) -> Result<i32> {
     Ok(result)
 }
 
-/// Write a string to the stream (VarInt length prefix + UTF-8 bytes)
-fn write_string(stream: &mut TcpStream, s: &str) -> Result<()> {
-    let bytes = s.as_bytes();
-    write_varint(stream, bytes.len() as i32)?;
-    stream.write_all(bytes)?;
-    Ok(())
-}
-
 /// Read a string from the stream (VarInt length prefix + UTF-8 bytes)
 fn read_string(stream: &mut TcpStream) -> Result<String> {
     let length = read_varint(stream)? as usize;
@@ -321,55 +313,6 @@ fn ping_server_sync(mut stream: TcpStream, host: &str, port: u16) -> Result<Serv
     })
 }
 
-/// Get detailed player list from server
-pub async fn get_player_list(address: &str) -> Result<Vec<String>> {
-    let status = ping_server(address).await?;
-    Ok(status.players)
-}
-
-/// Background task to poll server status
-/// Returns a JoinHandle that can be used to stop the polling
-pub fn start_server_polling(
-    address: String,
-    interval_secs: u64,
-    callback: impl Fn(ServerStatus) + Send + 'static,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        loop {
-            if let Ok(status) = ping_server(&address).await {
-                callback(status);
-            }
-
-            tokio::time::sleep(Duration::from_secs(interval_secs)).await;
-        }
-    })
-}
-
-/// Background task to poll server status with cancellation support
-/// Use this version if you need to stop the polling gracefully
-pub fn start_server_polling_cancellable(
-    address: String,
-    interval_secs: u64,
-    callback: impl Fn(ServerStatus) + Send + 'static,
-    mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                _ = &mut cancel_rx => {
-                    // Cancellation signal received, exit loop
-                    break;
-                }
-                _ = tokio::time::sleep(Duration::from_secs(interval_secs)) => {
-                    if let Ok(status) = ping_server(&address).await {
-                        callback(status);
-                    }
-                }
-            }
-        }
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -559,38 +502,6 @@ mod tests {
         assert_eq!(status.players[1], "Player2");
         assert_eq!(status.version, Some("1.20.4".to_string()));
         assert_eq!(status.motd, Some("Test Server".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_get_player_list() {
-        // Find an available port
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        drop(listener);
-
-        let response_json = r#"{
-            "version": {"name": "1.20.4"},
-            "players": {"max": 20, "online": 3, "sample": [
-                {"name": "Alice", "id": "uuid1"},
-                {"name": "Bob", "id": "uuid2"},
-                {"name": "Charlie", "id": "uuid3"}
-            ]},
-            "description": "Test Server"
-        }"#;
-
-        let _server = start_mock_server(port, response_json.to_string());
-
-        // Give server time to start
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        let players = get_player_list(&format!("127.0.0.1:{}", port))
-            .await
-            .unwrap();
-
-        assert_eq!(players.len(), 3);
-        assert_eq!(players[0], "Alice");
-        assert_eq!(players[1], "Bob");
-        assert_eq!(players[2], "Charlie");
     }
 
     #[tokio::test]

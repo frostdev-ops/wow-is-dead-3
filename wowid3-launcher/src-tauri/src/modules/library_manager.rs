@@ -107,12 +107,6 @@ pub fn maven_to_path(maven: &str) -> String {
     format!("{}/{}/{}/{}-{}.jar", group, artifact, version, artifact, version)
 }
 
-/// Convert Maven coordinates to URL for Minecraft libraries
-pub fn maven_to_url(maven: &str, base_url: &str) -> String {
-    let path = maven_to_path(maven);
-    format!("{}/{}", base_url.trim_end_matches('/'), path)
-}
-
 /// Download a file with SHA1 verification
 pub async fn download_file_verified(
     url: &str,
@@ -410,18 +404,6 @@ mod tests {
     fn test_maven_to_path() {
         let path = maven_to_path("com.mojang:logging:1.0.0");
         assert_eq!(path, "com/mojang/logging/1.0.0/logging-1.0.0.jar");
-    }
-
-    #[test]
-    fn test_maven_to_url() {
-        let url = maven_to_url(
-            "com.mojang:logging:1.0.0",
-            "https://libraries.minecraft.net/",
-        );
-        assert_eq!(
-            url,
-            "https://libraries.minecraft.net/com/mojang/logging/1.0.0/logging-1.0.0.jar"
-        );
     }
 
     #[test]
