@@ -17,7 +17,7 @@ export const Card = ({ children, className = '', hover = false }: CardProps) => 
         backdropFilter: 'blur(12px)',
         borderRadius: '0',
         border: '1px solid rgba(255, 255, 255, 0.3)',
-        boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.25)',
+        boxShadow: '0 0 20px rgba(255, 255, 255, 0.3), 0 25px 50px -12px rgb(0 0 0 / 0.25)',
       }}
     >
       {children}

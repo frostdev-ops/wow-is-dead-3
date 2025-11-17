@@ -17,7 +17,7 @@ export const ProgressBar = ({
     <div className="w-full">
       {showLabel && (
         <div className="flex justify-between mb-2">
-          <span className="text-sm text-slate-300">Downloading</span>
+          <span className="text-sm text-slate-300" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>Downloading</span>
           {showPercentage && (
             <span className="text-sm font-semibold text-red-500">{percentage}%</span>
           )}
@@ -25,8 +25,11 @@ export const ProgressBar = ({
       )}
       <div className="w-full h-2 bg-slate-700 rounded-full overflow-hidden border border-slate-600">
         <div
-          className="h-full bg-gradient-to-r from-red-500 to-red-600 transition-all duration-300"
-          style={{ width: `${percentage}%` }}
+          className="h-full transition-all duration-300"
+          style={{
+            width: `${percentage}%`,
+            background: 'repeating-linear-gradient(45deg, #dc2626 0px, #dc2626 10px, #ffffff 10px, #ffffff 20px)'
+          }}
         />
       </div>
       {showLabel && (

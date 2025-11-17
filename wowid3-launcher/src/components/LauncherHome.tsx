@@ -457,7 +457,7 @@ export default function LauncherHome() {
         borderRadius: '0',
         padding: '1.5rem',
         border: `1px solid ${installedVersion ? '#16a34a' : '#dc2626'}`,
-        boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.25)'
+        boxShadow: `0 0 20px ${installedVersion ? 'rgba(34, 197, 94, 0.5)' : 'rgba(220, 38, 38, 0.5)'}, 0 25px 50px -12px rgb(0 0 0 / 0.25)`
       }}>
         {/* Version Info */}
         <div className="flex justify-center text-sm pb-4 opacity-100" style={{ fontFamily: "'Trebuchet MS', sans-serif", fontWeight: 'bold', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>

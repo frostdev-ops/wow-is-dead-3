@@ -43,3 +43,8 @@ wowid3-server/server/target/release/build/*
 wowid3-server/server/target/release/*
 wowid3-launcher/src-tauri/game/*
 wowid3-launcher/src-tauri/game/
+wowid3-launcher/src-tauri/game/config/*
+wowid3-launcher/src-tauri/game/config/
+
+wowid3-launcher/src-tauri/game/config/make_bubbles_pop.json
+wowid3-launcher/src-tauri/game/config/everycomp-common.json
