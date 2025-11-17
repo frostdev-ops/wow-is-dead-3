@@ -6,7 +6,6 @@ import ChristmasBackground from './components/theme/ChristmasBackground';
 import { Navigation } from './components/Navigation';
 import { ToastProvider } from './components/ui/ToastContainer';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { CatModel } from './components/CatModel';
 import './App.css';
 
 function AppContent() {
@@ -30,7 +29,6 @@ function AppContent() {
   return (
     <div className="relative w-screen h-screen overflow-hidden">
       <ChristmasBackground />
-      {activeTab === 'home' && <CatModel />}
       <div className="relative z-10 w-full h-full flex flex-col">
         <Navigation activeTab={activeTab} onTabChange={setActiveTab} />
         <div className="flex-1 overflow-auto">

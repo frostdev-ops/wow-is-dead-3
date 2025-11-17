@@ -178,7 +178,7 @@ export const CatModel = () => {
 
           // Scale and position the cat
           catGroup.scale.set(0.7, 0.7, 0.7);
-          catGroup.position.set(0, -5, 0);
+          catGroup.position.set(0, 0, 0);
 
           scene.add(catGroup);
           console.log('[CatModel] Cat model loaded and rendered');
@@ -219,11 +219,8 @@ export const CatModel = () => {
     <div
       ref={containerRef}
       style={{
-        position: 'fixed',
-        left: '20px',
-        top: '50%',
-        transform: 'translateY(-50%)',
-        zIndex: 10,
+        width: '400px',
+        height: '600px',
         pointerEvents: 'none',
       }}
     />
