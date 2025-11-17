@@ -127,27 +127,24 @@ function AppContent() {
 
           {/* Version Display with Changelog */}
           {displayManifest && (
-            <div className="relative">
-              <div
-                className="p-5 transition-all bg-black bg-opacity-40 text-white cursor-pointer hover:bg-opacity-60"
-                style={{
-                  backdropFilter: 'blur(12px)',
-                  border: '2px solid rgba(255, 215, 0, 0.3)',
-                  borderRadius: '0',
-                }}
-                onMouseEnter={() => setShowChangelog(true)}
-                onMouseLeave={() => setShowChangelog(false)}
-                title="Modpack Version - Hover for changelog"
-              >
-                <div className="flex items-center gap-2">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                    <polyline points="14 2 14 8 20 8" />
-                  </svg>
-                  <span style={{ fontFamily: "'Trebuchet MS', sans-serif", fontWeight: 'bold', color: '#FFD700' }}>
-                    v{displayManifest.version}
-                  </span>
-                </div>
+            <button
+              className="p-5 transition-all bg-black bg-opacity-40 text-white hover:bg-opacity-60"
+              style={{
+                backdropFilter: 'blur(12px)',
+                border: '2px solid rgba(255, 255, 255, 0.3)',
+                borderRadius: '0',
+              }}
+              onMouseEnter={() => setShowChangelog(true)}
+              onMouseLeave={() => setShowChangelog(false)}
+              title="Modpack Version - Hover for changelog"
+            >
+              <div className="flex items-center gap-2">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                </svg>
+                <span style={{ fontFamily: "'Trebuchet MS', sans-serif", fontWeight: 'bold', color: '#FFD700' }}>
+                  v{displayManifest.version}
+                </span>
               </div>
 
               {/* Changelog Tooltip */}
@@ -183,7 +180,7 @@ function AppContent() {
                   </div>
                 </div>
               )}
-            </div>
+            </button>
           )}
         </div>
 

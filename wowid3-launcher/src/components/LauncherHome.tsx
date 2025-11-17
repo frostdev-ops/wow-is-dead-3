@@ -334,7 +334,7 @@ export default function LauncherHome() {
         ) : (
           <div className="p-4 rounded-lg text-center border border-opacity-50" style={{ backgroundColor: 'rgba(8, 91, 46, 0.8)', borderColor: '#cdf1e1ff' }}>
             <p className="font-semibold mb-1" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif", fontWeight: 'bold' }}>Login Required</p>
-            <p className="text-sm" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif", fontWeight: 'bold' }}>Click "Login & Play" to authenticate with your Microsoft account</p>
+            <p className="text-sm" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif", fontWeight: 'bold' }}>Click "Login" to authenticate with your Microsoft account</p>
           </div>
         )}
 
@@ -460,21 +460,25 @@ export default function LauncherHome() {
         <div className="grid grid-cols-3 gap-4 pt-4">
           <div className="text-center">
             <p className="text-2xl font-bold" style={{ color: installedVersion ? '#16a34a' : '#dc2626' }}>
-              {latestManifest?.files.length || 0}
+              {installedVersion && latestManifest && installedVersion === latestManifest.version
+                ? latestManifest.files.length
+                : installedVersion ? '?' : 0}
             </p>
-            <p className="text-xs text-gray-400">Mods</p>
+            <p className="text-xs text-gray-400">Mods Installed</p>
           </div>
           <div className="text-center">
             <p className="text-2xl font-bold" style={{ color: installedVersion ? '#16a34a' : '#dc2626' }}>
-              {latestManifest?.minecraft_version || 'N/A'}
+              {installedVersion && latestManifest && installedVersion === latestManifest.version
+                ? latestManifest.minecraft_version
+                : 'N/A'}
             </p>
             <p className="text-xs text-gray-400">MC Version</p>
           </div>
           <div className="text-center">
             <p className="text-2xl font-bold" style={{ color: installedVersion ? '#16a34a' : '#dc2626' }}>
-              {ramAllocation / 1024}GB
+              {Math.round(ramAllocation / 1024)}GB
             </p>
-            <p className="text-xs text-gray-400">RAM</p>
+            <p className="text-xs text-gray-400">Allocated RAM</p>
           </div>
         </div>
       </div>
