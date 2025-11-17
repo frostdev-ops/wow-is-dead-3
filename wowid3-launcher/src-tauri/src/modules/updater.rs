@@ -150,6 +150,12 @@ pub async fn download_file(file: &ManifestFile, base_dir: &PathBuf) -> Result<()
     f.write_all(&bytes)
         .await
         .context("Failed to write file contents")?;
+    f.flush()
+        .await
+        .context("Failed to flush file contents")?;
+    f.sync_all()
+        .await
+        .context("Failed to sync file to disk")?;
 
     Ok(())
 }
@@ -253,7 +259,7 @@ pub fn calculate_total_size(files: &[ManifestFile]) -> u64 {
 pub async fn install_modpack(
     manifest: &Manifest,
     game_dir: &PathBuf,
-    progress_callback: impl Fn(usize, usize) + Send + Sync,
+    progress_callback: impl Fn(usize, usize, String) + Send + Sync,
 ) -> Result<()> {
     // Ensure game directory exists
     if !game_dir.exists() {
@@ -287,7 +293,7 @@ pub async fn install_modpack(
         println!("Downloading {}/{}: {}", index + 1, total, file.path);
 
         download_file_with_retry(file, game_dir, MAX_DOWNLOAD_RETRIES).await?;
-        progress_callback(index + 1, total);
+        progress_callback(index + 1, total, file.path.clone());
     }
 
     // Update version file
@@ -300,7 +306,6 @@ pub async fn install_modpack(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
     use tempfile::TempDir;
 
     #[tokio::test]
@@ -728,10 +733,11 @@ mod integration_tests {
             ],
         };
 
-        let result = install_modpack(&manifest, &temp_dir.path().to_path_buf(), |current, total| {
+        let result = install_modpack(&manifest, &temp_dir.path().to_path_buf(), |current, total, filename| {
             // Verify progress callback is called with reasonable values
             assert!(current <= total);
             assert!(total == 2); // We have 2 files
+            assert!(!filename.is_empty());
         })
         .await;
 
@@ -797,10 +803,11 @@ mod integration_tests {
             ],
         };
 
-        let result = install_modpack(&manifest, &temp_dir.path().to_path_buf(), |current, total| {
+        let result = install_modpack(&manifest, &temp_dir.path().to_path_buf(), |current, total, filename| {
             // Only mod2.jar needs downloading, so total should be 1
             assert_eq!(total, 1);
             assert_eq!(current, 1);
+            assert!(!filename.is_empty());
         })
         .await;
 
@@ -845,7 +852,7 @@ mod integration_tests {
             }],
         };
 
-        let result = install_modpack(&manifest, &temp_dir.path().to_path_buf(), |_current, _total| {
+        let result = install_modpack(&manifest, &temp_dir.path().to_path_buf(), |_current, _total, _filename| {
             // Should never be called since no downloads needed
             panic!("Progress callback should not be called when no files need downloading");
         })

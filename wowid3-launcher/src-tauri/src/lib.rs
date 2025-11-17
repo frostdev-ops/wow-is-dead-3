@@ -53,6 +53,7 @@ async fn cmd_ping_server(address: String) -> Result<ServerStatus, String> {
 struct DownloadProgressEvent {
     current: usize,
     total: usize,
+    filename: String,
 }
 
 // Modpack Update Commands
@@ -76,8 +77,8 @@ async fn cmd_install_modpack(
     manifest: Manifest,
     game_dir: PathBuf,
 ) -> Result<String, String> {
-    install_modpack(&manifest, &game_dir, move |current, total| {
-        let progress = DownloadProgressEvent { current, total };
+    install_modpack(&manifest, &game_dir, move |current, total, filename| {
+        let progress = DownloadProgressEvent { current, total, filename };
         let _ = app.emit("download-progress", progress);
     })
     .await

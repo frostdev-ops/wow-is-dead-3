@@ -66,15 +66,17 @@ Implemented a complete modpack download and update system with delta updates, SH
 ### 5. Progress Reporting
 - **Progress Callback**:
   - `install_modpack()` accepts callback function
-  - Reports `(current_file, total_files)` after each download
-  - Tauri command emits `download-progress` events to frontend
-  - Frontend hooks update UI progress bar
+  - Reports `(current_file, total_files, filename)` after each download
+  - Tauri command emits `download-progress` events to frontend with filename
+  - Frontend hooks update UI progress bar and display current file name
 
 - **Download Information**:
-  - Current file being downloaded
+  - Current file being downloaded (with filename path)
   - Total number of files to download
   - File size information available
   - Progress percentage calculable from callback data
+
+- **Enhancement Applied**: Added filename parameter to progress callback to enable frontend to display which file is currently downloading
 
 ### 6. Disk Space Checking
 - **Pre-Download Validation**: `check_disk_space()` function
@@ -128,8 +130,8 @@ Implemented a complete modpack download and update system with delta updates, SH
 
 - **Event System**:
   - `download-progress` event emitted during installation
-  - Payload: `{ current: usize, total: usize }`
-  - Frontend React hooks listen for events
+  - Payload: `{ current: usize, total: usize, filename: String }`
+  - Frontend React hooks listen for events and can display current file name
 
 ### 10. Comprehensive Testing
 
@@ -145,7 +147,11 @@ Implemented a complete modpack download and update system with delta updates, SH
 - Retry logic (success on retry, failure after max retries)
 - Full installation (first-time, delta update, no updates needed)
 
-**All 20 tests passing**
+**Test Status**: 19/20 tests passing initially
+- **Failing Test**: `test_download_file_success` - File was not being flushed/synced to disk properly
+- **Root Cause**: Missing `flush()` and `sync_all()` calls after `write_all()` in `download_file()` function
+- **Fix Applied**: Added explicit `flush()` and `sync_all()` calls to ensure file contents are written to disk before verification
+- **Result**: All 20 tests now passing after fix
 
 ## How Manifest System Works
 
@@ -331,11 +337,12 @@ console.log(`${downloadProgress.current}/${downloadProgress.total}`);
 
 ### Event Listening
 ```typescript
-listen<{ current: number; total: number }>(
+listen<{ current: number; total: number; filename: string }>(
   'download-progress',
   (event) => {
     const percent = (event.payload.current / event.payload.total) * 100;
     setProgress(percent);
+    setCurrentFile(event.payload.filename);
   }
 );
 ```
