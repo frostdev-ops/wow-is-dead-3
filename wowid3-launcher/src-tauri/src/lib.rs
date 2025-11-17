@@ -1,12 +1,13 @@
 mod modules;
 
 use modules::auth::{authenticate_minecraft, get_current_user, logout, refresh_token, MinecraftProfile};
+use modules::discord::{DiscordClient, GamePresence};
 use modules::minecraft::{launch_game, LaunchConfig};
 use modules::server::{ping_server, ServerStatus};
 use modules::updater::{check_for_updates, get_installed_version, install_modpack, Manifest};
 use serde::Serialize;
 use std::path::PathBuf;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, State};
 
 // Authentication Commands
 #[tauri::command]
@@ -40,6 +41,43 @@ async fn cmd_launch_game(config: LaunchConfig) -> Result<String, String> {
         .await
         .map(|_| "Game launched successfully".to_string())
         .map_err(|e| e.to_string())
+}
+
+// Discord Rich Presence Commands
+#[tauri::command]
+async fn cmd_discord_connect(discord: State<'_, DiscordClient>) -> Result<(), String> {
+    discord.connect().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cmd_discord_set_presence(
+    discord: State<'_, DiscordClient>,
+    presence: GamePresence,
+) -> Result<(), String> {
+    discord.set_presence(&presence).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cmd_discord_update_presence(
+    discord: State<'_, DiscordClient>,
+    presence: GamePresence,
+) -> Result<(), String> {
+    discord.update_presence(&presence).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cmd_discord_clear_presence(discord: State<'_, DiscordClient>) -> Result<(), String> {
+    discord.clear_presence().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cmd_discord_disconnect(discord: State<'_, DiscordClient>) -> Result<(), String> {
+    discord.disconnect().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cmd_discord_is_connected(discord: State<'_, DiscordClient>) -> Result<bool, String> {
+    Ok(discord.is_connected().await)
 }
 
 // Server Status Commands
@@ -91,6 +129,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
+        .manage(DiscordClient::new())
         .invoke_handler(tauri::generate_handler![
             cmd_authenticate,
             cmd_get_current_user,
@@ -101,6 +140,12 @@ pub fn run() {
             cmd_check_updates,
             cmd_get_installed_version,
             cmd_install_modpack,
+            cmd_discord_connect,
+            cmd_discord_set_presence,
+            cmd_discord_update_presence,
+            cmd_discord_clear_presence,
+            cmd_discord_disconnect,
+            cmd_discord_is_connected,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
