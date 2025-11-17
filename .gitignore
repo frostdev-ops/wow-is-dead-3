@@ -31,3 +31,8 @@ wowid3-server-data/
 wowid3-server-data/*
 wowid3-server/server/target/debug/
 wowid3-server/server/target/debug/*
+wowid3-launcher/src-tauri/Cargo.toml
+wowid3-launcher/CLAUDE.md
+wowid3-launcher/package-lock.json
+wowid3-launcher/.claude/settings.local.json
+wowid3-launcher/src-tauri/Cargo.toml
