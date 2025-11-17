@@ -397,7 +397,7 @@ function AppContent() {
                   </div>
                 </div>
               )}
-            </div>
+            </button>
           )}
         </div>
 
