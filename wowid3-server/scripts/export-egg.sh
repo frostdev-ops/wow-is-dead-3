@@ -41,7 +41,7 @@ if command -v jq &> /dev/null; then
     echo ""
     echo -e "${GREEN}Checking required fields...${NC}"
     
-    REQUIRED_FIELDS=("name" "author" "description" "docker_image" "startup" "config")
+    REQUIRED_FIELDS=("name" "author" "description" "startup" "config")
     MISSING_FIELDS=()
     
     for field in "${REQUIRED_FIELDS[@]}"; do
@@ -67,7 +67,15 @@ if command -v jq &> /dev/null; then
     echo "Name: $(jq -r '.name' "$EGG_FILE")"
     echo "Author: $(jq -r '.author' "$EGG_FILE")"
     echo "Description: $(jq -r '.description' "$EGG_FILE")"
-    echo "Docker Image: $(jq -r '.docker_image' "$EGG_FILE")"
+    
+    # Check for docker_images (PTDL_v2) or docker_image (older format)
+    if jq -e '.docker_images' "$EGG_FILE" > /dev/null 2>&1; then
+        echo "Docker Images: $(jq -r '.docker_images | keys | join(", ")' "$EGG_FILE")"
+    elif jq -e '.docker_image' "$EGG_FILE" > /dev/null 2>&1; then
+        echo "Docker Image: $(jq -r '.docker_image' "$EGG_FILE")"
+    fi
+    
+    echo "Format Version: $(jq -r '.meta.version // "PTDL_v1"' "$EGG_FILE")"
     echo ""
     echo "Variables: $(jq '.variables | length' "$EGG_FILE")"
     echo "Startup Command: $(jq -r '.startup' "$EGG_FILE")"

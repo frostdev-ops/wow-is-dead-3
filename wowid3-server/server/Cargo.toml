@@ -19,6 +19,7 @@ serde_json = "1"
 # File handling
 sha2 = "0.10"
 glob = "0.3"
+globset = "0.4"
 walkdir = "2"
 mime_guess = "2"
 

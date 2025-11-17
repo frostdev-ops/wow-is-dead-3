@@ -1,6 +1,8 @@
 use crate::config::Config;
 use crate::models::Manifest;
 use crate::storage;
+use crate::utils;
+use anyhow;
 use axum::{
     body::Body,
     extract::{Path, State},
@@ -54,6 +56,19 @@ pub async fn serve_file(
 
     if !canonical_file.starts_with(&canonical_release) {
         return Err(AppError::Forbidden("Path traversal attempt detected".to_string()));
+    }
+
+    // Check blacklist before serving
+    let blacklist_patterns = utils::load_blacklist_patterns(&state.config)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to load blacklist: {}", e)))?;
+
+    let glob_set = utils::compile_patterns(&blacklist_patterns)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to compile blacklist patterns: {}", e)))?;
+
+    if utils::is_blacklisted(&file_path, &glob_set) {
+        tracing::debug!("Blocked access to blacklisted file: {}", file_path);
+        return Err(AppError::Forbidden("File access denied".to_string()));
     }
 
     // Open and stream the file

@@ -3,6 +3,7 @@ mod config;
 mod middleware;
 mod models;
 mod storage;
+mod utils;
 
 use api::admin::{
     create_release, delete_release, get_blacklist, list_releases, login, update_blacklist,

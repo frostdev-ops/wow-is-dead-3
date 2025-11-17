@@ -6,6 +6,7 @@ use crate::models::{
     UpdateBlacklistRequest, UploadResponse,
 };
 use crate::storage;
+use crate::utils;
 use axum::{
     extract::{multipart::Multipart, Path, State},
     http::StatusCode,
@@ -138,6 +139,14 @@ pub async fn create_release(
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create release directory: {}", e)))?;
 
+    // Load blacklist patterns
+    let blacklist_patterns = utils::load_blacklist_patterns(&state.config)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to load blacklist: {}", e)))?;
+
+    let glob_set = utils::compile_patterns(&blacklist_patterns)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to compile blacklist patterns: {}", e)))?;
+
     // Walk uploaded files and create manifest
     let mut files = Vec::new();
     let mut total_size = 0u64;
@@ -151,6 +160,16 @@ pub async fn create_release(
         let relative_path = file_path
             .strip_prefix(&upload_dir)
             .map_err(|_| AppError::Internal(anyhow::anyhow!("Path error")))?;
+
+        let relative_str = relative_path
+            .to_string_lossy()
+            .replace("\\", "/");
+
+        // Check if file matches blacklist pattern
+        if utils::is_blacklisted(&relative_str, &glob_set) {
+            tracing::debug!("Skipping blacklisted file: {}", relative_str);
+            continue;
+        }
 
         // Copy file to release directory
         let target_path = release_dir.join(relative_path);
@@ -176,15 +195,11 @@ pub async fn create_release(
 
         total_size += file_size;
 
-        let relative_str = relative_path
-            .to_string_lossy()
-            .replace("\\", "/");
-
         files.push(ManifestFile {
-            path: relative_str,
+            path: relative_str.clone(),
             url: format!(
                 "{}/files/{}/{}",
-                state.config.base_url, request.version, relative_path.to_string_lossy()
+                state.config.base_url, request.version, relative_str
             ),
             sha256,
             size: file_size,
