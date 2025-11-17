@@ -328,11 +328,12 @@ pub async fn get_player_list(address: &str) -> Result<Vec<String>> {
 }
 
 /// Background task to poll server status
-pub async fn start_server_polling(
+/// Returns a JoinHandle that can be used to stop the polling
+pub fn start_server_polling(
     address: String,
     interval_secs: u64,
     callback: impl Fn(ServerStatus) + Send + 'static,
-) {
+) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         loop {
             if let Ok(status) = ping_server(&address).await {
@@ -341,7 +342,32 @@ pub async fn start_server_polling(
 
             tokio::time::sleep(Duration::from_secs(interval_secs)).await;
         }
-    });
+    })
+}
+
+/// Background task to poll server status with cancellation support
+/// Use this version if you need to stop the polling gracefully
+pub fn start_server_polling_cancellable(
+    address: String,
+    interval_secs: u64,
+    callback: impl Fn(ServerStatus) + Send + 'static,
+    mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                _ = &mut cancel_rx => {
+                    // Cancellation signal received, exit loop
+                    break;
+                }
+                _ = tokio::time::sleep(Duration::from_secs(interval_secs)) => {
+                    if let Ok(status) = ping_server(&address).await {
+                        callback(status);
+                    }
+                }
+            }
+        }
+    })
 }
 
 #[cfg(test)]
