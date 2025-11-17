@@ -1,0 +1,33 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# Node
+node_modules/
+dist/
+*.log
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Server data
+/server-data/
+*.jar
+
+# OS
+.DS_Store
+Thumbs.db
+
+.fabric/processedMods/cardinal-components-chunk-5.2.3-338907b99ae90b71.jar
+wowid3-server-data/
+wowid3-server-data/*
+wowid3-server/server/target/debug/
+wowid3-server/server/target/debug/*
