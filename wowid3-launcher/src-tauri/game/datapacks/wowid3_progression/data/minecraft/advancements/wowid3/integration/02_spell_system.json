@@ -1,0 +1,21 @@
+{
+  "display": {
+    "icon": {
+      "item": "malum:soul_ward"
+    },
+    "title": "Arcane Integration",
+    "description": "Master the spell system: automate spell components and unlock magical progression",
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "parent": "wowid3:integration/01_steam_power",
+  "criteria": {
+    "cast_spell": {
+      "trigger": "minecraft:recipe_unlocked",
+      "conditions": {}
+    }
+  },
+  "requirements": [["cast_spell"]]
+}

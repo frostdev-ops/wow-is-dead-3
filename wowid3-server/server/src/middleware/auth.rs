@@ -18,12 +18,13 @@ pub async fn auth_middleware(
     let auth_header = request
         .headers()
         .get(header::AUTHORIZATION)
-        .and_then(|h| h.to_str().ok());
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string());
 
     match auth_header {
         Some(auth) if auth.starts_with("Bearer ") => {
-            let token = &auth[7..]; // Remove "Bearer " prefix
-            request.extensions_mut().insert(AdminToken(token.to_string()));
+            let token = auth[7..].to_string(); // Remove "Bearer " prefix
+            request.extensions_mut().insert(AdminToken(token));
             Ok(next.run(request).await)
         }
         _ => Err((

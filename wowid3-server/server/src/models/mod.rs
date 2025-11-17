@@ -7,4 +7,4 @@ pub use admin::{
     ReleaseInfo, ReleaseListResponse, UpdateBlacklistRequest, UploadResponse,
 };
 pub use manifest::{Manifest, ManifestFile};
-pub use release::{CreateReleaseRequest, Release, UploadedFile};
+pub use release::CreateReleaseRequest;

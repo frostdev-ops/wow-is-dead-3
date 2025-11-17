@@ -1,7 +1,6 @@
 use crate::config::Config;
-use crate::models::{Manifest, ManifestFile};
+use crate::models::Manifest;
 use anyhow::{Context, Result};
-use std::path::PathBuf;
 use tokio::fs;
 
 /// Read manifest for a specific version

@@ -1,0 +1,12 @@
+{
+  "useAsync": true,
+  "tickSnowPiller": 20,
+  "tickSnowReplacer": 100,
+  "snowstormEnabled": true,
+  "maxSnowAccumulationLayers": 24,
+  "enableSeasonalDaylightCycle": true,
+  "grassFlowerGrowthEnabled": true,
+  "customCycleLength": false,
+  "customDayLength": 1.0,
+  "customNightLength": 1.0
+}

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useModpackStore, useSettingsStore } from '../stores';
 import { checkForUpdates, getInstalledVersion, installModpack } from './useTauriCommands';
@@ -36,7 +36,7 @@ export const useModpack = () => {
     checkInstalled();
   }, [gameDirectory, setInstalledVersion]);
 
-  const checkUpdates = async () => {
+  const checkUpdates = useCallback(async () => {
     try {
       setError(null);
       const manifest = await checkForUpdates(manifestUrl);
@@ -52,7 +52,7 @@ export const useModpack = () => {
       setError(err instanceof Error ? err.message : 'Failed to check for updates');
       throw err;
     }
-  };
+  }, [manifestUrl, installedVersion, setError, setLatestManifest, setUpdateAvailable]);
 
   const install = async () => {
     if (!latestManifest) {
@@ -64,10 +64,16 @@ export const useModpack = () => {
       setError(null);
 
       // Listen for download progress events
-      const unlisten = await listen<{ current: number; total: number }>(
+      const unlisten = await listen<{
+        current: number;
+        total: number;
+        filename: string;
+        current_bytes: number;
+        total_bytes: number;
+      }>(
         'download-progress',
         (event) => {
-          setDownloadProgress(event.payload.current, event.payload.total);
+          setDownloadProgress(event.payload.current_bytes, event.payload.total_bytes);
         }
       );
 

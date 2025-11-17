@@ -1,0 +1,27 @@
+{
+  "display": {
+    "icon": {
+      "item": "create:mechanical_saw"
+    },
+    "title": "Industry Meets Exploration",
+    "description": "Converge paths: Use Create saws to process biome materials into decorative blocks",
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "parent": "wowid3:convergence/01_farming_industry",
+  "criteria": {
+    "place_saw": {
+      "trigger": "minecraft:placed_block",
+      "conditions": {
+        "block": "create:mechanical_saw"
+      }
+    },
+    "process_materials": {
+      "trigger": "minecraft:recipe_unlocked",
+      "conditions": {}
+    }
+  },
+  "requirements": [["place_saw"], ["process_materials"]]
+}

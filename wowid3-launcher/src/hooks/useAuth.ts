@@ -57,17 +57,27 @@ export const useAuth = () => {
 
   const finishDeviceCodeAuth = async (deviceCode: string, interval: number) => {
     try {
+      console.error('[React Auth] ==== STARTING finishDeviceCodeAuth ====');
+      console.error('[React Auth] Device code length:', deviceCode.length, 'Interval:', interval);
       console.log('[Auth] Completing device code authentication...');
+
       const profile = await completeDeviceCodeAuth(deviceCode, interval);
+
+      console.error('[React Auth] ==== RECEIVED PROFILE FROM RUST ====');
+      console.error('[React Auth] Profile:', JSON.stringify(profile, null, 2));
       console.log('[Auth] Device code authentication successful:', profile);
+
       setUser(profile);
+      console.error('[React Auth] ==== setUser() CALLED ====');
       console.log('[Auth] User set in store');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Authentication failed';
+      console.error('[React Auth] ==== AUTHENTICATION ERROR ====');
       console.error('[Auth] Device code authentication failed:', message, err);
       setError(message);
       throw err;
     } finally {
+      console.error('[React Auth] ==== FINALLY BLOCK - setting loading to false ====');
       setLoading(false);
     }
   };

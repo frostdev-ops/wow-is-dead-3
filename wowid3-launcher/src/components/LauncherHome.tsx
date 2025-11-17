@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth, useModpack, useServer, useDiscord, launchGame } from '../hooks';
 import { useSettingsStore } from '../stores';
 import { UserMenu } from './UserMenu';
@@ -15,7 +15,7 @@ import { listen } from '@tauri-apps/api/event';
 
 export default function LauncherHome() {
   const { user, isAuthenticated, login, finishDeviceCodeAuth, isLoading: authLoading, error: authError } = useAuth();
-  const { installedVersion, latestManifest, updateAvailable, isDownloading, downloadProgress, install, error: modpackError } = useModpack();
+  const { installedVersion, latestManifest, updateAvailable, isDownloading, downloadProgress, checkUpdates, install, error: modpackError } = useModpack();
   const { status } = useServer();
   const { ramAllocation, gameDirectory } = useSettingsStore();
   const { addToast } = useToast();
@@ -23,6 +23,9 @@ export default function LauncherHome() {
   const [isLaunching, setIsLaunching] = useState(false);
   const [showChangelog, setShowChangelog] = useState(false);
   const [deviceCodeInfo, setDeviceCodeInfo] = useState<DeviceCodeInfo | null>(null);
+  const hasCheckedForModpack = useRef(false);
+  const modpackCheckRetries = useRef(0);
+  const lastCheckAttempt = useRef<number>(0);
 
   // Debug logging for auth state
   useEffect(() => {
@@ -56,6 +59,88 @@ export default function LauncherHome() {
       addToast(`Welcome back, ${user.username}!`, 'success');
     }
   }, [isAuthenticated, user, authLoading, addToast]);
+
+  // Auto-check for updates and install modpack after authentication
+  useEffect(() => {
+    const checkAndInstall = async () => {
+      // Guard: Only run once per session after authentication
+      if (hasCheckedForModpack.current) {
+        return; // Silent skip, already checked successfully
+      }
+
+      // Guard: Wait for auth to complete
+      if (!isAuthenticated || authLoading || isDownloading) {
+        return; // Silent skip, waiting for auth
+      }
+
+      // Exponential backoff: Check if we should wait before retrying
+      const now = Date.now();
+      const timeSinceLastAttempt = now - lastCheckAttempt.current;
+      const backoffDelay = Math.min(Math.pow(2, modpackCheckRetries.current) * 1000, 60000); // Max 60 seconds
+
+      if (modpackCheckRetries.current > 0 && timeSinceLastAttempt < backoffDelay) {
+        const remainingWait = Math.ceil((backoffDelay - timeSinceLastAttempt) / 1000);
+        console.log(`[Modpack] Waiting ${remainingWait}s before retry (attempt ${modpackCheckRetries.current + 1})`);
+        return;
+      }
+
+      console.log('[Modpack] Checking for updates...');
+      lastCheckAttempt.current = now;
+
+      try {
+        await checkUpdates();
+        console.log('[Modpack] Manifest fetched successfully');
+        hasCheckedForModpack.current = true;
+        modpackCheckRetries.current = 0; // Reset retry counter on success
+
+      } catch (err) {
+        modpackCheckRetries.current += 1;
+        const nextRetryDelay = Math.min(Math.pow(2, modpackCheckRetries.current) * 1000, 60000);
+        console.error(
+          `[Modpack] Failed to check for updates (attempt ${modpackCheckRetries.current}):`,
+          err instanceof Error ? err.message : err
+        );
+        console.log(`[Modpack] Will retry in ${nextRetryDelay / 1000}s`);
+
+        // Don't show toast for network errors on auto-check, just log them
+        // The user can manually check from settings if needed
+      }
+    };
+
+    checkAndInstall();
+  }, [isAuthenticated, authLoading, isDownloading, checkUpdates]);
+
+  // Separate effect to handle installation after manifest is fetched
+  useEffect(() => {
+    const performInstall = async () => {
+      // Only run if we've checked and there's something to install
+      if (!hasCheckedForModpack.current) return;
+      if (isDownloading) return;
+      if (!latestManifest) return;
+
+      // Check if we need to install
+      const needsInstall = !installedVersion || (updateAvailable && installedVersion !== latestManifest.version);
+
+      if (needsInstall) {
+        console.error('[Modpack] ==== STARTING AUTO-INSTALL ====');
+        console.error('[Modpack] Installed:', installedVersion, 'Latest:', latestManifest.version);
+
+        try {
+          addToast(installedVersion ? 'Updating modpack...' : 'Installing modpack...', 'info');
+          await install();
+          addToast('Modpack installed successfully!', 'success');
+          console.error('[Modpack] ==== INSTALL COMPLETE ====');
+        } catch (err) {
+          console.error('[Modpack] ==== INSTALL FAILED ====', err);
+          addToast(`Installation failed: ${err}`, 'error');
+        }
+      } else {
+        console.error('[Modpack] No install needed. Installed:', installedVersion, 'Latest:', latestManifest?.version);
+      }
+    };
+
+    performInstall();
+  }, [latestManifest, installedVersion, updateAvailable, isDownloading, install, addToast]);
 
   // Listen for Minecraft events
   useEffect(() => {

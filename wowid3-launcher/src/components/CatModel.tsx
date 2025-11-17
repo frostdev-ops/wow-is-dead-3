@@ -78,7 +78,7 @@ export const CatModel = () => {
             // Left:   [u, v+depth] -> [u+depth, v+depth+height]
 
             const toUV = (x: number, y: number) => [x / texWidth, 1 - y / texHeight];
-            const toUVNoFlip = (x: number, y: number) => [x / texWidth, y / texHeight];
+            // const toUVNoFlip = (x: number, y: number) => [x / texWidth, y / texHeight];
 
             const uvs: number[] = [];
 

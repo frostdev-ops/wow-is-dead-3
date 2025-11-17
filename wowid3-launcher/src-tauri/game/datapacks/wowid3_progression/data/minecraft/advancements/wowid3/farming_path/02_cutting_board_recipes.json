@@ -1,0 +1,47 @@
+{
+  "display": {
+    "icon": {
+      "item": "farmersdelight:tomato"
+    },
+    "title": "Culinary Foundation",
+    "description": "Use cutting board recipes 5 times",
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "parent": "wowid3:farming_path/01_farming_started",
+  "criteria": {
+    "cutting_board_recipe_1": {
+      "trigger": "minecraft:recipe_unlocked",
+      "conditions": {
+        "recipe": "farmersdelight:cutting/tomato_seeds"
+      }
+    },
+    "cutting_board_recipe_2": {
+      "trigger": "minecraft:recipe_unlocked",
+      "conditions": {
+        "recipe": "farmersdelight:cutting/beetroot_seeds"
+      }
+    },
+    "cutting_board_recipe_3": {
+      "trigger": "minecraft:recipe_unlocked",
+      "conditions": {
+        "recipe": "farmersdelight:cutting/melon"
+      }
+    },
+    "cutting_board_recipe_4": {
+      "trigger": "minecraft:recipe_unlocked",
+      "conditions": {
+        "recipe": "farmersdelight:cutting/pumpkin"
+      }
+    },
+    "cutting_board_recipe_5": {
+      "trigger": "minecraft:recipe_unlocked",
+      "conditions": {
+        "recipe": "farmersdelight:cutting/carrot"
+      }
+    }
+  },
+  "requirements": [["cutting_board_recipe_1"], ["cutting_board_recipe_2"], ["cutting_board_recipe_3"], ["cutting_board_recipe_4"], ["cutting_board_recipe_5"]]
+}

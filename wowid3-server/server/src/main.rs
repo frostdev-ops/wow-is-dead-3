@@ -3,6 +3,7 @@ mod config;
 mod middleware;
 mod models;
 mod storage;
+mod utils;
 
 use api::admin::{
     create_release, delete_release, get_blacklist, list_releases, login, update_blacklist,
@@ -73,20 +74,25 @@ async fn main() -> anyhow::Result<()> {
         .route("/files/:version/*path", get(serve_file))
         .with_state(public_state);
 
+    // Admin login route (no auth required)
+    let admin_login = Router::new()
+        .route("/api/admin/login", post(login))
+        .with_state(admin_state.clone());
+
     // Build admin API router (with auth middleware)
     let admin_routes = Router::new()
-        .route("/api/admin/login", post(login))
         .route("/api/admin/upload", post(upload_files))
         .route("/api/admin/releases", post(create_release).get(list_releases))
         .route("/api/admin/releases/:version", delete(delete_release))
         .route("/api/admin/blacklist", get(get_blacklist).put(update_blacklist))
-        .layer(middleware::from_fn(auth_middleware))
+        .layer(axum_middleware::from_fn(auth_middleware))
         .with_state(admin_state);
 
     // Build main router
     let app = Router::new()
         .route("/health", get(health_check))
         .merge(public_routes)
+        .merge(admin_login)
         .merge(admin_routes)
         .layer(cors);
 

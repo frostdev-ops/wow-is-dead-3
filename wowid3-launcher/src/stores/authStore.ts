@@ -5,6 +5,8 @@ export interface MinecraftProfile {
   username: string;
   access_token: string;
   skin_url?: string;
+  refresh_token?: string;
+  expires_at?: string; // ISO 8601 date string from Rust's DateTime<Utc>
 }
 
 interface AuthState {

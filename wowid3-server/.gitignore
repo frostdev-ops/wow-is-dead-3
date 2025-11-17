@@ -41,3 +41,9 @@ Thumbs.db
 !*.md
 !Dockerfile
 !docker-compose.yml
+
+# Large archive files (should not be in git)
+*.zip
+*.tar.gz
+server.zip
+server-files.tar.gz

@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 # Web framework
-axum = "0.7"
+axum = { version = "0.7", features = ["multipart"] }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io"] }
 tower = "0.5"
@@ -19,6 +19,7 @@ serde_json = "1"
 # File handling
 sha2 = "0.10"
 glob = "0.3"
+globset = "0.4"
 walkdir = "2"
 mime_guess = "2"
 

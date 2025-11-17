@@ -1,0 +1,23 @@
+{
+  "display": {
+    "icon": {
+      "item": "createaddition:alternator"
+    },
+    "title": "Electrical Mastery",
+    "description": "Build electrical infrastructure: generate 2048+ Stress Units with alternators and solar arrays",
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "parent": "wowid3:integration/03_artifact_crafting",
+  "criteria": {
+    "place_alternator": {
+      "trigger": "minecraft:placed_block",
+      "conditions": {
+        "block": "createaddition:alternator"
+      }
+    }
+  },
+  "requirements": [["place_alternator"]]
+}

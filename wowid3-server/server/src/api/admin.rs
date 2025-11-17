@@ -6,15 +6,16 @@ use crate::models::{
     UpdateBlacklistRequest, UploadResponse,
 };
 use crate::storage;
+use crate::utils;
 use axum::{
-    extract::{Path, State},
+    extract::{multipart::Multipart, Path, State},
     http::StatusCode,
     response::IntoResponse,
     Extension, Json,
 };
 use chrono::Utc;
-use multer::Multipart;
 use serde_json::json;
+use sha2::Digest;
 use std::sync::Arc;
 use tokio::fs;
 use uuid::Uuid;
@@ -32,10 +33,9 @@ pub async fn login(
 ) -> Result<Json<LoginResponse>, AppError> {
     if request.password == *state.admin_password {
         // Simple token is the password hash (in production, use proper JWT)
-        let token = format!(
-            "{}",
-            sha2::Sha256::digest(request.password.as_bytes())
-        );
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(request.password.as_bytes());
+        let token = format!("{:x}", hasher.finalize());
         Ok(Json(LoginResponse {
             token,
             message: "Login successful".to_string(),
@@ -49,7 +49,7 @@ pub async fn login(
 pub async fn upload_files(
     State(state): State<AdminState>,
     Extension(_token): Extension<AdminToken>,
-    multipart: Multipart,
+    mut multipart: Multipart,
 ) -> Result<Json<Vec<UploadResponse>>, AppError> {
     let upload_id = Uuid::new_v4().to_string();
     let upload_dir = state.config.uploads_path().join(&upload_id);
@@ -139,6 +139,14 @@ pub async fn create_release(
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create release directory: {}", e)))?;
 
+    // Load blacklist patterns
+    let blacklist_patterns = utils::load_blacklist_patterns(&state.config)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to load blacklist: {}", e)))?;
+
+    let glob_set = utils::compile_patterns(&blacklist_patterns)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to compile blacklist patterns: {}", e)))?;
+
     // Walk uploaded files and create manifest
     let mut files = Vec::new();
     let mut total_size = 0u64;
@@ -152,6 +160,16 @@ pub async fn create_release(
         let relative_path = file_path
             .strip_prefix(&upload_dir)
             .map_err(|_| AppError::Internal(anyhow::anyhow!("Path error")))?;
+
+        let relative_str = relative_path
+            .to_string_lossy()
+            .replace("\\", "/");
+
+        // Check if file matches blacklist pattern
+        if utils::is_blacklisted(&relative_str, &glob_set) {
+            tracing::debug!("Skipping blacklisted file: {}", relative_str);
+            continue;
+        }
 
         // Copy file to release directory
         let target_path = release_dir.join(relative_path);
@@ -177,15 +195,11 @@ pub async fn create_release(
 
         total_size += file_size;
 
-        let relative_str = relative_path
-            .to_string_lossy()
-            .replace("\\", "/");
-
         files.push(ManifestFile {
-            path: relative_str,
+            path: relative_str.clone(),
             url: format!(
                 "{}/files/{}/{}",
-                state.config.base_url, request.version, relative_path.to_string_lossy()
+                state.config.base_url, request.version, relative_str
             ),
             sha256,
             size: file_size,
@@ -193,6 +207,7 @@ pub async fn create_release(
     }
 
     // Create manifest
+    let changelog_preview = request.changelog.chars().take(100).collect::<String>();
     let manifest = Manifest {
         version: request.version.clone(),
         minecraft_version: request.minecraft_version,
@@ -221,7 +236,7 @@ pub async fn create_release(
         "version": request.version,
         "file_count": manifest.files.len(),
         "size_bytes": total_size,
-        "changelog_preview": request.changelog.chars().take(100).collect::<String>()
+        "changelog_preview": changelog_preview
     })))
 }
 

@@ -1,0 +1,27 @@
+{
+  "display": {
+    "icon": {
+      "item": "farmersdelight:rich_soil"
+    },
+    "title": "Abundant Harvests",
+    "description": "Obtain rich soil for enhanced crop growth (15% faster, +30% yield)",
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "parent": "wowid3:farming_path/03_cooking_pot",
+  "criteria": {
+    "get_rich_soil": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          {
+            "item": "farmersdelight:rich_soil"
+          }
+        ]
+      }
+    }
+  },
+  "requirements": [["get_rich_soil"]]
+}

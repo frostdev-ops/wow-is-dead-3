@@ -1,5 +1,4 @@
 pub mod files;
 pub mod manifest;
 
-pub use files::*;
-pub use manifest::*;
+pub use manifest::{list_versions, read_latest_manifest, read_manifest, set_latest_manifest, write_manifest};

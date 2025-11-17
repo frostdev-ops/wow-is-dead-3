@@ -43,9 +43,21 @@ async fn cmd_get_device_code() -> Result<DeviceCodeInfo, String> {
 
 #[tauri::command]
 async fn cmd_complete_device_code_auth(device_code: String, interval: u64) -> Result<MinecraftProfile, String> {
-    complete_device_code_auth(device_code, interval)
-        .await
-        .map_err(|e| e.to_string())
+    eprintln!("[Tauri Command] cmd_complete_device_code_auth called with device_code length: {}, interval: {}", device_code.len(), interval);
+
+    let result = complete_device_code_auth(device_code, interval).await;
+
+    match &result {
+        Ok(profile) => {
+            eprintln!("[Tauri Command] Authentication successful for user: {}", profile.username);
+            eprintln!("[Tauri Command] Returning profile to React...");
+        }
+        Err(e) => {
+            eprintln!("[Tauri Command] Authentication failed with error: {}", e);
+        }
+    }
+
+    result.map_err(|e| e.to_string())
 }
 
 // Minecraft Launch Commands
@@ -206,9 +218,11 @@ async fn cmd_ping_server(address: String) -> Result<ServerStatus, String> {
 // Download progress event payload
 #[derive(Clone, Serialize)]
 struct DownloadProgressEvent {
-    current: usize,
-    total: usize,
-    filename: String,
+    current: usize,      // Current file number (1-indexed)
+    total: usize,        // Total files
+    filename: String,    // Current file being downloaded
+    current_bytes: u64,  // Bytes downloaded so far
+    total_bytes: u64,    // Total bytes to download
 }
 
 // Modpack Update Commands
@@ -232,8 +246,14 @@ async fn cmd_install_modpack(
     manifest: Manifest,
     game_dir: PathBuf,
 ) -> Result<String, String> {
-    install_modpack(&manifest, &game_dir, move |current, total, filename| {
-        let progress = DownloadProgressEvent { current, total, filename };
+    install_modpack(&manifest, &game_dir, move |current, total, filename, current_bytes, total_bytes| {
+        let progress = DownloadProgressEvent {
+            current,
+            total,
+            filename,
+            current_bytes,
+            total_bytes,
+        };
         let _ = app.emit("download-progress", progress);
     })
     .await

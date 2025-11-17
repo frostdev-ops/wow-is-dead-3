@@ -1,0 +1,27 @@
+{
+  "display": {
+    "icon": {
+      "item": "create:hand_crank"
+    },
+    "title": "The Industry Path Begins",
+    "description": "Craft your first hand crank and tap into mechanical power",
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false,
+    "background": "minecraft:textures/block/stone.png"
+  },
+  "criteria": {
+    "craft_hand_crank": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          {
+            "item": "create:hand_crank"
+          }
+        ]
+      }
+    }
+  },
+  "requirements": [["craft_hand_crank"]]
+}
