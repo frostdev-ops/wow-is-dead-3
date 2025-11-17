@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use tokio::io::AsyncWriteExt;
 use zip::ZipArchive;
 
+use super::download_manager::{DownloadManager, DownloadPriority, DownloadTask, HashType};
 use super::minecraft_version::{Library, Rule};
 
 /// Current OS name for rule evaluation
@@ -223,48 +224,88 @@ pub async fn download_library(
     Ok(downloaded_paths)
 }
 
-/// Download all libraries for a version
+/// Download all libraries for a version using DownloadManager for parallel downloads
 pub async fn download_all_libraries(
     libraries: &[Library],
     libraries_dir: &Path,
     features: &HashMap<String, bool>,
 ) -> Result<Vec<PathBuf>> {
-    let mut all_paths = Vec::new();
+    tokio::fs::create_dir_all(libraries_dir).await?;
 
-    // Download libraries in parallel (10 at a time)
-    let mut tasks = Vec::new();
+    // Collect all download tasks upfront
+    let mut download_tasks = Vec::new();
+    let mut expected_paths = Vec::new();
 
     for library in libraries {
-        let lib = library.clone();
-        let dir = libraries_dir.to_path_buf();
-        let feat = features.clone();
+        if !should_download_library(library, features) {
+            continue;
+        }
 
-        let task = tokio::spawn(async move { download_library(&lib, &dir, &feat).await });
+        // Main artifact
+        if let Some(downloads) = &library.downloads {
+            if let Some(artifact) = &downloads.artifact {
+                let dest = libraries_dir.join(&artifact.path);
 
-        tasks.push(task);
+                // Skip if already exists and hash matches
+                if dest.exists() {
+                    if let Ok(true) = verify_sha1(&dest, &artifact.sha1).await {
+                        expected_paths.push(dest);
+                        continue;
+                    }
+                }
 
-        // Process in batches of 10
-        if tasks.len() >= 10 {
-            for task in tasks.drain(..) {
-                match task.await {
-                    Ok(Ok(paths)) => all_paths.extend(paths),
-                    Ok(Err(e)) => eprintln!("Library download error: {}", e),
-                    Err(e) => eprintln!("Task error: {}", e),
+                download_tasks.push(DownloadTask {
+                    url: artifact.url.clone(),
+                    dest: dest.clone(),
+                    expected_hash: HashType::Sha1(artifact.sha1.clone()),
+                    priority: DownloadPriority::High,
+                    size: artifact.size,
+                });
+                expected_paths.push(dest);
+            }
+
+            // Native libraries
+            if let Some(natives) = &library.natives {
+                let os_name = get_os_name();
+                if let Some(native_key) = natives.get(os_name) {
+                    if let Some(classifiers) = &downloads.classifiers {
+                        if let Some(native_artifact) = classifiers.get(native_key) {
+                            let dest = libraries_dir.join(&native_artifact.path);
+
+                            // Skip if already exists and hash matches
+                            if dest.exists() {
+                                if let Ok(true) = verify_sha1(&dest, &native_artifact.sha1).await {
+                                    expected_paths.push(dest);
+                                    continue;
+                                }
+                            }
+
+                            download_tasks.push(DownloadTask {
+                                url: native_artifact.url.clone(),
+                                dest: dest.clone(),
+                                expected_hash: HashType::Sha1(native_artifact.sha1.clone()),
+                                priority: DownloadPriority::High,
+                                size: native_artifact.size,
+                            });
+                            expected_paths.push(dest);
+                        }
+                    }
                 }
             }
         }
     }
 
-    // Process remaining tasks
-    for task in tasks {
-        match task.await {
-            Ok(Ok(paths)) => all_paths.extend(paths),
-            Ok(Err(e)) => eprintln!("Library download error: {}", e),
-            Err(e) => eprintln!("Task error: {}", e),
-        }
+    // Download all files in parallel using DownloadManager
+    if !download_tasks.is_empty() {
+        let concurrency = super::download_manager::calculate_optimal_concurrency();
+        let manager = DownloadManager::new(concurrency, 3)?;
+        manager
+            .download_files(download_tasks, None)
+            .await
+            .context("Failed to download libraries")?;
     }
 
-    Ok(all_paths)
+    Ok(expected_paths)
 }
 
 /// Extract native libraries from JAR files

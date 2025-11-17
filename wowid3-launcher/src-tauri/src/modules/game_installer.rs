@@ -33,7 +33,7 @@ pub async fn install_minecraft<F>(
     mut progress_callback: F,
 ) -> Result<VersionMeta>
 where
-    F: FnMut(InstallProgress),
+    F: FnMut(InstallProgress) + Send + 'static,
 {
     let game_dir = &config.game_dir;
     let cache_dir = game_dir.join(".cache");

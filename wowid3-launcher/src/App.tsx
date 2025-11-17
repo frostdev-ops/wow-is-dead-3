@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
-import { convertFileSrc } from '@tauri-apps/api/core';
 import { invoke } from '@tauri-apps/api/core';
+import { readFile } from '@tauri-apps/plugin-fs';
 import { useModpack, useServer, useTheme } from './hooks';
 import LauncherHome from './components/LauncherHome';
 import SettingsScreen from './components/SettingsScreen';
@@ -18,84 +18,239 @@ function AppContent() {
   const [isMuted, setIsMuted] = useState(false);
   const [showChangelog, setShowChangelog] = useState(false);
   const [showChangelogModal, setShowChangelogModal] = useState(false);
-  const [audioSrc, setAudioSrc] = useState<string>(FALLBACK_AUDIO_URL);
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const [audioState, setAudioState] = useState<'loading' | 'fallback' | 'transitioning' | 'main'>('loading');
+  const [mainAudioReady, setMainAudioReady] = useState(false);
+  const fallbackRef = useRef<HTMLAudioElement>(null);
+  const mainRef = useRef<HTMLAudioElement>(null);
+  const mainBlobUrlRef = useRef<string | null>(null);
+  const retryIntervalRef = useRef<number | null>(null);
   const { checkUpdates, latestManifest } = useModpack();
   const { startPolling } = useServer();
   useTheme(); // Apply theme on mount
 
-  // Initialize audio on mount
-  useEffect(() => {
-    const initAudio = async () => {
-      try {
-        console.log('[Audio] Initializing audio...');
+  // Crossfade from fallback to main audio
+  const startCrossfade = () => {
+    if (!fallbackRef.current || !mainRef.current || audioState !== 'fallback') return;
 
-        // Set volume on audio element
-        if (audioRef.current) {
-          audioRef.current.volume = 0.3;
-          console.log('[Audio] Set volume to 0.3');
-        }
+    console.log('[Audio] Starting crossfade transition');
+    setAudioState('transitioning');
 
-        // Check for cached audio
-        const cachedPath = await invoke<string | null>('cmd_get_cached_audio');
-        if (cachedPath) {
-          console.log('[Audio] Found cached audio:', cachedPath);
-          const audioUrl = convertFileSrc(cachedPath);
-          console.log('[Audio] Converted to URL:', audioUrl);
-          setAudioSrc(audioUrl);
-          return;
-        }
+    const fallback = fallbackRef.current;
+    const main = mainRef.current;
 
-        console.log('[Audio] No cached audio, using fallback');
-        setAudioSrc(FALLBACK_AUDIO_URL);
+    // Fade out fallback (0.3 → 0 over 2 seconds)
+    const fadeOutSteps = 20;
+    const fadeOutInterval = 2000 / fadeOutSteps;
+    const volumeDecrement = 0.3 / fadeOutSteps;
+    let currentStep = 0;
 
-        // Download audio in background
-        try {
-          console.log('[Audio] Starting background download...');
-          const downloadedPath = await invoke<string>('cmd_download_and_cache_audio', {
-            url: AUDIO_SERVER_URL,
-          });
-          console.log('[Audio] Download complete:', downloadedPath);
-          const audioUrl = convertFileSrc(downloadedPath);
-          console.log('[Audio] Converted downloaded to URL:', audioUrl);
-          setAudioSrc(audioUrl);
-        } catch (err) {
-          console.log('[Audio] Download failed, keeping fallback:', err);
-        }
-      } catch (err) {
-        console.log('[Audio] Initialization error:', err);
+    const fadeOutTimer = setInterval(() => {
+      if (!fallback) {
+        clearInterval(fadeOutTimer);
+        return;
       }
-    };
 
-    // Initialize audio and check for updates
-    initAudio();
+      currentStep++;
+      const newVolume = Math.max(0, 0.3 - (volumeDecrement * currentStep));
+      fallback.volume = newVolume;
+
+      if (currentStep >= fadeOutSteps) {
+        clearInterval(fadeOutTimer);
+        fallback.pause();
+        console.log('[Audio] Fallback faded out and paused');
+
+        // Start main audio with fade in
+        main.volume = 0;
+        main.play()
+          .then(() => {
+            console.log('[Audio] Main audio started, fading in');
+
+            // Fade in main (0 → 0.3 over 2 seconds)
+            let fadeInStep = 0;
+            const fadeInInterval = 2000 / fadeOutSteps;
+            const volumeIncrement = 0.3 / fadeOutSteps;
+
+            const fadeInTimer = setInterval(() => {
+              if (!main) {
+                clearInterval(fadeInTimer);
+                return;
+              }
+
+              fadeInStep++;
+              const newVolume = Math.min(0.3, volumeIncrement * fadeInStep);
+              main.volume = newVolume;
+
+              if (fadeInStep >= fadeOutSteps) {
+                clearInterval(fadeInTimer);
+                setAudioState('main');
+                console.log('[Audio] Crossfade complete, main audio playing');
+              }
+            }, fadeInInterval);
+          })
+          .catch(err => {
+            console.log('[Audio] Failed to play main audio:', err);
+            // Resume fallback if main fails
+            fallback.volume = 0.3;
+            fallback.play().catch(console.error);
+            setAudioState('fallback');
+          });
+      }
+    }, fadeOutInterval);
+  };
+
+  // Load main audio asynchronously (non-blocking)
+  const loadMainAudio = async () => {
+    try {
+      console.log('[Audio] Starting main audio load (non-blocking)');
+
+      // Check for cached audio
+      const cachedPath = await invoke<string | null>('cmd_get_cached_audio');
+
+      if (cachedPath) {
+        console.log('[Audio] Found cached audio:', cachedPath);
+        try {
+          const fileData = await readFile(cachedPath);
+          const blob = new Blob([fileData], { type: 'audio/mpeg' });
+          const blobUrl = URL.createObjectURL(blob);
+
+          if (mainRef.current) {
+            mainRef.current.src = blobUrl;
+            mainBlobUrlRef.current = blobUrl;
+            setMainAudioReady(true);
+            console.log('[Audio] Main audio ready from cache');
+          }
+          return;
+        } catch (err) {
+          console.log('[Audio] Failed to load cached audio:', err);
+        }
+      }
+
+      // Download audio
+      console.log('[Audio] Starting background download...');
+      const downloadedPath = await invoke<string>('cmd_download_and_cache_audio', {
+        url: AUDIO_SERVER_URL,
+      });
+
+      console.log('[Audio] Download complete:', downloadedPath);
+      const fileData = await readFile(downloadedPath);
+      const blob = new Blob([fileData], { type: 'audio/mpeg' });
+      const blobUrl = URL.createObjectURL(blob);
+
+      if (mainRef.current) {
+        mainRef.current.src = blobUrl;
+        mainBlobUrlRef.current = blobUrl;
+        setMainAudioReady(true);
+        console.log('[Audio] Main audio ready from download');
+      }
+    } catch (err) {
+      console.log('[Audio] Failed to load main audio:', err);
+
+      // Set up retry every 5 minutes
+      if (!retryIntervalRef.current) {
+        console.log('[Audio] Scheduling retry in 5 minutes');
+        retryIntervalRef.current = setInterval(() => {
+          console.log('[Audio] Retrying download...');
+          loadMainAudio();
+        }, 5 * 60 * 1000); // 5 minutes
+      }
+    }
+  };
+
+  // Initialize audio on mount (non-blocking)
+  useEffect(() => {
+    console.log('[Audio] Initializing audio system (non-blocking)');
+
+    // Start fallback audio after a short delay
+    const fallbackTimer = setTimeout(() => {
+      if (fallbackRef.current && audioState === 'loading') {
+        fallbackRef.current.volume = 0.3;
+        fallbackRef.current.play()
+          .then(() => {
+            console.log('[Audio] Fallback audio started');
+            setAudioState('fallback');
+          })
+          .catch(err => {
+            console.log('[Audio] Failed to start fallback audio:', err);
+          });
+      }
+    }, 100); // Tiny delay to ensure DOM is ready
+
+    // Load main audio in background (don't await)
+    loadMainAudio();
+
+    // Other initialization
     checkUpdates().catch(console.error);
     startPolling(30);
+
+    // Cleanup
+    return () => {
+      clearTimeout(fallbackTimer);
+      if (retryIntervalRef.current) {
+        clearInterval(retryIntervalRef.current);
+      }
+      if (mainBlobUrlRef.current) {
+        URL.revokeObjectURL(mainBlobUrlRef.current);
+      }
+    };
   }, []); // Only run once on component mount
 
+  // Clear retry interval when main audio loads successfully
   useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.muted = isMuted;
-      console.log('[Audio] Muted set to:', isMuted);
+    if (mainAudioReady && retryIntervalRef.current) {
+      console.log('[Audio] Main audio loaded, clearing retry interval');
+      clearInterval(retryIntervalRef.current);
+      retryIntervalRef.current = null;
     }
+  }, [mainAudioReady]);
+
+  // Trigger crossfade when main audio is ready
+  useEffect(() => {
+    if (mainAudioReady && audioState === 'fallback') {
+      console.log('[Audio] Main audio ready, initiating crossfade');
+      startCrossfade();
+    }
+  }, [mainAudioReady, audioState]);
+
+  // Handle mute/unmute for both audio elements
+  useEffect(() => {
+    if (fallbackRef.current) {
+      fallbackRef.current.muted = isMuted;
+    }
+    if (mainRef.current) {
+      mainRef.current.muted = isMuted;
+    }
+    console.log('[Audio] Muted set to:', isMuted);
   }, [isMuted]);
 
   return (
     <div className="relative w-screen h-screen overflow-hidden">
       <ChristmasBackground />
-      {/* Background Music */}
+
+      {/* Fallback Audio (60-second preview) */}
       <audio
-        ref={audioRef}
-        src={audioSrc}
-        autoPlay
+        ref={fallbackRef}
+        src={FALLBACK_AUDIO_URL}
         loop
         crossOrigin="anonymous"
-        onLoadStart={() => console.log('[Audio] Load started for:', audioSrc)}
-        onCanPlay={() => console.log('[Audio] Can play:', audioSrc)}
-        onPlay={() => console.log('[Audio] Playing:', audioSrc)}
-        onPause={() => console.log('[Audio] Paused')}
-        onError={(e) => console.log('[Audio] Error:', e.currentTarget.error)}
+        onLoadStart={() => console.log('[Audio] Fallback load started')}
+        onCanPlay={() => console.log('[Audio] Fallback can play')}
+        onPlay={() => console.log('[Audio] Fallback playing')}
+        onPause={() => console.log('[Audio] Fallback paused')}
+        onError={(e) => console.log('[Audio] Fallback error:', e.currentTarget.error)}
       />
+
+      {/* Main Audio (full track from server) */}
+      <audio
+        ref={mainRef}
+        loop
+        crossOrigin="anonymous"
+        onLoadStart={() => console.log('[Audio] Main load started')}
+        onCanPlay={() => console.log('[Audio] Main can play')}
+        onPlay={() => console.log('[Audio] Main playing')}
+        onPause={() => console.log('[Audio] Main paused')}
+        onError={(e) => console.log('[Audio] Main error:', e.currentTarget.error)}
+      />
+
       <div className="relative z-10 w-full h-full flex flex-col">
         {/* Navigation Cards - Top Left */}
         <div className="absolute top-12 left-4 z-50 flex gap-3">
