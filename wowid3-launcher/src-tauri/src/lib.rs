@@ -1,8 +1,8 @@
 mod modules;
 
-use modules::auth::{authenticate_minecraft, authenticate_from_official_launcher, get_current_user, logout, refresh_token, get_device_code, complete_device_code_auth, MinecraftProfile, DeviceCodeInfo};
+use modules::auth::{authenticate_from_official_launcher, get_current_user, logout, refresh_token, get_device_code, complete_device_code_auth, MinecraftProfile, DeviceCodeInfo};
 use modules::discord::{DiscordClient, GamePresence};
-use modules::minecraft::{launch_game, LaunchConfig};
+use modules::minecraft::{launch_game, analyze_crash, LaunchConfig};
 use modules::server::{ping_server, ServerStatus};
 use modules::updater::{check_for_updates, get_installed_version, install_modpack, Manifest};
 use serde::Serialize;
@@ -10,13 +10,6 @@ use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, State};
 
 // Authentication Commands
-#[tauri::command]
-async fn cmd_authenticate() -> Result<MinecraftProfile, String> {
-    authenticate_minecraft()
-        .await
-        .map_err(|e| e.to_string())
-}
-
 #[tauri::command]
 async fn cmd_authenticate_official_launcher() -> Result<MinecraftProfile, String> {
     authenticate_from_official_launcher()
@@ -57,11 +50,86 @@ async fn cmd_complete_device_code_auth(device_code: String, interval: u64) -> Re
 
 // Minecraft Launch Commands
 #[tauri::command]
-async fn cmd_launch_game(config: LaunchConfig) -> Result<String, String> {
-    launch_game(config)
+async fn cmd_launch_game(app: AppHandle, config: LaunchConfig) -> Result<String, String> {
+    // Store game_dir for crash analysis
+    let game_dir = config.game_dir.clone();
+
+    // Launch the game process
+    let mut process = launch_game(config)
         .await
-        .map(|_| "Game launched successfully".to_string())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Take stdout and stderr for streaming
+    let stdout = process.stdout.take();
+    let stderr = process.stderr.take();
+
+    // Spawn task to stream stdout
+    if let Some(stdout) = stdout {
+        let app_stdout = app.clone();
+        tokio::spawn(async move {
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            let reader = BufReader::new(stdout);
+            let mut lines = reader.lines();
+
+            while let Ok(Some(line)) = lines.next_line().await {
+                let _ = app_stdout.emit("minecraft-log", serde_json::json!({
+                    "level": "info",
+                    "message": line
+                }));
+            }
+        });
+    }
+
+    // Spawn task to stream stderr
+    if let Some(stderr) = stderr {
+        let app_stderr = app.clone();
+        tokio::spawn(async move {
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            let reader = BufReader::new(stderr);
+            let mut lines = reader.lines();
+
+            while let Ok(Some(line)) = lines.next_line().await {
+                let is_error = line.contains("ERROR") ||
+                              line.contains("Exception") ||
+                              line.contains("FATAL");
+
+                let _ = app_stderr.emit("minecraft-log", serde_json::json!({
+                    "level": if is_error { "error" } else { "warn" },
+                    "message": line
+                }));
+            }
+        });
+    }
+
+    // Spawn task to monitor process exit
+    let app_monitor = app.clone();
+    tokio::spawn(async move {
+        match process.wait().await {
+            Ok(status) => {
+                let exit_code = status.code().unwrap_or(-1);
+                let crashed = exit_code != 0;
+
+                let _ = app_monitor.emit("minecraft-exit", serde_json::json!({
+                    "exit_code": exit_code,
+                    "crashed": crashed
+                }));
+
+                // If crashed, analyze crash report
+                if crashed {
+                    if let Ok(crash_msg) = analyze_crash(&game_dir).await {
+                        let _ = app_monitor.emit("minecraft-crash", serde_json::json!({
+                            "message": crash_msg
+                        }));
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Error waiting for process: {}", e);
+            }
+        }
+    });
+
+    Ok("Game launched successfully".to_string())
 }
 
 // Discord Rich Presence Commands
@@ -73,16 +141,44 @@ async fn cmd_discord_connect(discord: State<'_, DiscordClient>) -> Result<(), St
 #[tauri::command]
 async fn cmd_discord_set_presence(
     discord: State<'_, DiscordClient>,
-    presence: GamePresence,
+    details: String,
+    state: String,
+    large_image: Option<String>,
 ) -> Result<(), String> {
+    let presence = GamePresence {
+        state,
+        details: Some(details),
+        large_image,
+        large_image_text: None,
+        small_image: None,
+        small_image_text: None,
+        start_time: Some(std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64),
+        end_time: None,
+        player_count: None,
+    };
     discord.set_presence(&presence).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 async fn cmd_discord_update_presence(
     discord: State<'_, DiscordClient>,
-    presence: GamePresence,
+    details: String,
+    state: String,
 ) -> Result<(), String> {
+    let presence = GamePresence {
+        state,
+        details: Some(details),
+        large_image: Some("minecraft".to_string()),
+        large_image_text: None,
+        small_image: None,
+        small_image_text: None,
+        start_time: None, // Keep existing start time
+        end_time: None,
+        player_count: None,
+    };
     discord.update_presence(&presence).await.map_err(|e| e.to_string())
 }
 
@@ -152,7 +248,6 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .manage(DiscordClient::new())
         .invoke_handler(tauri::generate_handler![
-            cmd_authenticate,
             cmd_authenticate_official_launcher,
             cmd_get_current_user,
             cmd_refresh_token,

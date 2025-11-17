@@ -23,6 +23,28 @@ export default function ChristmasBackground() {
     // Set canvas size with device pixel ratio for crisp rendering on high-DPI
     const dpr = window.devicePixelRatio || 1;
 
+    // Create snowflakes (only for Christmas theme)
+    let snowflakes: Snowflake[] = [];
+    const shouldShowSnow = christmasTheme.animations.snowfall;
+    const snowDensity = 60;
+    const snowSpeed = 0.8;
+
+    const createSnowflakes = () => {
+      snowflakes = [];
+      if (shouldShowSnow) {
+        for (let i = 0; i < snowDensity; i++) {
+          snowflakes.push({
+            x: Math.random() * window.innerWidth,
+            y: Math.random() * (window.innerHeight + 100) - 100,
+            radius: Math.random() * 4 + 2,
+            speed: Math.random() * snowSpeed + 0.3,
+            opacity: Math.random() * 0.6 + 0.4,
+            drift: Math.random() * 1 - 0.5,
+          });
+        }
+      }
+    };
+
     const updateCanvasSize = () => {
       const width = window.innerWidth;
       const height = window.innerHeight;
@@ -38,6 +60,9 @@ export default function ChristmasBackground() {
       // The scale needs to be reapplied after width/height change
       ctx.scale(dpr, dpr);
 
+      // Regenerate snowflakes with new canvas dimensions
+      createSnowflakes();
+
       console.log('[Canvas] Resized to', width, 'x', height, 'with DPR', dpr);
     };
 
@@ -51,25 +76,6 @@ export default function ChristmasBackground() {
     };
 
     window.addEventListener('resize', handleResize);
-
-    // Create snowflakes (only for Christmas theme)
-    const snowflakes: Snowflake[] = [];
-    const shouldShowSnow = christmasTheme.animations.snowfall;
-    const snowDensity = 60;
-    const snowSpeed = 0.8;
-
-    if (shouldShowSnow) {
-      for (let i = 0; i < snowDensity; i++) {
-        snowflakes.push({
-          x: Math.random() * canvas.width,
-          y: Math.random() * (canvas.height + 100) - 100,
-          radius: Math.random() * 4 + 2,
-          speed: Math.random() * snowSpeed + 0.3,
-          opacity: Math.random() * 0.6 + 0.4,
-          drift: Math.random() * 1 - 0.5,
-        });
-      }
-    }
 
     // Animation loop
     let animationFrameId: number;
@@ -100,15 +106,15 @@ export default function ChristmasBackground() {
         ctx.stroke();
 
         // Wrap around edges smoothly
-        if (flake.y > canvas.height + 10) {
+        if (flake.y > window.innerHeight + 10) {
           flake.y = -10;
-          flake.x = Math.random() * canvas.width;
+          flake.x = Math.random() * window.innerWidth;
         }
 
-        if (flake.x > canvas.width + 10) {
+        if (flake.x > window.innerWidth + 10) {
           flake.x = -10;
         } else if (flake.x < -10) {
-          flake.x = canvas.width + 10;
+          flake.x = window.innerWidth + 10;
         }
       });
 

@@ -1,10 +1,10 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::Stdio;
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command as TokioCommand;
+use tokio::process::{Child, Command};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LaunchConfig {
@@ -122,8 +122,8 @@ fn get_bundled_java_path() -> PathBuf {
 }
 
 /// Kill running Minecraft process
-pub fn kill_game(mut process: Child) -> Result<()> {
-    process.kill()?;
+pub async fn kill_game(mut process: Child) -> Result<()> {
+    process.kill().await?;
     Ok(())
 }
 
@@ -202,16 +202,16 @@ pub async fn monitor_process(
 
 /// Event emitted for Minecraft log lines
 #[derive(Debug, Clone, Serialize)]
-struct LogEvent {
-    level: String,
-    message: String,
+pub struct LogEvent {
+    pub level: String,
+    pub message: String,
 }
 
 /// Event emitted when Minecraft process exits
 #[derive(Debug, Clone, Serialize)]
-struct ProcessExitEvent {
-    exit_code: i32,
-    crashed: bool,
+pub struct ProcessExitEvent {
+    pub exit_code: i32,
+    pub crashed: bool,
 }
 
 /// Analyze crash report and return helpful error message

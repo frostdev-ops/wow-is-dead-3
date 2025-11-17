@@ -10,6 +10,7 @@ import { useToast } from './ui/ToastContainer';
 import DeviceCodeModal from './DeviceCodeModal';
 import { SkinViewerComponent } from './SkinViewer';
 import type { DeviceCodeInfo } from '../hooks/useTauriCommands';
+import { listen } from '@tauri-apps/api/event';
 
 export default function LauncherHome() {
   const { user, isAuthenticated, login, finishDeviceCodeAuth, isLoading: authLoading, error: authError } = useAuth();
@@ -54,6 +55,45 @@ export default function LauncherHome() {
       addToast(`Welcome back, ${user.username}!`, 'success');
     }
   }, [isAuthenticated, user, authLoading, addToast]);
+
+  // Listen for Minecraft events
+  useEffect(() => {
+    const unlistenLog = listen<{level: string; message: string}>('minecraft-log', (event) => {
+      console.log(`[Minecraft ${event.payload.level}]`, event.payload.message);
+
+      // Show important errors as toasts
+      if (event.payload.level === 'error') {
+        addToast(`Game Error: ${event.payload.message}`, 'error');
+      }
+    });
+
+    const unlistenExit = listen<{exit_code: number; crashed: boolean}>('minecraft-exit', (event) => {
+      console.log('[Minecraft] Process exited with code:', event.payload.exit_code);
+      setIsLaunching(false);
+
+      // Clear Discord presence when game exits
+      if (discordConnected) {
+        clearPresence().catch(console.error);
+      }
+
+      if (event.payload.crashed) {
+        addToast(`Game crashed with exit code ${event.payload.exit_code}`, 'error');
+      } else {
+        addToast('Game closed', 'info');
+      }
+    });
+
+    const unlistenCrash = listen<{message: string}>('minecraft-crash', (event) => {
+      console.log('[Minecraft] Crash analysis:', event.payload.message);
+      addToast(event.payload.message, 'error');
+    });
+
+    return () => {
+      unlistenLog.then(f => f());
+      unlistenExit.then(f => f());
+      unlistenCrash.then(f => f());
+    };
+  }, [addToast, discordConnected, clearPresence]);
 
   const handlePlayClick = async () => {
     console.log('[UI] Play button clicked. isAuthenticated:', isAuthenticated, 'user:', user);
@@ -103,15 +143,13 @@ export default function LauncherHome() {
         uuid: user.uuid,
         access_token: user.access_token,
       });
+
+      // Note: isLaunching is now cleared by minecraft-exit event
+      // Discord presence is also cleared by minecraft-exit event
     } catch (error) {
       console.error('Failed to launch game:', error);
       addToast('Failed to launch game', 'error');
-    } finally {
       setIsLaunching(false);
-      // Clear Discord presence when game closes
-      if (discordConnected) {
-        await clearPresence();
-      }
     }
   };
 

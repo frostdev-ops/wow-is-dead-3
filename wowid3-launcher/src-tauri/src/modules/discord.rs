@@ -5,7 +5,14 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
 /// Discord application ID for WOWID3 Launcher
-const DISCORD_APP_ID: &str = "1234567890123456789"; // This should be configured
+///
+/// To get your own Application ID:
+/// 1. Go to https://discord.com/developers/applications
+/// 2. Click "New Application" and name it "WOWID3"
+/// 3. Copy the "Application ID" from General Information
+/// 4. Go to Rich Presence → Art Assets and upload a Minecraft icon (name it "minecraft")
+/// 5. Replace the placeholder below with your real Application ID
+const DISCORD_APP_ID: &str = "1234567890123456789"; // TODO: Replace with real Discord App ID
 
 /// Discord RPC client manager
 #[derive(Clone)]

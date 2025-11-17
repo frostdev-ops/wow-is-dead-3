@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { View, WalkingAnimation, IdleAnimation } from 'skin3d';
+import { View } from 'skin3d';
 
 interface SkinViewerComponentProps {
   username: string;
