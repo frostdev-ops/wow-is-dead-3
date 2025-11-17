@@ -8,6 +8,7 @@ use modules::fabric_installer::{get_fabric_loaders, get_latest_fabric_loader, Fa
 use modules::game_installer::{install_minecraft, is_version_installed, InstallConfig};
 use modules::server::{ping_server, ServerStatus};
 use modules::updater::{check_for_updates, get_installed_version, install_modpack, Manifest};
+use modules::audio::{get_cached_audio, download_and_cache_audio, clear_audio_cache};
 use serde::Serialize;
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, State};
@@ -408,6 +409,28 @@ async fn cmd_install_modpack(
     .map_err(|e| e.to_string())
 }
 
+// Audio Commands
+#[tauri::command]
+async fn cmd_get_cached_audio(app: AppHandle) -> Result<Option<String>, String> {
+    get_cached_audio(&app)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cmd_download_and_cache_audio(app: AppHandle, url: String) -> Result<String, String> {
+    download_and_cache_audio(&app, url)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cmd_clear_audio_cache(app: AppHandle) -> Result<(), String> {
+    clear_audio_cache(&app)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -440,6 +463,9 @@ pub fn run() {
             cmd_discord_clear_presence,
             cmd_discord_disconnect,
             cmd_discord_is_connected,
+            cmd_get_cached_audio,
+            cmd_download_and_cache_audio,
+            cmd_clear_audio_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -135,3 +135,16 @@ export const isVersionInstalled = async (gameDir: string, versionId: string): Pr
 export const launchGameWithMetadata = async (config: LaunchConfig, versionId: string): Promise<string> => {
   return await invoke<string>('cmd_launch_game_with_metadata', { config, versionId });
 };
+
+// Audio commands
+export const getCachedAudio = async (): Promise<string | null> => {
+  return await invoke<string | null>('cmd_get_cached_audio');
+};
+
+export const downloadAndCacheAudio = async (url: string): Promise<string> => {
+  return await invoke<string>('cmd_download_and_cache_audio', { url });
+};
+
+export const clearAudioCache = async (): Promise<void> => {
+  return await invoke<void>('cmd_clear_audio_cache');
+};

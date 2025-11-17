@@ -8,3 +8,4 @@ pub mod fabric_installer;
 pub mod game_installer;
 pub mod server;
 pub mod updater;
+pub mod audio;

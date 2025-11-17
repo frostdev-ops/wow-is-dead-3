@@ -1,37 +1,22 @@
 import { useEffect, useState } from 'react';
-import { useModpack, useServer, useTheme } from './hooks';
+import { useModpack, useServer, useTheme, useAudio } from './hooks';
 import LauncherHome from './components/LauncherHome';
 import SettingsScreen from './components/SettingsScreen';
 import ChristmasBackground from './components/theme/ChristmasBackground';
 import { ToastProvider } from './components/ui/ToastContainer';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { ChangelogViewer } from './components/ChangelogViewer';
 import './App.css';
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<'home' | 'settings'>('home');
   const [isMuted, setIsMuted] = useState(false);
   const [showChangelog, setShowChangelog] = useState(false);
-  const [audio] = useState(() => new Audio('/wid3menu.wav'));
+  const [showChangelogModal, setShowChangelogModal] = useState(false);
+  const { audio } = useAudio();
   const { checkUpdates, latestManifest } = useModpack();
   const { startPolling } = useServer();
   useTheme(); // Apply theme on mount
-
-  // Mock data for testing
-  const mockManifest = {
-    version: "1.2.3",
-    changelog: [
-      { type: "Added", description: "New Christmas themed background with animated snow" },
-      { type: "Added", description: "Background music player with mute toggle" },
-      { type: "Fixed", description: "Player model now properly sits and is uninteractable" },
-      { type: "Changed", description: "Navigation buttons moved to top-left with icon design" },
-      { type: "Added", description: "Version display with hover changelog in navigation bar" },
-      { type: "Improved", description: "Settings page styling to match Christmas theme" },
-      { type: "Removed", description: "Theme settings - Christmas theme is now permanent" },
-    ]
-  };
-
-  // Use mock data if real manifest isn't available (for testing)
-  const displayManifest = latestManifest || mockManifest;
 
   useEffect(() => {
     // Check for modpack updates on startup
@@ -39,22 +24,12 @@ function AppContent() {
 
     // Start server polling
     startPolling(30);
-
-    // Play background music
-    audio.loop = true;
-    audio.volume = 0.3; // Set volume to 30%
-    audio.play().catch(err => {
-      console.log('[Audio] Failed to autoplay music:', err);
-    });
-
-    return () => {
-      audio.pause();
-      audio.currentTime = 0;
-    };
-  }, []);
+  }, []); // Only run once on component mount
 
   useEffect(() => {
-    audio.muted = isMuted;
+    if (audio) {
+      audio.muted = isMuted;
+    }
   }, [isMuted, audio]);
 
   return (
@@ -126,7 +101,7 @@ function AppContent() {
           </button>
 
           {/* Version Display with Changelog */}
-          {displayManifest && (
+          {latestManifest && (
             <div className="relative">
               <div
                 className="p-5 transition-all bg-black bg-opacity-40 text-white cursor-pointer hover:bg-opacity-60"
@@ -137,7 +112,8 @@ function AppContent() {
                 }}
                 onMouseEnter={() => setShowChangelog(true)}
                 onMouseLeave={() => setShowChangelog(false)}
-                title="Modpack Version - Hover for changelog"
+                onClick={() => latestManifest.changelog && setShowChangelogModal(true)}
+                title="Modpack Version - Hover for preview, click for full changelog"
               >
                 <div className="flex items-center gap-2">
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -145,13 +121,13 @@ function AppContent() {
                     <polyline points="14 2 14 8 20 8" />
                   </svg>
                   <span style={{ fontFamily: "'Trebuchet MS', sans-serif", fontWeight: 'bold', color: '#FFD700' }}>
-                    v{displayManifest.version}
+                    v{latestManifest.version}
                   </span>
                 </div>
               </div>
 
               {/* Changelog Tooltip */}
-              {showChangelog && Array.isArray(displayManifest.changelog) && displayManifest.changelog.length > 0 && (
+              {showChangelog && latestManifest.changelog && (
                 <div
                   className="absolute top-full left-0 mt-2 w-96 max-h-96 overflow-y-auto z-50"
                   style={{
@@ -166,19 +142,41 @@ function AppContent() {
                 >
                   <div className="p-4">
                     <h3 className="text-lg font-bold mb-3" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>
-                      Changelog - v{displayManifest.version}
+                      Changelog - v{latestManifest.version}
                     </h3>
                     <div className="space-y-2">
-                      {displayManifest.changelog.map((entry: any, index: number) => (
-                        <div key={index} className="text-sm">
-                          <span className="font-semibold" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
-                            {entry.type}:
-                          </span>
-                          <span className="ml-2 text-white" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
-                            {entry.description}
-                          </span>
-                        </div>
-                      ))}
+                      {latestManifest.changelog.split('\n').slice(0, 7).map((line, index) => {
+                        if (!line.trim()) return null;
+
+                        if (line.startsWith('# ')) {
+                          return (
+                            <h3 key={index} className="text-base font-bold mt-2" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>
+                              {line.substring(2)}
+                            </h3>
+                          );
+                        } else if (line.startsWith('## ')) {
+                          return (
+                            <h4 key={index} className="text-sm font-semibold" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
+                              {line.substring(3)}
+                            </h4>
+                          );
+                        } else if (line.startsWith('- ')) {
+                          return (
+                            <p key={index} className="text-sm ml-3 text-white" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
+                              • {line.substring(2)}
+                            </p>
+                          );
+                        } else {
+                          return (
+                            <p key={index} className="text-sm text-white" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
+                              {line}
+                            </p>
+                          );
+                        }
+                      })}
+                      <p className="text-xs mt-3 text-center" style={{ color: '#fde047', fontFamily: "'Trebuchet MS', sans-serif" }}>
+                        Click for full changelog
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -192,6 +190,16 @@ function AppContent() {
           {activeTab === 'settings' && <SettingsScreen />}
         </div>
       </div>
+
+      {/* Changelog Modal */}
+      {latestManifest && latestManifest.changelog && (
+        <ChangelogViewer
+          currentVersion={latestManifest.version}
+          manifest={latestManifest}
+          isOpen={showChangelogModal}
+          onClose={() => setShowChangelogModal(false)}
+        />
+      )}
     </div>
   );
 }
