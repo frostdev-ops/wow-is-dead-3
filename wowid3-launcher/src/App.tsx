@@ -151,7 +151,7 @@ function AppContent() {
               </div>
 
               {/* Changelog Tooltip */}
-              {showChangelog && displayManifest.changelog && (
+              {showChangelog && Array.isArray(displayManifest.changelog) && displayManifest.changelog.length > 0 && (
                 <div
                   className="absolute top-full left-0 mt-2 w-96 max-h-96 overflow-y-auto z-50"
                   style={{
