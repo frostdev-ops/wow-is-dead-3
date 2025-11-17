@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { convertFileSrc } from '@tauri-apps/api/core';
 
 interface AudioLoadState {
   isLoading: boolean;
@@ -44,11 +45,17 @@ export function useAudio(enabled: boolean = true) {
 
         if (isMounted && cachedPath) {
           console.log('[Audio] Found cached audio:', cachedPath);
-          audio.src = `file://${cachedPath}`;
+          audio.src = convertFileSrc(cachedPath);
+          console.log('[Audio] Set audio source to:', audio.src);
 
-          audio.play().catch(err => {
-            console.log('[Audio] Failed to autoplay cached music (browser restriction):', err);
-          });
+          const playPromise = audio.play();
+          playPromise
+            .then(() => {
+              console.log('[Audio] Successfully started playing cached audio');
+            })
+            .catch(err => {
+              console.log('[Audio] Failed to autoplay cached music (browser restriction or error):', err);
+            });
 
           setState({
             isLoading: false,
@@ -62,10 +69,16 @@ export function useAudio(enabled: boolean = true) {
         // Step 2: No cache found, use fallback while downloading
         console.log('[Audio] No cached audio, using fallback while downloading...');
         audio.src = FALLBACK_AUDIO_URL;
+        console.log('[Audio] Set audio source to fallback:', audio.src);
 
-        audio.play().catch(err => {
-          console.log('[Audio] Failed to autoplay fallback music (browser restriction):', err);
-        });
+        const fallbackPlayPromise = audio.play();
+        fallbackPlayPromise
+          .then(() => {
+            console.log('[Audio] Successfully started playing fallback audio');
+          })
+          .catch(err => {
+            console.log('[Audio] Failed to autoplay fallback music (browser restriction or error):', err);
+          });
 
         setState({
           isLoading: true,
@@ -83,12 +96,18 @@ export function useAudio(enabled: boolean = true) {
 
           if (isMounted) {
             console.log('[Audio] Download successful, switching to cached audio:', downloadedPath);
-            audio.src = `file://${downloadedPath}`;
+            audio.src = convertFileSrc(downloadedPath);
+            console.log('[Audio] Set audio source to:', audio.src);
             audio.currentTime = 0;
 
-            audio.play().catch(err => {
-              console.log('[Audio] Failed to resume playing downloaded music:', err);
-            });
+            const playPromise = audio.play();
+            playPromise
+              .then(() => {
+                console.log('[Audio] Successfully resumed playing downloaded music');
+              })
+              .catch(err => {
+                console.log('[Audio] Failed to resume playing downloaded music:', err);
+              });
 
             setState({
               isLoading: false,
@@ -113,9 +132,16 @@ export function useAudio(enabled: boolean = true) {
         if (isMounted) {
           // Fall back to bundled audio
           audio.src = FALLBACK_AUDIO_URL;
-          audio.play().catch(err => {
-            console.log('[Audio] Failed to play fallback music:', err);
-          });
+          console.log('[Audio] Set audio source to fallback (error recovery):', audio.src);
+
+          const fallbackPlayPromise = audio.play();
+          fallbackPlayPromise
+            .then(() => {
+              console.log('[Audio] Successfully started fallback music (after error)');
+            })
+            .catch(err => {
+              console.log('[Audio] Failed to play fallback music:', err);
+            });
 
           setState({
             isLoading: false,
