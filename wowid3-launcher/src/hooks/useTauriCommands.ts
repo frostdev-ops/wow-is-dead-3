@@ -1,14 +1,14 @@
 import { invoke } from '@tauri-apps/api/core';
 import { MinecraftProfile, Manifest, ServerStatus } from '../stores';
+import {
+  VersionInfo,
+  FabricLoader,
+  InstallConfig,
+  LaunchConfig
+} from '../types/minecraft';
 
-export interface LaunchConfig {
-  ram_mb: number;
-  java_path?: string;
-  game_dir: string;
-  username: string;
-  uuid: string;
-  access_token: string;
-}
+// Re-export LaunchConfig for backward compatibility
+export type { LaunchConfig };
 
 export interface DeviceCodeInfo {
   device_code: string;
@@ -96,4 +96,42 @@ export const discordDisconnect = async (): Promise<void> => {
 
 export const discordIsConnected = async (): Promise<boolean> => {
   return await invoke<boolean>('cmd_discord_is_connected');
+};
+
+// ============ Minecraft Installation System Commands ============
+
+// Version Management
+export const listMinecraftVersions = async (versionType?: 'release' | 'snapshot'): Promise<VersionInfo[]> => {
+  return await invoke<VersionInfo[]>('cmd_list_minecraft_versions', { versionType });
+};
+
+export const getLatestRelease = async (): Promise<string> => {
+  return await invoke<string>('cmd_get_latest_release');
+};
+
+export const getLatestSnapshot = async (): Promise<string> => {
+  return await invoke<string>('cmd_get_latest_snapshot');
+};
+
+// Fabric Loader Management
+export const getFabricLoaders = async (gameVersion: string): Promise<FabricLoader[]> => {
+  return await invoke<FabricLoader[]>('cmd_get_fabric_loaders', { gameVersion });
+};
+
+export const getLatestFabricLoader = async (gameVersion: string): Promise<FabricLoader> => {
+  return await invoke<FabricLoader>('cmd_get_latest_fabric_loader', { gameVersion });
+};
+
+// Installation Commands
+export const installMinecraft = async (config: InstallConfig): Promise<void> => {
+  return await invoke<void>('cmd_install_minecraft', { config });
+};
+
+export const isVersionInstalled = async (gameDir: string, versionId: string): Promise<boolean> => {
+  return await invoke<boolean>('cmd_is_version_installed', { gameDir, versionId });
+};
+
+// Game Launch (New Metadata System)
+export const launchGameWithMetadata = async (config: LaunchConfig, versionId: string): Promise<string> => {
+  return await invoke<string>('cmd_launch_game_with_metadata', { config, versionId });
 };

@@ -340,8 +340,13 @@ export default function LauncherHome() {
 
         {/* Update Badge or Download Progress */}
         {isDownloading && downloadProgress ? (
-          <div className="bg-black bg-opacity-20 border border-slate-600 p-4">
-            <p className="text-white font-semibold mb-3">Installing Update...</p>
+          <div className="p-4" style={{
+            backgroundColor: 'rgba(0, 0, 0, 0.4)',
+            backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(255, 215, 0, 0.3)',
+            borderRadius: '0',
+          }}>
+            <p className="text-white font-semibold mb-3" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>Installing Update...</p>
             <ProgressBar
               current={downloadProgress.current}
               total={downloadProgress.total}

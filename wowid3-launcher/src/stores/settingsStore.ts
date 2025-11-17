@@ -10,6 +10,13 @@ interface SettingsState {
   gameDirectory: string;
   serverAddress: string;
 
+  // Minecraft Installation settings
+  minecraftVersion: string | null;      // Preferred Minecraft version
+  fabricEnabled: boolean;                // Whether to use Fabric by default
+  fabricVersion: string | null;          // Preferred Fabric loader version
+  autoUpdate: boolean;                   // Auto-update when new version available
+  preferStableFabric: boolean;           // Only show stable Fabric versions
+
   // Launcher settings
   theme: 'christmas' | 'dark' | 'light';
   manifestUrl: string;
@@ -19,6 +26,11 @@ interface SettingsState {
   setRamAllocation: (ram: number) => void;
   setGameDirectory: (dir: string) => void;
   setServerAddress: (address: string) => void;
+  setMinecraftVersion: (version: string | null) => void;
+  setFabricEnabled: (enabled: boolean) => void;
+  setFabricVersion: (version: string | null) => void;
+  setAutoUpdate: (enabled: boolean) => void;
+  setPreferStableFabric: (enabled: boolean) => void;
   setTheme: (theme: 'christmas' | 'dark' | 'light') => void;
   setManifestUrl: (url: string) => void;
 }
@@ -31,6 +43,11 @@ export const useSettingsStore = create<SettingsState>()(
       ramAllocation: 12512, // 4GB default
       gameDirectory: './game',
       serverAddress: 'mc.frostdev.io:25565',
+      minecraftVersion: null, // Will be set when user selects
+      fabricEnabled: false,
+      fabricVersion: null,
+      autoUpdate: false,
+      preferStableFabric: true,
       theme: 'christmas',
       manifestUrl: 'https://wowid-launcher.frostdev.io/api/manifest/latest',
 
@@ -38,6 +55,11 @@ export const useSettingsStore = create<SettingsState>()(
       setRamAllocation: (ram) => set({ ramAllocation: ram }),
       setGameDirectory: (dir) => set({ gameDirectory: dir }),
       setServerAddress: (address) => set({ serverAddress: address }),
+      setMinecraftVersion: (version) => set({ minecraftVersion: version }),
+      setFabricEnabled: (enabled) => set({ fabricEnabled: enabled }),
+      setFabricVersion: (version) => set({ fabricVersion: version }),
+      setAutoUpdate: (enabled) => set({ autoUpdate: enabled }),
+      setPreferStableFabric: (enabled) => set({ preferStableFabric: enabled }),
       setTheme: (theme) => set({ theme }),
       setManifestUrl: (url) => set({ manifestUrl: url }),
     }),

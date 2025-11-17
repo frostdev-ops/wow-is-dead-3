@@ -4,6 +4,7 @@ import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { Card } from './ui/Card';
 import { useToast } from './ui/ToastContainer';
+import { VersionSelector, InstallProgress } from './installer';
 
 export default function SettingsScreen() {
   const { gameDirectory, ramAllocation, serverAddress, manifestUrl, setGameDirectory, setRamAllocation, setServerAddress, setManifestUrl } = useSettingsStore();
@@ -95,6 +96,21 @@ export default function SettingsScreen() {
             />
           </div>
         </Card>
+
+        {/* Minecraft Installation */}
+        <div className="space-y-6">
+          <h2 className="text-2xl font-bold" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>
+            Minecraft Installation
+          </h2>
+          <p className="text-sm" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
+            Manage your Minecraft installation. Select a version and optionally install with Fabric mod loader.
+          </p>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <VersionSelector />
+            <InstallProgress />
+          </div>
+        </div>
 
         {/* Action Buttons */}
         <div className="flex gap-3 justify-end">
