@@ -1,0 +1,26 @@
+{
+  "version": "1.0.0",
+  "minecraft_version": "1.20.1",
+  "fabric_loader": "0.15.0",
+  "changelog": "Initial release of WOWID3 modpack with 50+ optimization and gameplay mods",
+  "files": [
+    {
+      "path": "mods/fabric-api-0.92.0+1.20.1.jar",
+      "url": "https://cdn.modrinth.com/data/P7dR8mSH/versions/fabric-api-0.92.0+1.20.1.jar",
+      "sha256": "abc123...",
+      "size": 2048576
+    },
+    {
+      "path": "mods/sodium-fabric-mc1.20.1-0.5.8.jar",
+      "url": "https://cdn.modrinth.com/data/AANobbMI/versions/sodium-fabric-mc1.20.1-0.5.8.jar",
+      "sha256": "def456...",
+      "size": 1048576
+    },
+    {
+      "path": "config/sodium-options.json",
+      "url": "https://example.com/wowid3/config/sodium-options.json",
+      "sha256": "ghi789...",
+      "size": 4096
+    }
+  ]
+}

@@ -4,8 +4,9 @@ use modules::auth::{authenticate_minecraft, get_current_user, logout, refresh_to
 use modules::minecraft::{launch_game, LaunchConfig};
 use modules::server::{ping_server, ServerStatus};
 use modules::updater::{check_for_updates, get_installed_version, install_modpack, Manifest};
+use serde::Serialize;
 use std::path::PathBuf;
-use tauri::State;
+use tauri::{AppHandle, Emitter};
 
 // Authentication Commands
 #[tauri::command]
@@ -47,6 +48,13 @@ async fn cmd_ping_server(address: String) -> Result<ServerStatus, String> {
     ping_server(&address).await.map_err(|e| e.to_string())
 }
 
+// Download progress event payload
+#[derive(Clone, Serialize)]
+struct DownloadProgressEvent {
+    current: usize,
+    total: usize,
+}
+
 // Modpack Update Commands
 #[tauri::command]
 async fn cmd_check_updates(manifest_url: String) -> Result<Manifest, String> {
@@ -64,11 +72,13 @@ async fn cmd_get_installed_version(game_dir: PathBuf) -> Result<Option<String>, 
 
 #[tauri::command]
 async fn cmd_install_modpack(
+    app: AppHandle,
     manifest: Manifest,
     game_dir: PathBuf,
 ) -> Result<String, String> {
-    install_modpack(&manifest, &game_dir, |current, total| {
-        println!("Progress: {}/{}", current, total);
+    install_modpack(&manifest, &game_dir, move |current, total| {
+        let progress = DownloadProgressEvent { current, total };
+        let _ = app.emit("download-progress", progress);
     })
     .await
     .map(|_| "Modpack installed successfully".to_string())

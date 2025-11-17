@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { useModpackStore, useSettingsStore } from '../stores';
 import { checkForUpdates, getInstalledVersion, installModpack } from './useTauriCommands';
 
@@ -61,11 +62,24 @@ export const useModpack = () => {
       setDownloading(true);
       setError(null);
 
-      await installModpack(latestManifest, gameDirectory);
+      // Listen for download progress events
+      const unlisten = await listen<{ current: number; total: number }>(
+        'download-progress',
+        (event) => {
+          setDownloadProgress(event.payload.current, event.payload.total);
+        }
+      );
 
-      setInstalledVersion(latestManifest.version);
-      setUpdateAvailable(false);
-      reset();
+      try {
+        await installModpack(latestManifest, gameDirectory);
+
+        setInstalledVersion(latestManifest.version);
+        setUpdateAvailable(false);
+        reset();
+      } finally {
+        // Clean up event listener
+        unlisten();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Installation failed');
       throw err;
