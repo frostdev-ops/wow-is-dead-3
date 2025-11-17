@@ -38,9 +38,13 @@ export const CatModel = () => {
     directionalLight.position.set(5, 10, 5);
     scene.add(directionalLight);
 
-    // Load texture
+    // Load texture - randomly select from available cat textures
+    const catTextures = ['/tabby2.png', '/tabby3.png', '/ragdoll2.png', '/red2.png'];
+    const randomTexture = catTextures[Math.floor(Math.random() * catTextures.length)];
+    console.log('[CatModel] Selected random texture:', randomTexture);
+
     const textureLoader = new THREE.TextureLoader();
-    textureLoader.load('/tabby2.png', (texture) => {
+    textureLoader.load(randomTexture, (texture) => {
       texture.magFilter = THREE.NearestFilter;
       texture.minFilter = THREE.NearestFilter;
 

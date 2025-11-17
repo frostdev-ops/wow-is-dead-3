@@ -161,6 +161,57 @@ button {
   }
 }
 
+@keyframes christmas-lights {
+  0%, 33% {
+    background-color: #DC143C;
+    box-shadow: 0 0 10px #DC143C, 0 0 20px #DC143C;
+    transform: scale(1);
+  }
+  34%, 66% {
+    background-color: #228B22;
+    box-shadow: 0 0 10px #228B22, 0 0 20px #228B22;
+    transform: scale(1.1);
+  }
+  67%, 100% {
+    background-color: #FFD700;
+    box-shadow: 0 0 10px #FFD700, 0 0 20px #FFD700;
+    transform: scale(1);
+  }
+}
+
+.animate-christmas-lights {
+  animation: christmas-lights 3s linear infinite;
+}
+
+@keyframes night-fade {
+  0% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.animate-night-fade {
+  animation: night-fade 180s ease-in-out infinite;
+}
+
+@keyframes snowfall {
+  0% {
+    transform: translateY(0) translateX(0);
+  }
+  100% {
+    transform: translateY(100vh) translateX(20px);
+  }
+}
+
+.animate-snowfall {
+  animation: snowfall linear infinite;
+}
+
 .btn-gradient-border {
   border: 2px solid #00d9ff;
   animation: gradient-border 3s ease-in-out infinite, gradient-glow 3s ease-in-out infinite;

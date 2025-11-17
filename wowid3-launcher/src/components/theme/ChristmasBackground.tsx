@@ -1,164 +1,102 @@
-import { useEffect, useRef } from 'react';
-import christmasTheme from '../../themes/christmas.json';
+import { useMemo } from 'react';
 
 interface Snowflake {
-  x: number;
-  y: number;
-  radius: number;
-  speed: number;
+  id: number;
+  left: string;
+  animationDuration: string;
+  animationDelay: string;
+  size: number;
   opacity: number;
-  drift: number;
 }
 
 export default function ChristmasBackground() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // Set canvas size with device pixel ratio for crisp rendering on high-DPI
-    const dpr = window.devicePixelRatio || 1;
-
-    // Create snowflakes (only for Christmas theme)
-    let snowflakes: Snowflake[] = [];
-    const shouldShowSnow = christmasTheme.animations.snowfall;
-    const snowDensity = 60;
-    const snowSpeed = 0.8;
-
-    const createSnowflakes = () => {
-      snowflakes = [];
-      if (shouldShowSnow) {
-        for (let i = 0; i < snowDensity; i++) {
-          snowflakes.push({
-            x: Math.random() * window.innerWidth,
-            y: Math.random() * (window.innerHeight + 100) - 100,
-            radius: Math.random() * 4 + 2,
-            speed: Math.random() * snowSpeed + 0.3,
-            opacity: Math.random() * 0.6 + 0.4,
-            drift: Math.random() * 1 - 0.5,
-          });
-        }
-      }
-    };
-
-    const updateCanvasSize = () => {
-      const width = window.innerWidth;
-      const height = window.innerHeight;
-
-      // Set canvas CSS size
-      canvas.style.width = width + 'px';
-      canvas.style.height = height + 'px';
-
-      // Set canvas drawing surface size with DPI consideration
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
-
-      // The scale needs to be reapplied after width/height change
-      ctx.scale(dpr, dpr);
-
-      // Regenerate snowflakes with new canvas dimensions
-      createSnowflakes();
-
-      console.log('[Canvas] Resized to', width, 'x', height, 'with DPR', dpr);
-    };
-
-    updateCanvasSize();
-
-    // Debounce resize to avoid excessive updates
-    let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
-    const handleResize = () => {
-      if (resizeTimeout) clearTimeout(resizeTimeout);
-      resizeTimeout = setTimeout(updateCanvasSize, 100);
-    };
-
-    window.addEventListener('resize', handleResize);
-
-    // Animation loop
-    let animationFrameId: number;
-    let lastTime = Date.now();
-
-    const animate = () => {
-      const currentTime = Date.now();
-      const deltaTime = Math.min(currentTime - lastTime, 50) / 16.67; // Cap delta time
-      lastTime = currentTime;
-
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Update and draw snowflakes
-      snowflakes.forEach((flake) => {
-        // Update position with delta time for smooth animation
-        flake.y += flake.speed * deltaTime;
-        flake.x += flake.drift * deltaTime;
-
-        // Draw the snowflake with a slight glow effect
-        ctx.beginPath();
-        ctx.arc(flake.x, flake.y, flake.radius, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 255, ${flake.opacity})`;
-        ctx.fill();
-
-        // Add subtle glow
-        ctx.strokeStyle = `rgba(255, 255, 255, ${flake.opacity * 0.3})`;
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        // Wrap around edges smoothly
-        if (flake.y > window.innerHeight + 10) {
-          flake.y = -10;
-          flake.x = Math.random() * window.innerWidth;
-        }
-
-        if (flake.x > window.innerWidth + 10) {
-          flake.x = -10;
-        } else if (flake.x < -10) {
-          flake.x = window.innerWidth + 10;
-        }
+  // Generate snowflakes
+  const snowflakes = useMemo(() => {
+    const flakes: Snowflake[] = [];
+    for (let i = 0; i < 200; i++) {
+      flakes.push({
+        id: i,
+        left: `${Math.random() * 100}%`,
+        animationDuration: `${Math.random() * 10 + 8}s`, // 8-18 seconds (much slower)
+        animationDelay: `${Math.random() * 15}s`,
+        size: Math.random() * 6 + 4, // 4-10px (bigger)
+        opacity: Math.random() * 0.6 + 0.4, // 0.4-1.0
       });
-
-      animationFrameId = requestAnimationFrame(animate);
-    };
-
-    animate();
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      cancelAnimationFrame(animationFrameId);
-    };
+    }
+    console.log('[Snow] Created', flakes.length, 'snowflakes using DOM elements');
+    return flakes;
   }, []);
 
   return (
     <>
-      {/* Background gradient */}
+      {/* Background gradient - Day layer */}
       <div
         className="absolute inset-0"
         style={{
-          background: `linear-gradient(to bottom, #3089bdff 0%, #759fe4ff 50%, #321666ff 100%)`,
-          backgroundImage: `linear-gradient(to bottom, #30a1bdff 0%, #759bd8ff 50%, #3c236bff 100%)`,
+          backgroundImage: `linear-gradient(to bottom, #5e8ce2ff 0%, #759bd8ff 50%, #3c236bff 100%)`,
+          zIndex: 1,
         }}
       />
 
-      {/* Snow canvas */}
-      <canvas
-        ref={canvasRef}
-        className="absolute inset-0 pointer-events-none"
-        style={{ zIndex: 1 }}
+      {/* Background gradient - Night layer with opacity animation */}
+      <div
+        className="absolute inset-0 animate-night-fade"
+        style={{
+          backgroundImage: `linear-gradient(to bottom, #0f1f38 0%, #1a2847 50%, #0a0e27 100%)`,
+          zIndex: 2,
+        }}
       />
 
-      {/* Twinkling lights overlay */}
-      <div className="absolute top-0 left-0 right-0 h-16 flex justify-around items-start p-4 pointer-events-none">
-        {Array.from({ length: 20 }).map((_, i) => (
+      {/* Snow - DOM elements */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 5 }}>
+        {snowflakes.map((flake) => (
           <div
-            key={i}
-            className="w-2 h-2 rounded-full animate-twinkle"
+            key={flake.id}
+            className="absolute animate-snowfall"
             style={{
-              backgroundColor: i % 3 === 0 ? '#FFD700' : i % 3 === 1 ? '#C41E3A' : '#0F8A5F',
-              animationDelay: `${i * 0.1}s`,
+              left: flake.left,
+              top: '-10px',
+              width: `${flake.size}px`,
+              height: `${flake.size}px`,
+              backgroundColor: 'white',
+              borderRadius: '50%',
+              opacity: flake.opacity,
+              boxShadow: `0 0 ${flake.size * 2}px rgba(255, 255, 255, 0.8)`,
+              animationDuration: flake.animationDuration,
+              animationDelay: flake.animationDelay,
             }}
           />
         ))}
+      </div>
+
+      {/* Twinkling lights overlay */}
+      <div className="absolute top-12 left-0 right-0 h-16 flex justify-around items-start p-4 pointer-events-none" style={{ zIndex: 3 }}>
+        {Array.from({ length: 20 }).map((_, i) => {
+          // Pattern: Red, Green, Yellow, Red, Green, Yellow...
+          const colorIndex = i % 3;
+          const colors = ['#DC143C', '#228B22', '#FFD700']; // Red, Green, Yellow
+          const color = colors[colorIndex];
+
+          // Use negative delays to offset where each light starts in the animation cycle
+          // Animation cycles: Red (0-33%) → Green (34-66%) → Yellow (67-100%)
+          // All lights animate at same time, but start at different points:
+          // Red lights: 0s delay (starts at Red)
+          // Green lights: -1s delay (starts at Green, which is 33% through 3s cycle)
+          // Yellow lights: -2s delay (starts at Yellow, which is 67% through 3s cycle)
+          const animationDelay = -colorIndex * 1; // 0s, -1s, -2s
+
+          return (
+            <div
+              key={i}
+              className="w-4 h-4 rounded-full animate-christmas-lights"
+              style={{
+                backgroundColor: color,
+                boxShadow: `0 0 10px ${color}, 0 0 20px ${color}`,
+                animationDelay: `${animationDelay}s`,
+              }}
+            />
+          );
+        })}
       </div>
     </>
   );
