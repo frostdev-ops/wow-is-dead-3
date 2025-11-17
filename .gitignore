@@ -21,6 +21,7 @@ dist/
 # Server data
 /server-data/
 *.jar
+*.wav
 
 # OS
 .DS_Store
