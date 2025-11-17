@@ -1,11 +1,10 @@
 import { useEffect } from 'react';
-import { useAuth, useModpack, useServer } from './hooks';
+import { useModpack, useServer } from './hooks';
 import LauncherHome from './components/LauncherHome';
 import ChristmasBackground from './components/theme/ChristmasBackground';
 import './App.css';
 
 function App() {
-  const { isAuthenticated } = useAuth();
   const { checkUpdates } = useModpack();
   const { startPolling } = useServer();
 

@@ -14,7 +14,6 @@ export const useModpack = () => {
     setLatestManifest,
     setUpdateAvailable,
     setDownloading,
-    setDownloadProgress,
     setError,
     reset,
   } = useModpackStore();

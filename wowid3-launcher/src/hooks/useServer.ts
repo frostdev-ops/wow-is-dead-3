@@ -5,7 +5,7 @@ import { pingServer } from './useTauriCommands';
 export const useServer = () => {
   const { status, isPolling, error, setStatus, setPolling, setError } = useServerStore();
   const { serverAddress } = useSettingsStore();
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<number | null>(null);
 
   const ping = async () => {
     try {
