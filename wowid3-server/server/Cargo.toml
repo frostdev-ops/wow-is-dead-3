@@ -1,0 +1,39 @@
+[package]
+name = "wowid3-modpack-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Web framework
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
+http = "1"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# File handling
+sha2 = "0.10"
+glob = "0.3"
+walkdir = "2"
+
+# Multipart uploads
+multer = "3"
+
+# Environment & config
+dotenvy = "0.15"
+envy = "0.4"
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
