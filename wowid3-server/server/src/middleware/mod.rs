@@ -1,3 +1,3 @@
 pub mod auth;
 
-pub use auth::{auth_middleware, AdminState, AdminToken};
+pub use auth::{AdminToken, auth_middleware};

@@ -80,7 +80,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/admin/releases", post(create_release).get(list_releases))
         .route("/api/admin/releases/:version", delete(delete_release))
         .route("/api/admin/blacklist", get(get_blacklist).put(update_blacklist))
-        .layer(middleware::from_fn(auth_middleware))
+        .layer(axum_middleware::from_fn(auth_middleware))
         .with_state(admin_state);
 
     // Build main router

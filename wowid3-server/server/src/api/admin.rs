@@ -7,14 +7,14 @@ use crate::models::{
 };
 use crate::storage;
 use axum::{
-    extract::{Path, State},
+    extract::{multipart::Multipart, Path, State},
     http::StatusCode,
     response::IntoResponse,
     Extension, Json,
 };
 use chrono::Utc;
-use multer::Multipart;
 use serde_json::json;
+use sha2::Digest;
 use std::sync::Arc;
 use tokio::fs;
 use uuid::Uuid;
@@ -32,10 +32,9 @@ pub async fn login(
 ) -> Result<Json<LoginResponse>, AppError> {
     if request.password == *state.admin_password {
         // Simple token is the password hash (in production, use proper JWT)
-        let token = format!(
-            "{}",
-            sha2::Sha256::digest(request.password.as_bytes())
-        );
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(request.password.as_bytes());
+        let token = format!("{:x}", hasher.finalize());
         Ok(Json(LoginResponse {
             token,
             message: "Login successful".to_string(),
@@ -49,7 +48,7 @@ pub async fn login(
 pub async fn upload_files(
     State(state): State<AdminState>,
     Extension(_token): Extension<AdminToken>,
-    multipart: Multipart,
+    mut multipart: Multipart,
 ) -> Result<Json<Vec<UploadResponse>>, AppError> {
     let upload_id = Uuid::new_v4().to_string();
     let upload_dir = state.config.uploads_path().join(&upload_id);
@@ -193,6 +192,7 @@ pub async fn create_release(
     }
 
     // Create manifest
+    let changelog_preview = request.changelog.chars().take(100).collect::<String>();
     let manifest = Manifest {
         version: request.version.clone(),
         minecraft_version: request.minecraft_version,
@@ -221,7 +221,7 @@ pub async fn create_release(
         "version": request.version,
         "file_count": manifest.files.len(),
         "size_bytes": total_size,
-        "changelog_preview": request.changelog.chars().take(100).collect::<String>()
+        "changelog_preview": changelog_preview
     })))
 }
 
