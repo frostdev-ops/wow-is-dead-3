@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Bundled JVM runtime (too large for git, download with scripts)
+src-tauri/runtime/
