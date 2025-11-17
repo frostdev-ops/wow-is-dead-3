@@ -1,0 +1,91 @@
+{
+  "level_limit": 100,
+  "experience_per_level": {
+    "type": "expression",
+    "data": {
+      "expression": "min(level ^ 1.4 + 12, 200)"
+    }
+  },
+  "sources": [
+    {
+      "type": "puffish_skills:craft_item",
+      "data": {
+        "variables": {
+          "is_food_item": {
+            "operations": [
+              {"type": "get_crafted_item_stack"},
+              {
+                "type": "puffish_skills:test_any",
+                "data": {
+                  "items": [
+                    "farmersdelight:salad",
+                    "farmersdelight:mixed_salad",
+                    "farmersdelight:honey_cookie",
+                    "farmersdelight:pie_crust",
+                    "farmersdelight:cooked_chicken",
+                    "farmersdelight:cooked_beef",
+                    "farmersdelight:cooked_mutton",
+                    "farmersdelight:pasta",
+                    "farmersdelight:rotten_tomato_sauce"
+                  ]
+                }
+              }
+            ]
+          },
+          "is_ingredient": {
+            "operations": [
+              {"type": "get_crafted_item_stack"},
+              {
+                "type": "puffish_skills:test_any",
+                "data": {
+                  "items": [
+                    "farmersdelight:rich_soil",
+                    "farmersdelight:straw",
+                    "farmersdelight:carrot_slices",
+                    "farmersdelight:tomato_slices",
+                    "farmersdelight:onion_slices"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "experience": [
+          {"condition": "is_food_item", "expression": "15"},
+          {"condition": "is_ingredient", "expression": "5"}
+        ]
+      }
+    },
+    {
+      "type": "puffish_skills:break_block",
+      "data": {
+        "variables": {
+          "is_crop": {
+            "operations": [
+              {"type": "get_broken_block_state"},
+              {
+                "type": "puffish_skills:test_any",
+                "data": {
+                  "blocks": [
+                    "farmersdelight:tomato_crop",
+                    "farmersdelight:onion_crop",
+                    "farmersdelight:lettuce_crop",
+                    "farmersdelight:barley_crop",
+                    "farmersdelight:rice_crop",
+                    "minecraft:wheat",
+                    "minecraft:carrots",
+                    "minecraft:potatoes",
+                    "minecraft:beetroots"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "experience": [
+          {"condition": "is_crop", "expression": "2"}
+        ]
+      }
+    }
+  ]
+}

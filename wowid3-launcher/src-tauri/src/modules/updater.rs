@@ -2,12 +2,14 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
+use std::time::Duration;
 use sysinfo::Disks;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
 const MAX_DOWNLOAD_RETRIES: u32 = 3;
 const RETRY_DELAY_MS: u64 = 1000;
+const MANIFEST_FETCH_TIMEOUT_SECS: u64 = 10;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ManifestFile {
@@ -37,18 +39,40 @@ pub struct DownloadProgress {
 
 /// Check for modpack updates by fetching the manifest
 pub async fn check_for_updates(manifest_url: &str) -> Result<Manifest> {
-    let response = reqwest::get(manifest_url)
-        .await
-        .context("Failed to fetch manifest from URL")?;
+    eprintln!("[Updater] Fetching manifest from: {}", manifest_url);
 
-    if !response.status().is_success() {
-        anyhow::bail!("Manifest request failed with status: {}", response.status());
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(MANIFEST_FETCH_TIMEOUT_SECS))
+        .build()
+        .context("Failed to create HTTP client")?;
+
+    let response = client
+        .get(manifest_url)
+        .send()
+        .await
+        .context(format!(
+            "Failed to fetch manifest from URL '{}'. Check your network connection and verify the server is reachable.",
+            manifest_url
+        ))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        anyhow::bail!(
+            "Manifest request failed with HTTP status {}: {} (URL: {})",
+            status.as_u16(),
+            status.canonical_reason().unwrap_or("Unknown error"),
+            manifest_url
+        );
     }
+
+    eprintln!("[Updater] Manifest fetched successfully, parsing JSON...");
 
     let manifest: Manifest = response
         .json()
         .await
-        .context("Failed to parse manifest JSON")?;
+        .context("Failed to parse manifest JSON - server returned invalid JSON")?;
+
+    eprintln!("[Updater] Manifest parsed successfully: version {}", manifest.version);
 
     Ok(manifest)
 }
@@ -187,11 +211,34 @@ pub async fn update_version_file(game_dir: &PathBuf, version: &str) -> Result<()
 pub fn check_disk_space(game_dir: &PathBuf, required_bytes: u64) -> Result<()> {
     let disks = Disks::new_with_refreshed_list();
 
-    // Find the disk that contains our game directory
-    let game_dir_str = game_dir.to_string_lossy();
+    // Canonicalize the path to handle relative paths and resolve symlinks
+    let canonical_path = match std::fs::canonicalize(game_dir) {
+        Ok(path) => path,
+        Err(_) => {
+            // If canonicalize fails (e.g., directory doesn't exist yet), try to create it and retry
+            if let Err(e) = std::fs::create_dir_all(game_dir) {
+                eprintln!("Warning: Could not create directory for disk space check: {}", e);
+                return Ok(()); // Proceed anyway
+            }
+            match std::fs::canonicalize(game_dir) {
+                Ok(path) => path,
+                Err(e) => {
+                    eprintln!("Warning: Could not determine absolute path for disk space check: {}", e);
+                    return Ok(()); // Proceed anyway
+                }
+            }
+        }
+    };
 
+    let game_dir_str = canonical_path.to_string_lossy();
+
+    // Find the disk that contains our game directory
     for disk in &disks {
         let mount_point = disk.mount_point().to_string_lossy();
+
+        // On Windows, mount points are drive letters like "C:\\"
+        // On Unix, mount points are paths like "/" or "/home"
+        // Check if the canonical path starts with the mount point
         if game_dir_str.starts_with(mount_point.as_ref()) {
             let available = disk.available_space();
 
@@ -206,12 +253,21 @@ pub fn check_disk_space(game_dir: &PathBuf, required_bytes: u64) -> Result<()> {
                 );
             }
 
+            eprintln!(
+                "[Disk Space] OK: {} MB available, {} MB required (at {})",
+                available / 1024 / 1024,
+                required_with_buffer / 1024 / 1024,
+                mount_point
+            );
             return Ok(());
         }
     }
 
-    // If we can't find the disk, proceed anyway (better than blocking)
-    eprintln!("Warning: Could not determine disk space for {}", game_dir_str);
+    // If we can't find the disk, log but proceed anyway (better than blocking)
+    eprintln!(
+        "[Disk Space] Warning: Could not determine disk for '{}' - proceeding anyway",
+        game_dir_str
+    );
     Ok(())
 }
 
@@ -259,7 +315,7 @@ pub fn calculate_total_size(files: &[ManifestFile]) -> u64 {
 pub async fn install_modpack(
     manifest: &Manifest,
     game_dir: &PathBuf,
-    progress_callback: impl Fn(usize, usize, String) + Send + Sync,
+    progress_callback: impl Fn(usize, usize, String, u64, u64) + Send + Sync,
 ) -> Result<()> {
     // Ensure game directory exists
     if !game_dir.exists() {
@@ -278,22 +334,26 @@ pub async fn install_modpack(
     }
 
     // Check disk space
-    let total_size = calculate_total_size(&files_to_download);
-    check_disk_space(game_dir, total_size)?;
+    let total_bytes = calculate_total_size(&files_to_download);
+    check_disk_space(game_dir, total_bytes)?;
 
     println!(
         "Downloading {} files ({} MB)",
         files_to_download.len(),
-        total_size / 1024 / 1024
+        total_bytes / 1024 / 1024
     );
 
-    // Download files with retry logic
-    let total = files_to_download.len();
+    // Download files with retry logic and track cumulative bytes
+    let total_files = files_to_download.len();
+    let mut bytes_downloaded = 0u64;
+
     for (index, file) in files_to_download.iter().enumerate() {
-        println!("Downloading {}/{}: {}", index + 1, total, file.path);
+        println!("Downloading {}/{}: {}", index + 1, total_files, file.path);
 
         download_file_with_retry(file, game_dir, MAX_DOWNLOAD_RETRIES).await?;
-        progress_callback(index + 1, total, file.path.clone());
+
+        bytes_downloaded += file.size;
+        progress_callback(index + 1, total_files, file.path.clone(), bytes_downloaded, total_bytes);
     }
 
     // Update version file

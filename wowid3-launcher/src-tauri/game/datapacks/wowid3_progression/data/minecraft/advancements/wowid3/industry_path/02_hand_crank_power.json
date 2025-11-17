@@ -1,0 +1,21 @@
+{
+  "display": {
+    "icon": {
+      "item": "create:shaft"
+    },
+    "title": "Manual Automation",
+    "description": "Generate power with hand crank (8 Stress Units of manual labor)",
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "parent": "wowid3:industry_path/01_industry_started",
+  "criteria": {
+    "hand_crank_use": {
+      "trigger": "minecraft:recipe_unlocked",
+      "conditions": {}
+    }
+  },
+  "requirements": [["hand_crank_use"]]
+}

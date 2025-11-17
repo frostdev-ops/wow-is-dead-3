@@ -1,0 +1,20 @@
+{
+  "display": {
+    "icon": {
+      "item": "create:experience_nugget"
+    },
+    "title": "Master Craftsman",
+    "description": "Reach the apex of progression: master all systems (farming, industry, exploration, convergence, and integration)",
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "parent": "wowid3:integration/04_electrical_grid",
+  "criteria": {
+    "complete_integration": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "requirements": [["complete_integration"]]
+}

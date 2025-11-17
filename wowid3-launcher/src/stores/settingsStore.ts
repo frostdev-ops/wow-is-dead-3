@@ -28,9 +28,9 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       // Defaults
       javaPath: null, // Will use bundled Java
-      ramAllocation: 4096, // 4GB default
+      ramAllocation: 12512, // 4GB default
       gameDirectory: './game',
-      serverAddress: 'your-server.com:25565',
+      serverAddress: 'mc.frostdev.io:25565',
       theme: 'christmas',
       manifestUrl: 'https://wowid-launcher.frostdev.io/api/manifest/latest',
 
@@ -43,6 +43,21 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'wowid3-settings', // localStorage key
+      version: 1,
+      migrate: (persistedState: any, version: number) => {
+        // Migration logic for updating old URLs
+        if (version === 0) {
+          // Fix old manifest URL
+          if (persistedState.manifestUrl === 'https://your-server.com/wowid3/manifest.json') {
+            persistedState.manifestUrl = 'https://wowid-launcher.frostdev.io/api/manifest/latest';
+          }
+          // Fix old server address
+          if (persistedState.serverAddress === 'your-server.com:25565') {
+            persistedState.serverAddress = 'mc.frostdev.io:25565';
+          }
+        }
+        return persistedState;
+      },
     }
   )
 );

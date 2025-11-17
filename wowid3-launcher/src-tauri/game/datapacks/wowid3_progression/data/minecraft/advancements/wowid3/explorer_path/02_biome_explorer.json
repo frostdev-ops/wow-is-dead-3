@@ -1,0 +1,21 @@
+{
+  "display": {
+    "icon": {
+      "item": "biomesoplenty:white_flower"
+    },
+    "title": "Biome Diversity",
+    "description": "Discover 5+ unique biomes from 50+ Biomes O' Plenty options",
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "parent": "wowid3:explorer_path/01_explorer_started",
+  "criteria": {
+    "explore_biomes": {
+      "trigger": "minecraft:location",
+      "conditions": {}
+    }
+  },
+  "requirements": [["explore_biomes"]]
+}

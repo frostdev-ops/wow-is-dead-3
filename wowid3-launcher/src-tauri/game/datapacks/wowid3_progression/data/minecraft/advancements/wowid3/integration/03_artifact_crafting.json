@@ -1,0 +1,21 @@
+{
+  "display": {
+    "icon": {
+      "item": "artifacts:fire_aspect_necklace"
+    },
+    "title": "Artifact Mastery",
+    "description": "Craft legendary artifacts: combine materials, spells, and ancient recipes for ultimate power",
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "parent": "wowid3:integration/02_spell_system",
+  "criteria": {
+    "craft_artifact": {
+      "trigger": "minecraft:recipe_unlocked",
+      "conditions": {}
+    }
+  },
+  "requirements": [["craft_artifact"]]
+}

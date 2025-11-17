@@ -1,0 +1,21 @@
+{
+  "display": {
+    "icon": {
+      "item": "malum:twisted_wood_planks"
+    },
+    "title": "Builder Master",
+    "description": "Master decoration: collect blocks from 30+ decoration mods for infinite building possibilities",
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "parent": "wowid3:explorer_path/04_wine_mastery",
+  "criteria": {
+    "collect_blocks": {
+      "trigger": "minecraft:recipe_unlocked",
+      "conditions": {}
+    }
+  },
+  "requirements": [["collect_blocks"]]
+}

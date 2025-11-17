@@ -1,0 +1,50 @@
+{
+  "skills": [
+    {"skill_id": "gather_snow", "x": 0, "y": 0},
+    {"skill_id": "pristine_snow", "x": -1, "y": 0},
+    {"skill_id": "pack_snow_tight", "x": 1, "y": 0},
+    {"skill_id": "collect_more_snow", "x": -1, "y": 1},
+    {"skill_id": "snowball_stockpile", "x": 1, "y": 1},
+    {"skill_id": "reinforced_snowball", "x": 0, "y": 2},
+    {"skill_id": "perfect_snowball", "x": 0, "y": 3},
+
+    {"skill_id": "roll_small_ball", "x": -1, "y": 4},
+    {"skill_id": "rolling_technique", "x": 1, "y": 4},
+    {"skill_id": "roll_medium_ball", "x": -2, "y": 5},
+    {"skill_id": "roll_large_ball", "x": 0, "y": 5},
+    {"skill_id": "seamless_spheres", "x": 2, "y": 5},
+    {"skill_id": "shape_spheres", "x": -1, "y": 6},
+    {"skill_id": "perfect_rolling", "x": 1, "y": 6},
+
+    {"skill_id": "stack_base", "x": -2, "y": 8},
+    {"skill_id": "structural_integrity", "x": 0, "y": 8},
+    {"skill_id": "stack_middle", "x": 2, "y": 8},
+    {"skill_id": "stack_head", "x": -1, "y": 9},
+    {"skill_id": "balance_snowman", "x": 1, "y": 9},
+    {"skill_id": "secure_structure", "x": 0, "y": 10},
+
+    {"skill_id": "place_coal_eyes", "x": -2, "y": 11},
+    {"skill_id": "decorative_flair", "x": 0, "y": 11},
+    {"skill_id": "add_carrot_nose", "x": 2, "y": 11},
+    {"skill_id": "insert_stick_arms", "x": -1, "y": 12},
+    {"skill_id": "coal_button_row", "x": 1, "y": 12},
+    {"skill_id": "accessory_mastery", "x": 0, "y": 13},
+
+    {"skill_id": "frost_surface", "x": -2, "y": 14},
+    {"skill_id": "add_snow_armor", "x": -1, "y": 15},
+    {"skill_id": "glow_effect", "x": 0, "y": 15},
+    {"skill_id": "melting_resistance", "x": 1, "y": 15},
+    {"skill_id": "icy_aura", "x": 2, "y": 14},
+
+    {"skill_id": "animate_snowman", "x": -2, "y": 17},
+    {"skill_id": "make_move", "x": -1, "y": 18},
+    {"skill_id": "winter_magic", "x": 0, "y": 18},
+    {"skill_id": "frozen_enchant", "x": 1, "y": 18},
+    {"skill_id": "snow_golem_bond", "x": 2, "y": 17},
+
+    {"skill_id": "ultimate_snowman", "x": -1, "y": 20},
+    {"skill_id": "snowman_king", "x": 1, "y": 20},
+    {"skill_id": "winter_guardian", "x": -1, "y": 22},
+    {"skill_id": "seasonal_mastery", "x": 0, "y": 24}
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "display": {
+    "icon": {
+      "item": "create:water_wheel"
+    },
+    "title": "Water Power",
+    "description": "Build a water wheel (32/128 Stress Units passive power) and double ore",
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "parent": "wowid3:industry_path/02_hand_crank_power",
+  "criteria": {
+    "place_water_wheel": {
+      "trigger": "minecraft:placed_block",
+      "conditions": {
+        "block": "create:water_wheel"
+      }
+    }
+  },
+  "requirements": [["place_water_wheel"]]
+}

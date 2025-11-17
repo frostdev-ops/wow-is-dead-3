@@ -1,0 +1,7 @@
+{
+  "name": "Christmas Tree",
+  "description": "Decorate the most spectacular Christmas tree through mechanical precision and festive craftsmanship.",
+  "icon": "minecraft:spruce_sapling",
+  "category_color": "#00AA00",
+  "background": "minecraft:spruce_log"
+}

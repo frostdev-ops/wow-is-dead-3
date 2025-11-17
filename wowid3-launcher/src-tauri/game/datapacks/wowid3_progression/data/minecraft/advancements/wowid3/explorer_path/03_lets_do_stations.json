@@ -1,0 +1,23 @@
+{
+  "display": {
+    "icon": {
+      "item": "lets_do_vinery:barrel"
+    },
+    "title": "Artisan Stations",
+    "description": "Build Let's Do stations: Vinery, Bakery, Brewery for specialized recipes",
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "parent": "wowid3:explorer_path/02_biome_explorer",
+  "criteria": {
+    "place_vinery_barrel": {
+      "trigger": "minecraft:placed_block",
+      "conditions": {
+        "block": "lets_do_vinery:barrel"
+      }
+    }
+  },
+  "requirements": [["place_vinery_barrel"]]
+}
