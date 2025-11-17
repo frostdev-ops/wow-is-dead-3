@@ -1,3 +1,28 @@
+//! Microsoft OAuth 2.0 authentication module for Minecraft Java Edition.
+//!
+//! This module implements the complete Microsoft authentication flow required to
+//! authenticate with Minecraft Java Edition. The flow consists of several steps:
+//!
+//! 1. **Microsoft OAuth**: User authenticates with their Microsoft account via OAuth 2.0
+//!    using PKCE (Proof Key for Code Exchange) for enhanced security.
+//! 2. **Xbox Live Authentication**: Microsoft token is exchanged for an Xbox Live token.
+//! 3. **XSTS Authentication**: Xbox Live token is used to obtain an XSTS (Xbox Secure Token Service) token.
+//! 4. **Minecraft Authentication**: XSTS token is used to obtain a Minecraft access token.
+//! 5. **Profile Retrieval**: Minecraft token is used to fetch the player's profile and verify ownership.
+//!
+//! ## Security Features
+//!
+//! - Uses PKCE for OAuth to prevent authorization code interception attacks
+//! - Stores credentials securely in the system keyring
+//! - Implements token refresh to avoid repeated user authentication
+//! - Validates Minecraft ownership before granting access
+//!
+//! ## Token Management
+//!
+//! Tokens are automatically refreshed when they expire (with a 5-minute buffer).
+//! The refresh token is preserved across authentication cycles to enable
+//! seamless token renewal without user interaction.
+
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use keyring::Entry;
@@ -8,11 +33,17 @@ use oauth2::{
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
+use std::time::{Duration as StdDuration, Instant};
 
 const KEYRING_SERVICE: &str = "wowid3-launcher";
 const KEYRING_USER: &str = "minecraft-auth";
 
 // Microsoft OAuth constants
+/// Microsoft Azure AD client ID for Minecraft authentication.
+///
+/// This is the official client ID used by Minecraft launchers for Microsoft OAuth.
+/// Source: This ID is publicly available and used by the official Minecraft launcher
+/// and other third-party launchers for authenticating with Microsoft accounts.
 const MICROSOFT_CLIENT_ID: &str = "00000000402b5328";
 const MICROSOFT_AUTH_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize";
 const MICROSOFT_TOKEN_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
@@ -146,6 +177,11 @@ fn start_oauth_server() -> Result<(String, PkceCodeVerifier)> {
     let listener = TcpListener::bind("127.0.0.1:23947")
         .context("Failed to bind to port 23947. Is another instance running?")?;
 
+    // Set non-blocking mode for timeout support
+    listener
+        .set_nonblocking(true)
+        .context("Failed to set listener to non-blocking mode")?;
+
     // Generate PKCE challenge
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
@@ -172,41 +208,88 @@ fn start_oauth_server() -> Result<(String, PkceCodeVerifier)> {
         eprintln!("Failed to open browser automatically: {}. Please open this URL manually: {}", e, auth_url);
     }
 
-    // Wait for callback
+    // Wait for callback with 5-minute timeout
     println!("Waiting for OAuth callback on port 23947...");
-    let (mut stream, _) = listener
-        .accept()
-        .context("Failed to accept connection from OAuth callback")?;
+    let timeout = StdDuration::from_secs(300); // 5 minutes
+    let start_time = Instant::now();
 
-    let mut reader = BufReader::new(&stream);
-    let mut request_line = String::new();
-    reader
-        .read_line(&mut request_line)
-        .context("Failed to read OAuth callback request")?;
+    loop {
+        // Check if timeout has elapsed
+        if start_time.elapsed() > timeout {
+            return Err(anyhow!(
+                "OAuth authentication timed out after 5 minutes. Please try again."
+            ));
+        }
 
-    // Parse authorization code from request
-    let redirect_url = request_line
-        .split_whitespace()
-        .nth(1)
-        .ok_or_else(|| anyhow!("Invalid OAuth callback request"))?;
+        // Try to accept a connection (non-blocking)
+        match listener.accept() {
+            Ok((mut stream, _)) => {
+                let mut reader = BufReader::new(&stream);
+                let mut request_line = String::new();
 
-    let url = url::Url::parse(&format!("http://localhost{}", redirect_url))?;
-    let code = url
-        .query_pairs()
-        .find(|(key, _)| key == "code")
-        .map(|(_, value)| value.to_string())
-        .ok_or_else(|| anyhow!("No authorization code in callback"))?;
+                if let Err(e) = reader.read_line(&mut request_line) {
+                    eprintln!("Failed to read request line: {}", e);
+                    continue;
+                }
 
-    // Send success response to browser
-    let response = "HTTP/1.1 200 OK\r\n\r\n\
-        <html><body><h1>Authentication Successful!</h1>\
-        <p>You can close this window and return to the launcher.</p>\
-        <script>window.close();</script></body></html>";
+                // Parse the request path
+                let request_path = match request_line.split_whitespace().nth(1) {
+                    Some(path) => path,
+                    None => {
+                        eprintln!("Invalid request format, ignoring");
+                        continue;
+                    }
+                };
 
-    stream.write_all(response.as_bytes())?;
-    stream.flush()?;
+                // Parse URL and look for authorization code
+                let url = match url::Url::parse(&format!("http://localhost{}", request_path)) {
+                    Ok(url) => url,
+                    Err(_) => {
+                        // Not a valid URL, might be favicon.ico or other browser request
+                        eprintln!("Ignoring non-OAuth request: {}", request_path);
+                        continue;
+                    }
+                };
 
-    Ok((code, pkce_verifier))
+                // Check if this request has an authorization code
+                if let Some((_, code_value)) = url.query_pairs().find(|(key, _)| key == "code") {
+                    let code = code_value.to_string();
+
+                    // Send success response to browser
+                    let response = "HTTP/1.1 200 OK\r\n\r\n\
+                        <html><body><h1>Authentication Successful!</h1>\
+                        <p>You can close this window and return to the launcher.</p>\
+                        <script>window.close();</script></body></html>";
+
+                    if let Err(e) = stream.write_all(response.as_bytes()) {
+                        eprintln!("Failed to send response to browser: {}", e);
+                    }
+                    if let Err(e) = stream.flush() {
+                        eprintln!("Failed to flush response: {}", e);
+                    }
+
+                    return Ok((code, pkce_verifier));
+                } else {
+                    // Request doesn't have a code parameter, might be favicon or other request
+                    eprintln!("Ignoring request without authorization code: {}", request_path);
+
+                    // Send a simple response to close the connection gracefully
+                    let response = "HTTP/1.1 404 Not Found\r\n\r\n";
+                    let _ = stream.write_all(response.as_bytes());
+                    let _ = stream.flush();
+                    continue;
+                }
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                // No connection ready yet, sleep briefly and try again
+                std::thread::sleep(StdDuration::from_millis(100));
+                continue;
+            }
+            Err(e) => {
+                return Err(anyhow!("Failed to accept connection: {}", e));
+            }
+        }
+    }
 }
 
 /// Exchange authorization code for Microsoft access token
@@ -560,8 +643,7 @@ pub async fn refresh_token() -> Result<MinecraftProfile> {
         access_token: token_result.access_token().secret().to_string(),
         refresh_token: token_result
             .refresh_token()
-            .map(|t| t.secret().to_string())
-            .or(current_profile.refresh_token.clone()), // Keep old refresh token if not provided
+            .map(|t| t.secret().to_string()),
         expires_in: token_result
             .expires_in()
             .map(|d| d.as_secs())
@@ -581,7 +663,7 @@ pub async fn refresh_token() -> Result<MinecraftProfile> {
     let expires_at = Utc::now() + Duration::seconds(ms_token.expires_in as i64);
     let updated_profile = MinecraftProfile {
         access_token: mc_access_token,
-        refresh_token: Some(ms_token.refresh_token.unwrap_or_default()),
+        refresh_token: ms_token.refresh_token.or(current_profile.refresh_token),
         expires_at: Some(expires_at),
         ..current_profile
     };

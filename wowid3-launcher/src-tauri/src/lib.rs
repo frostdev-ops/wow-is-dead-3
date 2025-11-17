@@ -1,6 +1,6 @@
 mod modules;
 
-use modules::auth::{authenticate_minecraft, get_current_user, logout, MinecraftProfile};
+use modules::auth::{authenticate_minecraft, get_current_user, logout, refresh_token, MinecraftProfile};
 use modules::minecraft::{launch_game, LaunchConfig};
 use modules::server::{ping_server, ServerStatus};
 use modules::updater::{check_for_updates, get_installed_version, install_modpack, Manifest};
@@ -18,6 +18,13 @@ async fn cmd_authenticate() -> Result<MinecraftProfile, String> {
 #[tauri::command]
 fn cmd_get_current_user() -> Result<Option<MinecraftProfile>, String> {
     get_current_user().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cmd_refresh_token() -> Result<MinecraftProfile, String> {
+    refresh_token()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -76,6 +83,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             cmd_authenticate,
             cmd_get_current_user,
+            cmd_refresh_token,
             cmd_logout,
             cmd_launch_game,
             cmd_ping_server,
