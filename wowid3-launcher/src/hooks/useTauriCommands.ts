@@ -73,6 +73,13 @@ export const installModpack = async (
   return await invoke<string>('cmd_install_modpack', { manifest, gameDir });
 };
 
+export const verifyAndRepairModpack = async (
+  manifest: Manifest,
+  gameDir: string
+): Promise<string> => {
+  return await invoke<string>('cmd_verify_and_repair_modpack', { manifest, gameDir });
+};
+
 // Discord Rich Presence commands
 export const discordConnect = async (): Promise<void> => {
   return await invoke<void>('cmd_discord_connect');

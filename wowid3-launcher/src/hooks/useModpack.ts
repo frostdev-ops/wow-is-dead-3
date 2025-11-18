@@ -1,7 +1,7 @@
 import { useEffect, useCallback } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useModpackStore, useSettingsStore } from '../stores';
-import { checkForUpdates, getInstalledVersion, installModpack } from './useTauriCommands';
+import { checkForUpdates, getInstalledVersion, installModpack, verifyAndRepairModpack } from './useTauriCommands';
 
 export const useModpack = () => {
   const {
@@ -124,6 +124,44 @@ export const useModpack = () => {
     }
   };
 
+  const verifyAndRepair = useCallback(async () => {
+    try {
+      setDownloading(true);
+      setError(null);
+
+      // First fetch the latest manifest
+      const manifest = await checkForUpdates(manifestUrl);
+      setLatestManifest(manifest);
+
+      // Listen for download progress events
+      const unlisten = await listen<{
+        current: number;
+        total: number;
+        filename: string;
+        current_bytes: number;
+        total_bytes: number;
+      }>(
+        'download-progress',
+        (event) => {
+          setDownloadProgress(event.payload.current_bytes, event.payload.total_bytes);
+        }
+      );
+
+      try {
+        await verifyAndRepairModpack(manifest, gameDirectory);
+        console.log('[Modpack] Verification and repair complete');
+      } finally {
+        // Clean up event listener
+        unlisten();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Verification and repair failed');
+      throw err;
+    } finally {
+      setDownloading(false);
+    }
+  }, [manifestUrl, gameDirectory, setDownloading, setError, setLatestManifest, setDownloadProgress]);
+
   return {
     installedVersion,
     latestManifest,
@@ -133,5 +171,6 @@ export const useModpack = () => {
     error,
     checkUpdates,
     install,
+    verifyAndRepair,
   };
 };

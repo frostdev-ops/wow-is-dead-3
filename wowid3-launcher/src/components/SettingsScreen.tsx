@@ -5,16 +5,19 @@ import { Input } from './ui/Input';
 import { Card } from './ui/Card';
 import { useToast } from './ui/ToastContainer';
 import { VersionSelector, InstallProgress } from './installer';
+import { useModpack } from '../hooks/useModpack';
 
 export default function SettingsScreen() {
   const { gameDirectory, ramAllocation, serverAddress, manifestUrl, keepLauncherOpen, setGameDirectory, setRamAllocation, setServerAddress, setManifestUrl, setKeepLauncherOpen } = useSettingsStore();
   const { addToast } = useToast();
+  const { downloadProgress, error, verifyAndRepair } = useModpack();
 
   const [tempGameDir, setTempGameDir] = useState(gameDirectory);
   const [tempRam, setTempRam] = useState(ramAllocation);
   const [tempServerAddr, setTempServerAddr] = useState(serverAddress);
   const [tempManifestUrl, setTempManifestUrl] = useState(manifestUrl);
   const [tempKeepLauncherOpen, setTempKeepLauncherOpen] = useState(keepLauncherOpen);
+  const [isRepairingInProgress, setIsRepairingInProgress] = useState(false);
 
   const handleSave = () => {
     setGameDirectory(tempGameDir);
@@ -31,6 +34,18 @@ export default function SettingsScreen() {
     setTempServerAddr(serverAddress);
     setTempManifestUrl(manifestUrl);
     setTempKeepLauncherOpen(keepLauncherOpen);
+  };
+
+  const handleVerifyAndRepair = async () => {
+    try {
+      setIsRepairingInProgress(true);
+      await verifyAndRepair();
+      addToast('Verification and repair complete!', 'success');
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Verification and repair failed', 'error');
+    } finally {
+      setIsRepairingInProgress(false);
+    }
   };
 
   return (
@@ -146,6 +161,50 @@ export default function SettingsScreen() {
                 </span>
               </label>
             </div>
+          </div>
+        </Card>
+
+        {/* Maintenance */}
+        <Card>
+          <h2 className="text-xl font-bold mb-4" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>Maintenance</h2>
+          <div className="space-y-4">
+            <p className="text-sm" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
+              Verify and repair your modpack installation. This will check all files against their checksums and re-download any corrupted or missing files.
+            </p>
+
+            {isRepairingInProgress && downloadProgress && (
+              <div className="bg-blue-900 bg-opacity-30 border border-blue-500 rounded p-4 mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="animate-spin h-4 w-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
+                  <span style={{ color: '#c6ebdaff' }}>Verifying and repairing...</span>
+                </div>
+                <div className="w-full bg-gray-700 rounded h-2">
+                  <div
+                    className="bg-blue-500 h-2 rounded transition-all"
+                    style={{
+                      width: `${downloadProgress.total > 0 ? (downloadProgress.current / downloadProgress.total) * 100 : 0}%`,
+                    }}
+                  ></div>
+                </div>
+                <p className="text-xs mt-2" style={{ color: '#999' }}>
+                  {downloadProgress.current} / {downloadProgress.total} files
+                </p>
+              </div>
+            )}
+
+            {error && (
+              <div className="bg-red-900 bg-opacity-30 border border-red-500 rounded p-3 text-sm" style={{ color: '#fca5a5' }}>
+                {error}
+              </div>
+            )}
+
+            <Button
+              variant="primary"
+              onClick={handleVerifyAndRepair}
+              disabled={isRepairingInProgress}
+            >
+              {isRepairingInProgress ? 'Repairing...' : 'Verify & Repair Files'}
+            </Button>
           </div>
         </Card>
 

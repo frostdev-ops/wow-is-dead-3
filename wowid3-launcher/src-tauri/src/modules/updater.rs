@@ -494,6 +494,110 @@ pub async fn install_modpack(
     Ok(())
 }
 
+/// Verify and repair modpack - checks all files against manifest checksums
+/// and re-downloads any corrupted files, even if version matches
+pub async fn verify_and_repair_modpack(
+    manifest: &Manifest,
+    game_dir: &PathBuf,
+    progress_callback: impl Fn(usize, usize, String, u64, u64) + Send + Sync + 'static,
+) -> Result<()> {
+    // Ensure game directory exists
+    if !game_dir.exists() {
+        fs::create_dir_all(game_dir)
+            .await
+            .context("Failed to create game directory")?;
+    }
+
+    println!("[Repair] Starting modpack verification...");
+
+    // Check all files for corruption
+    let files_to_repair = get_files_to_download(manifest, game_dir).await?;
+
+    if files_to_repair.is_empty() {
+        println!("[Repair] ✓ All files verified - no corruption detected");
+        return Ok(());
+    }
+
+    println!(
+        "[Repair] Found {} corrupted/missing files to repair",
+        files_to_repair.len()
+    );
+
+    // Check disk space for repairs
+    let total_bytes = calculate_total_size(&files_to_repair);
+    check_disk_space(game_dir, total_bytes)?;
+
+    println!(
+        "[Repair] Re-downloading {} files ({} MB)",
+        files_to_repair.len(),
+        total_bytes / 1024 / 1024
+    );
+
+    // Create download manager with optimal concurrency
+    let concurrency = calculate_optimal_concurrency();
+    let download_manager = DownloadManager::new(concurrency, MAX_DOWNLOAD_RETRIES)
+        .context("Failed to create download manager")?;
+
+    // Convert manifest files to download tasks
+    let tasks: Vec<DownloadTask> = files_to_repair
+        .iter()
+        .map(|file| DownloadTask {
+            url: file.url.clone(),
+            dest: game_dir.join(&file.path),
+            expected_hash: HashType::Sha256(file.sha256.clone()),
+            priority: DownloadPriority::Low,
+            size: file.size,
+        })
+        .collect();
+
+    // Track progress across all parallel downloads
+    let (progress_tx, mut progress_rx) =
+        tokio::sync::mpsc::channel::<super::download_manager::DownloadProgress>(100);
+    let total_files = files_to_repair.len();
+    let bytes_downloaded = Arc::new(Mutex::new(0u64));
+    let files_completed = Arc::new(Mutex::new(0usize));
+
+    // Spawn progress tracking task
+    let bytes_downloaded_clone = bytes_downloaded.clone();
+    let files_completed_clone = files_completed.clone();
+    let progress_task = tokio::spawn(async move {
+        while let Some(progress) = progress_rx.recv().await {
+            if progress.completed {
+                let mut completed = files_completed_clone.lock().await;
+                *completed += 1;
+                let mut bytes = bytes_downloaded_clone.lock().await;
+                *bytes += progress.total_bytes;
+                let current_completed = *completed;
+                let current_bytes = *bytes;
+                drop(completed);
+                drop(bytes);
+
+                progress_callback(
+                    current_completed,
+                    total_files,
+                    progress.url.clone(),
+                    current_bytes,
+                    total_bytes,
+                );
+            }
+        }
+    });
+
+    // Download all corrupted files in parallel
+    download_manager
+        .download_files(tasks, Some(progress_tx))
+        .await
+        .context("Failed to repair modpack files")?;
+
+    // Wait for progress tracking to complete
+    progress_task.await?;
+
+    println!("[Repair] ✓ Modpack repair complete!");
+    println!("[Repair] Repaired {} files", files_to_repair.len());
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

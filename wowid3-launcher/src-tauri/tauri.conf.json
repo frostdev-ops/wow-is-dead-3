@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "WOWID3 Launcher",
+  "productName": "WOWID3Launcher",
   "version": "0.1.0",
   "identifier": "com.wowid3.launcher",
   "build": {
@@ -31,7 +31,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb", "appimage"],
+    "targets": ["appimage"],
     "icon": [
       "icons/32x32.png",
       "icons/64x64.png",

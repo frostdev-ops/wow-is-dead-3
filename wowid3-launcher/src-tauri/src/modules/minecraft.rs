@@ -109,13 +109,27 @@ pub async fn launch_game_with_metadata(
         "-Dfml.earlyprogresswindow=false".to_string(),
     ];
 
-    // Use patched GLFW library on Wayland for proper Minecraft support
+    // Platform-specific optimizations
     #[cfg(target_os = "linux")]
     {
         if is_wayland_session() {
-            // Use the patched glfw-wayland-minecraft-cursorfix library
+            // Use the patched glfw-wayland-minecraft-cursorfix library for native Wayland support
             jvm_args.push("-Dorg.lwjgl.glfw.libname=/usr/lib/libglfw.so.3".to_string());
         }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Windows-specific optimizations
+        jvm_args.push("-XX:+AlwaysPreTouch".to_string()); // Pre-touch memory pages for better performance
+        jvm_args.push("-XX:+UseStringDeduplication".to_string()); // Reduce memory usage
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // macOS-specific optimizations
+        jvm_args.push("-XstartOnFirstThread".to_string()); // Required for LWJGL on macOS
+        jvm_args.push("-XX:+AlwaysPreTouch".to_string()); // Pre-touch memory pages
     }
 
     // Add Fabric-specific JVM argument if this is a Fabric loader

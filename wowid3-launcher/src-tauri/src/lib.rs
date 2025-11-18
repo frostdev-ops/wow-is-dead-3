@@ -7,7 +7,7 @@ use modules::minecraft_version::{list_versions, get_latest_release, get_latest_s
 use modules::fabric_installer::{get_fabric_loaders, get_latest_fabric_loader, FabricLoader};
 use modules::game_installer::{install_minecraft, is_version_installed, InstallConfig};
 use modules::server::{ping_server, ServerStatus};
-use modules::updater::{check_for_updates, get_installed_version, install_modpack, Manifest};
+use modules::updater::{check_for_updates, get_installed_version, install_modpack, verify_and_repair_modpack, Manifest};
 use modules::audio::{get_cached_audio, download_and_cache_audio, read_cached_audio_bytes, clear_audio_cache};
 use modules::java_runtime::{get_cached_java, download_and_cache_java};
 use modules::logger::initialize_logger;
@@ -493,6 +493,27 @@ async fn cmd_install_modpack(
     .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn cmd_verify_and_repair_modpack(
+    app: AppHandle,
+    manifest: Manifest,
+    game_dir: PathBuf,
+) -> Result<String, String> {
+    verify_and_repair_modpack(&manifest, &game_dir, move |current, total, filename, current_bytes, total_bytes| {
+        let progress = DownloadProgressEvent {
+            current,
+            total,
+            filename,
+            current_bytes,
+            total_bytes,
+        };
+        let _ = app.emit("download-progress", progress);
+    })
+    .await
+    .map(|_| "Modpack verification and repair complete".to_string())
+    .map_err(|e| e.to_string())
+}
+
 // Audio Commands
 #[tauri::command]
 async fn cmd_get_cached_audio(app: AppHandle) -> Result<Option<String>, String> {
@@ -616,6 +637,7 @@ pub fn run() {
             cmd_check_updates,
             cmd_get_installed_version,
             cmd_install_modpack,
+            cmd_verify_and_repair_modpack,
             cmd_discord_connect,
             cmd_discord_set_presence,
             cmd_discord_update_presence,
