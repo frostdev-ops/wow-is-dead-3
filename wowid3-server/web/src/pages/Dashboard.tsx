@@ -1,31 +1,56 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense, memo } from 'react';
 import { useAuthStore } from '../store/authStore';
-import { useAdmin } from '../hooks/useAdmin';
-import { useFileUpload } from '../hooks/useFileUpload';
-import { useReleaseOperations } from '../hooks/useReleaseOperations';
-import { useDrafts } from '../hooks/useDrafts';
-import DraftList from '../components/drafts/DraftList';
-import ReleaseList from '../components/releases/ReleaseList';
-import FileUploadZone from '../components/uploads/FileUploadZone';
-import UploadProgress from '../components/uploads/UploadProgress';
-import FileBrowser from '../components/FileBrowser';
+import {
+  useReleasesQuery,
+  useBlacklistQuery,
+  useUpdateBlacklistMutation,
+  useCreateReleaseMutation,
+  useDraftQuery,
+  useUpdateDraftMutation,
+  usePublishDraftMutation,
+  useUploadMutation,
+} from '../hooks/queries';
 import './Dashboard.css';
+
+// Performance: Lazy load heavy components for code splitting
+const DraftList = lazy(() => import('../components/drafts/DraftList'));
+const ReleaseList = lazy(() => import('../components/releases/ReleaseList'));
+const FileUploadZone = lazy(() => import('../components/uploads/FileUploadZone'));
+const UploadProgress = lazy(() => import('../components/uploads/UploadProgress'));
+const FileBrowser = lazy(() => import('../components/FileBrowser'));
+
+// Performance: Simple loading fallback
+const LoadingSpinner = () => (
+  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '40px' }}>
+    <div className="spinner"></div>
+    <span style={{ marginLeft: '12px' }}>Loading...</span>
+  </div>
+);
 
 export default function Dashboard() {
   const { clearToken } = useAuthStore();
-  const { getBlacklist, updateBlacklist, createRelease } = useAdmin();
-  const { releases } = useReleaseOperations();
-  const { getDraft, updateDraft: updateDraftAPI, publishDraft } = useDrafts();
-  const { uploadFiles, uploadProgress, uploading, uploadResults, getTotalProgress } = useFileUpload();
+
+  // React Query hooks
+  const releasesQuery = useReleasesQuery();
+  const blacklistQuery = useBlacklistQuery();
+  const updateBlacklistMutation = useUpdateBlacklistMutation();
+  const createReleaseMutation = useCreateReleaseMutation();
+  const updateDraftMutation = useUpdateDraftMutation();
+  const publishDraftMutation = usePublishDraftMutation();
+  const uploadMutation = useUploadMutation();
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'upload' | 'releases' | 'release-wizard' | 'edit-draft' | 'blacklist'>('dashboard');
-  const [editingDraft, setEditingDraft] = useState<any>(null);
+  const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
+  const editingDraftQuery = useDraftQuery(editingDraftId);
+  const editingDraft = editingDraftQuery.data;
+
   const [editingTab, setEditingTab] = useState<'files' | 'metadata' | 'changelog' | 'review'>('metadata');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [blacklistPatterns, setBlacklistPatterns] = useState<string[]>([]);
   const [newPattern, setNewPattern] = useState('');
+  const [uploadResults, setUploadResults] = useState<any>(null);
 
   // Release form state
   const [releaseForm, setReleaseForm] = useState({
@@ -35,20 +60,14 @@ export default function Dashboard() {
     changelog: '',
   });
 
-  useEffect(() => {
-    if (activeTab === 'blacklist') {
-      loadBlacklist();
-    }
-  }, [activeTab]);
+  const releases = releasesQuery.data || [];
 
-  const loadBlacklist = async () => {
-    try {
-      const patterns = await getBlacklist();
-      setBlacklistPatterns(patterns);
-    } catch {
-      // Error handled by hook
+  // Sync blacklist patterns with query data
+  useEffect(() => {
+    if (blacklistQuery.data) {
+      setBlacklistPatterns(blacklistQuery.data);
     }
-  };
+  }, [blacklistQuery.data]);
 
   const handleFilesSelected = (files: File[]) => {
     setSelectedFiles(files);
@@ -59,34 +78,50 @@ export default function Dashboard() {
   const handleUpload = async () => {
     if (selectedFiles.length === 0) return;
 
-    const results = await uploadFiles(selectedFiles);
-    if (results && results.length > 0) {
-      setUploadSuccess(`Uploaded ${results.length} files successfully`);
-    } else {
-      setUploadError('Upload failed');
-    }
+    uploadMutation.mutate(
+      { files: selectedFiles },
+      {
+        onSuccess: (data) => {
+          setUploadResults(data);
+          setUploadSuccess(`Upload completed successfully!`);
+          setUploadError(null);
+        },
+        onError: (error) => {
+          setUploadError(error.message || 'Upload failed');
+          setUploadSuccess(null);
+        },
+      }
+    );
   };
 
   const handleCreateRelease = async () => {
-    if (!uploadResults || uploadResults.length === 0 || !releaseForm.version) {
+    if (!uploadResults || !releaseForm.version) {
       setUploadError('Please upload files and fill all required fields');
       return;
     }
 
-    try {
-      await createRelease(
-        uploadResults[0].upload_id,
-        releaseForm.version,
-        releaseForm.minecraftVersion,
-        releaseForm.fabricLoader,
-        releaseForm.changelog
-      );
-      setUploadSuccess('Release created successfully!');
-      setReleaseForm({ version: '', minecraftVersion: '', fabricLoader: '', changelog: '' });
-      setSelectedFiles([]);
-    } catch (err: any) {
-      setUploadError(err.response?.data?.error || 'Failed to create release');
-    }
+    createReleaseMutation.mutate(
+      {
+        upload_id: uploadResults.upload_id,
+        version: releaseForm.version,
+        minecraft_version: releaseForm.minecraftVersion,
+        fabric_loader: releaseForm.fabricLoader,
+        changelog: releaseForm.changelog,
+      },
+      {
+        onSuccess: () => {
+          setUploadSuccess('Release created successfully!');
+          setReleaseForm({ version: '', minecraftVersion: '', fabricLoader: '', changelog: '' });
+          setSelectedFiles([]);
+          setUploadResults(null);
+          setUploadError(null);
+        },
+        onError: (error) => {
+          setUploadError(error.message || 'Failed to create release');
+          setUploadSuccess(null);
+        },
+      }
+    );
   };
 
   const handleAddBlacklistPattern = () => {
@@ -101,33 +136,44 @@ export default function Dashboard() {
   };
 
   const handleSaveBlacklist = async () => {
-    try {
-      await updateBlacklist(blacklistPatterns);
-      setUploadSuccess('Blacklist updated successfully');
-    } catch (err: any) {
-      setUploadError(err.response?.data?.error || 'Failed to save blacklist');
-    }
+    updateBlacklistMutation.mutate(blacklistPatterns, {
+      onSuccess: () => {
+        setUploadSuccess('Blacklist updated successfully');
+        setUploadError(null);
+      },
+      onError: (error) => {
+        setUploadError(error.message || 'Failed to save blacklist');
+        setUploadSuccess(null);
+      },
+    });
   };
 
-  const handleEditDraft = async (id: string) => {
-    const draft = await getDraft(id);
-    if (draft) {
-      setEditingDraft(draft);
-      setEditingTab('metadata');
-      setActiveTab('edit-draft');
-    }
+  const handleEditDraft = (id: string) => {
+    setEditingDraftId(id);
+    setEditingTab('metadata');
+    setActiveTab('edit-draft');
   };
 
   const handleUpdateDraft = async (updates: any) => {
-    if (!editingDraft) return;
-    const updated = { ...editingDraft, ...updates };
-    setEditingDraft(updated);
-    await updateDraftAPI(editingDraft.id, updates);
-    setUploadSuccess('Draft saved');
+    if (!editingDraftId) return;
+
+    updateDraftMutation.mutate(
+      { id: editingDraftId, request: updates },
+      {
+        onSuccess: () => {
+          setUploadSuccess('Draft saved');
+          setUploadError(null);
+        },
+        onError: (error) => {
+          setUploadError(error.message || 'Failed to update draft');
+          setUploadSuccess(null);
+        },
+      }
+    );
   };
 
   const handlePublishDraft = async () => {
-    if (!editingDraft) return;
+    if (!editingDraft || !editingDraftId) return;
 
     if (!editingDraft.version || !editingDraft.minecraft_version || !editingDraft.fabric_loader) {
       setUploadError('Please fill in all required fields: Version, Minecraft Version, and Fabric Loader');
@@ -143,12 +189,18 @@ export default function Dashboard() {
       return;
     }
 
-    const success = await publishDraft(editingDraft.id);
-    if (success) {
-      setUploadSuccess(`Release ${editingDraft.version} published successfully!`);
-      setEditingDraft(null);
-      setActiveTab('release-wizard');
-    }
+    publishDraftMutation.mutate(editingDraftId, {
+      onSuccess: () => {
+        setUploadSuccess(`Release ${editingDraft.version} published successfully!`);
+        setEditingDraftId(null);
+        setActiveTab('release-wizard');
+        setUploadError(null);
+      },
+      onError: (error) => {
+        setUploadError(error.message || 'Failed to publish draft');
+        setUploadSuccess(null);
+      },
+    });
   };
 
   return (
@@ -223,11 +275,13 @@ export default function Dashboard() {
             {uploadSuccess && <div className="alert alert-success">{uploadSuccess}</div>}
 
             {selectedFiles.length === 0 ? (
-              <FileUploadZone
-                onFilesSelected={handleFilesSelected}
-                multiple={true}
-                webkitdirectory={true}
-              />
+              <Suspense fallback={<LoadingSpinner />}>
+                <FileUploadZone
+                  onFilesSelected={handleFilesSelected}
+                  multiple={true}
+                  webkitdirectory={true}
+                />
+              </Suspense>
             ) : (
               <div className="card">
                 <h3>Selected Files ({selectedFiles.length})</h3>
@@ -243,13 +297,18 @@ export default function Dashboard() {
                   )}
                 </div>
 
-                {!uploadResults || uploadResults.length === 0 ? (
+                {!uploadResults ? (
                   <>
-                    <button className="btn-primary" onClick={handleUpload} disabled={uploading}>
-                      {uploading ? 'Uploading...' : 'Upload Files'}
+                    <button className="btn-primary" onClick={handleUpload} disabled={uploadMutation.isPending}>
+                      {uploadMutation.isPending ? 'Uploading...' : 'Upload Files'}
                     </button>
-                    {uploadProgress.length > 0 && (
-                      <UploadProgress files={uploadProgress} totalProgress={getTotalProgress()} />
+                    {uploadMutation.isPending && uploadMutation.uploadProgress > 0 && (
+                      <div style={{ marginTop: '16px' }}>
+                        <div style={{ marginBottom: '8px' }}>Upload Progress: {uploadMutation.uploadProgress}%</div>
+                        <div style={{ width: '100%', height: '8px', background: '#333', borderRadius: '4px', overflow: 'hidden' }}>
+                          <div style={{ width: `${uploadMutation.uploadProgress}%`, height: '100%', background: '#007bff', transition: 'width 0.3s ease' }}></div>
+                        </div>
+                      </div>
                     )}
                   </>
                 ) : (
@@ -319,7 +378,9 @@ export default function Dashboard() {
 
             {uploadSuccess && <div className="alert alert-success">{uploadSuccess}</div>}
 
-            <ReleaseList />
+            <Suspense fallback={<LoadingSpinner />}>
+              <ReleaseList />
+            </Suspense>
           </div>
         )}
 
@@ -332,7 +393,9 @@ export default function Dashboard() {
 
             {uploadSuccess && <div className="alert alert-success">{uploadSuccess}</div>}
 
-            <DraftList onEditDraft={handleEditDraft} />
+            <Suspense fallback={<LoadingSpinner />}>
+              <DraftList onEditDraft={handleEditDraft} />
+            </Suspense>
           </div>
         )}
 
@@ -411,15 +474,15 @@ export default function Dashboard() {
                   <h3 style={{ marginTop: 0, color: '#fff', marginBottom: '16px' }}>
                     File Browser - Interactive Directory Management
                   </h3>
-                  <FileBrowser
-                    draftId={editingDraft.id}
-                    onFileChange={async () => {
-                      const draft = await getDraft(editingDraft.id);
-                      if (draft) {
-                        setEditingDraft(draft);
-                      }
-                    }}
-                  />
+                  <Suspense fallback={<LoadingSpinner />}>
+                    <FileBrowser
+                      draftId={editingDraft.id}
+                      onFileChange={() => {
+                        // Refetch draft to get updated file list
+                        editingDraftQuery.refetch();
+                      }}
+                    />
+                  </Suspense>
                 </div>
               )}
 
@@ -478,7 +541,7 @@ export default function Dashboard() {
                       className="btn-secondary"
                       onClick={() => {
                         setActiveTab('release-wizard');
-                        setEditingDraft(null);
+                        setEditingDraftId(null);
                       }}
                     >
                       Cancel
@@ -493,7 +556,7 @@ export default function Dashboard() {
                   className="btn-secondary"
                   onClick={() => {
                     setActiveTab('release-wizard');
-                    setEditingDraft(null);
+                    setEditingDraftId(null);
                   }}
                 >
                   Back to Drafts

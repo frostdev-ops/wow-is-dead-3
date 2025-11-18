@@ -1,8 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { useAuthStore } from './store/authStore';
-import LoginPage from './pages/LoginPage';
-import Dashboard from './pages/Dashboard';
 import './App.css';
+
+// Performance: Lazy load heavy components for code splitting
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+
+// Performance: Loading fallback component
+const LoadingFallback = () => (
+  <div className="loading-screen">
+    <div className="spinner"></div>
+    <p>Loading...</p>
+  </div>
+);
 
 function App() {
   const { isAuthenticated, loadTokenFromStorage } = useAuthStore();
@@ -22,7 +32,12 @@ function App() {
     );
   }
 
-  return isAuthenticated ? <Dashboard /> : <LoginPage />;
+  // Performance: Wrap lazy-loaded components in Suspense
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      {isAuthenticated ? <Dashboard /> : <LoginPage />}
+    </Suspense>
+  );
 }
 
 export default App;

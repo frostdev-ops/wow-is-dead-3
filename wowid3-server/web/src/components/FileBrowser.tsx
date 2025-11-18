@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback, memo } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Folder,
   FolderPlus,
@@ -10,7 +11,11 @@ import {
   X,
   UploadCloud,
   FilePlus,
+  Search,
+  Eye,
 } from 'lucide-react';
+import { useDebounce } from '../hooks/useDebounce';
+import FilePreview from './preview/FilePreview';
 import './FileBrowser.css';
 
 interface FileEntry {
@@ -26,16 +31,100 @@ interface FileBrowserProps {
   onFileChange?: () => void;
 }
 
-export default function FileBrowser({ draftId, onFileChange }: FileBrowserProps) {
+// Performance: Memoized file entry component to prevent re-renders
+const FileEntryItem = memo(({
+  entry,
+  onOpen,
+  onDelete,
+  onPreview
+}: {
+  entry: FileEntry;
+  onOpen: (entry: FileEntry) => void;
+  onDelete: (entry: FileEntry) => void;
+  onPreview: (entry: FileEntry) => void;
+}) => {
+  const formatSize = useCallback((bytes?: number) => {
+    if (!bytes) return '-';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }, []);
+
+  return (
+    <div className="file-browser-entry">
+      <div className="file-browser-entry-info" onClick={() => onOpen(entry)}>
+        {entry.is_dir ? (
+          <Folder size={20} className="file-icon folder" />
+        ) : (
+          <FileText size={20} className="file-icon file" />
+        )}
+        <div className="file-browser-entry-details">
+          <div className="file-browser-entry-name">{entry.name}</div>
+          <div className="file-browser-entry-meta">
+            {!entry.is_dir && <span>{formatSize(entry.size)}</span>}
+            {entry.modified && <span>{entry.modified}</span>}
+          </div>
+        </div>
+      </div>
+      <div className="file-browser-entry-actions">
+        {!entry.is_dir && (
+          <>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onPreview(entry);
+              }}
+              className="btn-icon-small"
+              title="Preview"
+            >
+              <Eye size={14} />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpen(entry);
+              }}
+              className="btn-icon-small"
+              title="Edit"
+            >
+              <Edit2 size={14} />
+            </button>
+          </>
+        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(entry);
+          }}
+          className="btn-icon-small btn-danger-subtle"
+          title="Delete"
+        >
+          <Trash2 size={14} />
+        </button>
+      </div>
+    </div>
+  );
+});
+
+FileEntryItem.displayName = 'FileEntryItem';
+
+function FileBrowser({ draftId, onFileChange }: FileBrowserProps) {
   const [currentPath, setCurrentPath] = useState('');
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Performance: Debounce search input (300ms delay)
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
   // Editor state
   const [editingFile, setEditingFile] = useState<{ path: string; content: string } | null>(null);
   const [savingFile, setSavingFile] = useState(false);
+
+  // Preview state
+  const [previewFile, setPreviewFile] = useState<{ path: string; name: string } | null>(null);
 
   // New folder state
   const [creatingFolder, setCreatingFolder] = useState(false);
@@ -53,6 +142,39 @@ export default function FileBrowser({ draftId, onFileChange }: FileBrowserProps)
   useEffect(() => {
     loadDirectory(currentPath);
   }, [currentPath]);
+
+  // Performance: Filter entries based on search query (debounced)
+  const filteredEntries = useMemo(() => {
+    if (!debouncedSearchQuery.trim()) {
+      return entries;
+    }
+    const query = debouncedSearchQuery.toLowerCase();
+    return entries.filter(entry =>
+      entry.name.toLowerCase().includes(query) ||
+      entry.path.toLowerCase().includes(query)
+    );
+  }, [entries, debouncedSearchQuery]);
+
+  // Performance: Virtual scrolling for large file lists (1000+ files)
+  const virtualizer = useVirtualizer({
+    count: filteredEntries.length,
+    getScrollElement: () => document.querySelector('.file-browser-list'),
+    estimateSize: () => 60, // Estimated height of each file entry
+    overscan: 5, // Render 5 extra items for smooth scrolling
+  });
+
+  // Performance: Memoize callbacks to prevent re-renders
+  const handleOpenFile = useCallback((entry: FileEntry) => {
+    openFile(entry);
+  }, []);
+
+  const handleDeleteEntry = useCallback((entry: FileEntry) => {
+    deleteEntry(entry);
+  }, []);
+
+  const handlePreviewFile = useCallback((entry: FileEntry) => {
+    setPreviewFile({ path: entry.path, name: entry.name });
+  }, []);
 
   const loadDirectory = async (path: string) => {
     setLoading(true);
@@ -304,13 +426,6 @@ export default function FileBrowser({ draftId, onFileChange }: FileBrowserProps)
     }
   };
 
-  const formatSize = (bytes?: number) => {
-    if (!bytes) return '-';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
   return (
     <div className="file-browser">
       {/* Toolbar */}
@@ -359,6 +474,26 @@ export default function FileBrowser({ draftId, onFileChange }: FileBrowserProps)
             ↻
           </button>
         </div>
+      </div>
+
+      {/* Search Bar */}
+      <div className="file-browser-search" style={{ padding: '8px 0' }}>
+        <div style={{ position: 'relative' }}>
+          <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search files..."
+            className="form-input"
+            style={{ paddingLeft: '36px' }}
+          />
+        </div>
+        {debouncedSearchQuery && (
+          <div style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>
+            Found {filteredEntries.length} of {entries.length} files
+          </div>
+        )}
       </div>
 
       {/* Error/Success Messages */}
@@ -425,8 +560,8 @@ export default function FileBrowser({ draftId, onFileChange }: FileBrowserProps)
         </div>
       )}
 
-      {/* File List */}
-      <div className="file-browser-list">
+      {/* File List - Performance: Virtualized for 1000+ files */}
+      <div className="file-browser-list" style={{ height: '500px', overflow: 'auto' }}>
         {loading && <div className="file-browser-loading">Loading...</div>}
 
         {!loading && entries.length === 0 && (
@@ -437,48 +572,47 @@ export default function FileBrowser({ draftId, onFileChange }: FileBrowserProps)
           </div>
         )}
 
-        {!loading && entries.map((entry) => (
-          <div key={entry.path} className="file-browser-entry">
-            <div className="file-browser-entry-info" onClick={() => openFile(entry)}>
-              {entry.is_dir ? (
-                <Folder size={20} className="file-icon folder" />
-              ) : (
-                <FileText size={20} className="file-icon file" />
-              )}
-              <div className="file-browser-entry-details">
-                <div className="file-browser-entry-name">{entry.name}</div>
-                <div className="file-browser-entry-meta">
-                  {!entry.is_dir && <span>{formatSize(entry.size)}</span>}
-                  {entry.modified && <span>{entry.modified}</span>}
-                </div>
-              </div>
-            </div>
-            <div className="file-browser-entry-actions">
-              {!entry.is_dir && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openFile(entry);
-                  }}
-                  className="btn-icon-small"
-                  title="Edit"
-                >
-                  <Edit2 size={14} />
-                </button>
-              )}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deleteEntry(entry);
-                }}
-                className="btn-icon-small btn-danger-subtle"
-                title="Delete"
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
+        {!loading && filteredEntries.length === 0 && entries.length > 0 && (
+          <div className="file-browser-empty">
+            <Search size={48} style={{ opacity: 0.3, marginBottom: '12px' }} />
+            <p>No files match your search</p>
+            <p style={{ fontSize: '12px', opacity: 0.7 }}>Try a different search term</p>
           </div>
-        ))}
+        )}
+
+        {!loading && filteredEntries.length > 0 && (
+          <div
+            style={{
+              height: `${virtualizer.getTotalSize()}px`,
+              width: '100%',
+              position: 'relative',
+            }}
+          >
+            {virtualizer.getVirtualItems().map((virtualItem) => {
+              const entry = filteredEntries[virtualItem.index];
+              return (
+                <div
+                  key={entry.path}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: `${virtualItem.size}px`,
+                    transform: `translateY(${virtualItem.start}px)`,
+                  }}
+                >
+                  <FileEntryItem
+                    entry={entry}
+                    onOpen={handleOpenFile}
+                    onDelete={handleDeleteEntry}
+                    onPreview={handlePreviewFile}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* File Editor Modal */}
@@ -511,6 +645,19 @@ export default function FileBrowser({ draftId, onFileChange }: FileBrowserProps)
           </div>
         </div>
       )}
+
+      {/* File Preview Modal */}
+      {previewFile && (
+        <FilePreview
+          draftId={draftId}
+          filePath={previewFile.path}
+          fileName={previewFile.name}
+          onClose={() => setPreviewFile(null)}
+        />
+      )}
     </div>
   );
 }
+
+// Performance: Export memoized version to prevent unnecessary re-renders
+export default memo(FileBrowser);

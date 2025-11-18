@@ -82,18 +82,22 @@ export const useReleaseStore = create<ReleaseStore>((set, get) => ({
     });
   },
 
+  // Performance: Debounced auto-save (1000ms delay to reduce API calls)
   scheduleAutoSave: (callback) => {
+    // Mark as having unsaved changes immediately
+    get().markUnsaved();
+
     // Cancel existing timer
     const existingTimer = get().autoSaveTimer;
     if (existingTimer) {
       clearTimeout(existingTimer);
     }
 
-    // Schedule new auto-save in 2 seconds
+    // Schedule new auto-save in 1 second (debounced)
     const timer = setTimeout(async () => {
       await callback();
       get().markSaved();
-    }, 2000);
+    }, 1000);
 
     set({ autoSaveTimer: timer });
   },

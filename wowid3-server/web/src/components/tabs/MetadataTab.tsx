@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import { useDrafts } from '../../hooks/useDrafts';
 import { Sparkles, Check, Package } from 'lucide-react';
 import type { DraftRelease, VersionSuggestions } from '../../types/releases';
@@ -8,7 +8,7 @@ interface MetadataTabProps {
   onUpdate: (draft: DraftRelease) => void;
 }
 
-export default function MetadataTab({ draft, onUpdate }: MetadataTabProps) {
+function MetadataTab({ draft, onUpdate }: MetadataTabProps) {
   const { analyzeDraft, loading } = useDrafts();
   const [suggestions, setSuggestions] = useState<VersionSuggestions | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -19,13 +19,14 @@ export default function MetadataTab({ draft, onUpdate }: MetadataTabProps) {
     fabric_loader: draft.fabric_loader,
   });
 
-  const handleChange = (field: keyof typeof formData, value: string) => {
+  // Performance: Memoize callbacks to prevent re-renders
+  const handleChange = useCallback((field: keyof typeof formData, value: string) => {
     const updated = { ...formData, [field]: value };
     setFormData(updated);
     onUpdate({ ...draft, ...updated });
-  };
+  }, [formData, draft, onUpdate]);
 
-  const handleAnalyze = async () => {
+  const handleAnalyze = useCallback(async () => {
     setAnalyzing(true);
     try {
       const result = await analyzeDraft(draft.id);
@@ -35,9 +36,9 @@ export default function MetadataTab({ draft, onUpdate }: MetadataTabProps) {
     } finally {
       setAnalyzing(false);
     }
-  };
+  }, [draft.id, analyzeDraft]);
 
-  const applySuggestion = (field: 'minecraft_version' | 'fabric_loader' | 'version') => {
+  const applySuggestion = useCallback((field: 'minecraft_version' | 'fabric_loader' | 'version') => {
     if (!suggestions) return;
 
     let value = '';
@@ -48,7 +49,7 @@ export default function MetadataTab({ draft, onUpdate }: MetadataTabProps) {
     if (value) {
       handleChange(field, value);
     }
-  };
+  }, [suggestions, handleChange]);
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -224,3 +225,6 @@ export default function MetadataTab({ draft, onUpdate }: MetadataTabProps) {
     </div>
   );
 }
+
+// Performance: Export memoized version
+export default memo(MetadataTab);

@@ -1,14 +1,117 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useDrafts } from '../hooks/useDrafts';
-import { Plus, Edit, Trash2, Package, Clock, FileText, Sparkles } from 'lucide-react';
+import { Plus, Edit, Trash2, Package, Clock, FileText, Sparkles, Search } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { useDebounce } from '../hooks/useDebounce';
 
-export default function ReleasesList() {
+// Performance: Memoized DraftCard component to prevent unnecessary re-renders
+const DraftCard = memo(({
+  draft,
+  index,
+  onEdit,
+  onDelete
+}: {
+  draft: any;
+  index: number;
+  onEdit: (id: string) => void;
+  onDelete: (id: string, version: string) => void;
+}) => {
+  return (
+    <div
+      className="group bg-white/80 backdrop-blur-sm rounded-xl shadow-md hover:shadow-xl border border-gray-100 hover:border-blue-200 transition-all duration-300 overflow-hidden"
+      style={{ animationDelay: `${index * 50}ms` }}
+    >
+      <div className="p-6">
+        <div className="flex items-start justify-between">
+          {/* Left Content */}
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-2 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg">
+                <Package className="w-5 h-5 text-blue-600" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-800">
+                {draft.version || 'Untitled Draft'}
+              </h3>
+              <span className="px-3 py-1 bg-gradient-to-r from-yellow-100 to-amber-100 text-yellow-800 text-xs font-bold rounded-full shadow-sm">
+                DRAFT
+              </span>
+            </div>
+
+            {/* Metadata */}
+            <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
+              {draft.minecraft_version && (
+                <div className="flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 bg-blue-600 rounded-full"></div>
+                  <span className="font-medium">Minecraft {draft.minecraft_version}</span>
+                </div>
+              )}
+              {draft.fabric_loader && (
+                <div className="flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 bg-purple-600 rounded-full"></div>
+                  <span className="font-medium">Fabric {draft.fabric_loader}</span>
+                </div>
+              )}
+              <div className="flex items-center gap-1.5">
+                <FileText className="w-4 h-4" />
+                <span>{draft.files.length} files</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Clock className="w-4 h-4" />
+                <span>Updated {formatDistanceToNow(new Date(draft.updated_at), { addSuffix: true })}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            <button
+              onClick={() => onEdit(draft.id)}
+              className="p-3 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-200"
+              title="Edit"
+            >
+              <Edit className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => onDelete(draft.id, draft.version)}
+              className="p-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-200"
+              title="Delete"
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
+            <span>Completion</span>
+            <span>{Math.min(100, (draft.files.length > 0 ? 33 : 0) + (draft.version ? 33 : 0) + (draft.changelog ? 34 : 0))}%</span>
+          </div>
+          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full transition-all duration-500"
+              style={{ width: `${Math.min(100, (draft.files.length > 0 ? 33 : 0) + (draft.version ? 33 : 0) + (draft.changelog ? 34 : 0))}%` }}
+            ></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+DraftCard.displayName = 'DraftCard';
+
+function ReleasesList() {
   const navigate = useNavigate();
   const { drafts, listDrafts, createDraft, deleteDraft, loading } = useDrafts();
   const [filter, setFilter] = useState<'all' | 'drafts'>('all');
   const [isCreating, setIsCreating] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Performance: Debounce search input (300ms delay)
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
   useEffect(() => {
     listDrafts();
@@ -23,18 +126,44 @@ export default function ReleasesList() {
     setIsCreating(false);
   };
 
-  const handleEdit = (id: string) => {
+  // Performance: Memoize callbacks to prevent re-renders
+  const handleEdit = useCallback((id: string) => {
     navigate(`/releases/${id}/edit`);
-  };
+  }, [navigate]);
 
-  const handleDelete = async (id: string, version: string) => {
+  const handleDelete = useCallback(async (id: string, version: string) => {
     if (confirm(`Delete draft ${version || 'Untitled Draft'}?`)) {
       await deleteDraft(id);
       listDrafts();
     }
-  };
+  }, [deleteDraft, listDrafts]);
 
-  const filteredDrafts = filter === 'drafts' ? drafts : drafts;
+  // Performance: Filter and search drafts with useMemo
+  const filteredDrafts = useMemo(() => {
+    let result = filter === 'drafts' ? drafts : drafts;
+
+    // Apply search filter
+    if (debouncedSearchQuery.trim()) {
+      const query = debouncedSearchQuery.toLowerCase();
+      result = result.filter(draft =>
+        (draft.version && draft.version.toLowerCase().includes(query)) ||
+        (draft.minecraft_version && draft.minecraft_version.toLowerCase().includes(query)) ||
+        (draft.fabric_loader && draft.fabric_loader.toLowerCase().includes(query))
+      );
+    }
+
+    return result;
+  }, [drafts, filter, debouncedSearchQuery]);
+
+  // Performance: Virtual scrolling for large lists
+  const parentRef = React.useRef<HTMLDivElement>(null);
+
+  const virtualizer = useVirtualizer({
+    count: filteredDrafts.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 200, // Estimated height of each draft card
+    overscan: 3, // Render 3 extra items for smooth scrolling
+  });
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
@@ -77,28 +206,42 @@ export default function ReleasesList() {
             </button>
           </div>
 
-          {/* Filter Pills */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => setFilter('all')}
-              className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-                filter === 'all'
-                  ? 'bg-white text-blue-600 shadow-md'
-                  : 'bg-white/50 text-gray-600 hover:bg-white hover:shadow-sm'
-              }`}
-            >
-              All Releases
-            </button>
-            <button
-              onClick={() => setFilter('drafts')}
-              className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-                filter === 'drafts'
-                  ? 'bg-white text-blue-600 shadow-md'
-                  : 'bg-white/50 text-gray-600 hover:bg-white hover:shadow-sm'
-              }`}
-            >
-              Drafts Only
-            </button>
+          {/* Filter Pills and Search */}
+          <div className="flex gap-4 items-center">
+            <div className="flex gap-2">
+              <button
+                onClick={() => setFilter('all')}
+                className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                  filter === 'all'
+                    ? 'bg-white text-blue-600 shadow-md'
+                    : 'bg-white/50 text-gray-600 hover:bg-white hover:shadow-sm'
+                }`}
+              >
+                All Releases
+              </button>
+              <button
+                onClick={() => setFilter('drafts')}
+                className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                  filter === 'drafts'
+                    ? 'bg-white text-blue-600 shadow-md'
+                    : 'bg-white/50 text-gray-600 hover:bg-white hover:shadow-sm'
+                }`}
+              >
+                Drafts Only
+              </button>
+            </div>
+
+            {/* Search Bar */}
+            <div className="flex-1 max-w-md relative">
+              <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by version, Minecraft, or Fabric..."
+                className="w-full pl-10 pr-4 py-2 bg-white/80 backdrop-blur-sm rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
           </div>
         </div>
 
@@ -130,90 +273,43 @@ export default function ReleasesList() {
             </button>
           </div>
         ) : (
-          /* Drafts Grid */
-          <div className="grid gap-4 animate-[fadeIn_0.5s_ease-out]">
-            {filteredDrafts.map((draft, index) => (
-              <div
-                key={draft.id}
-                className="group bg-white/80 backdrop-blur-sm rounded-xl shadow-md hover:shadow-xl border border-gray-100 hover:border-blue-200 transition-all duration-300 overflow-hidden"
-                style={{ animationDelay: `${index * 50}ms` }}
-              >
-                <div className="p-6">
-                  <div className="flex items-start justify-between">
-                    {/* Left Content */}
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-3">
-                        <div className="p-2 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg">
-                          <Package className="w-5 h-5 text-blue-600" />
-                        </div>
-                        <h3 className="text-xl font-bold text-gray-800">
-                          {draft.version || 'Untitled Draft'}
-                        </h3>
-                        <span className="px-3 py-1 bg-gradient-to-r from-yellow-100 to-amber-100 text-yellow-800 text-xs font-bold rounded-full shadow-sm">
-                          DRAFT
-                        </span>
-                      </div>
-
-                      {/* Metadata */}
-                      <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
-                        {draft.minecraft_version && (
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-1.5 h-1.5 bg-blue-600 rounded-full"></div>
-                            <span className="font-medium">Minecraft {draft.minecraft_version}</span>
-                          </div>
-                        )}
-                        {draft.fabric_loader && (
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-1.5 h-1.5 bg-purple-600 rounded-full"></div>
-                            <span className="font-medium">Fabric {draft.fabric_loader}</span>
-                          </div>
-                        )}
-                        <div className="flex items-center gap-1.5">
-                          <FileText className="w-4 h-4" />
-                          <span>{draft.files.length} files</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <Clock className="w-4 h-4" />
-                          <span>Updated {formatDistanceToNow(new Date(draft.updated_at), { addSuffix: true })}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                      <button
-                        onClick={() => handleEdit(draft.id)}
-                        className="p-3 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-200"
-                        title="Edit"
-                      >
-                        <Edit className="w-5 h-5" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(draft.id, draft.version)}
-                        className="p-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-200"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                    </div>
+          /* Drafts Grid - Performance: Virtualized for smooth scrolling */
+          <div
+            ref={parentRef}
+            className="animate-[fadeIn_0.5s_ease-out]"
+            style={{ height: '70vh', overflow: 'auto' }}
+          >
+            <div
+              style={{
+                height: `${virtualizer.getTotalSize()}px`,
+                width: '100%',
+                position: 'relative',
+              }}
+            >
+              {virtualizer.getVirtualItems().map((virtualItem) => {
+                const draft = filteredDrafts[virtualItem.index];
+                return (
+                  <div
+                    key={draft.id}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${virtualItem.start}px)`,
+                      padding: '8px 0',
+                    }}
+                  >
+                    <DraftCard
+                      draft={draft}
+                      index={virtualItem.index}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                    />
                   </div>
-
-                  {/* Progress Bar */}
-                  <div className="mt-4 pt-4 border-t border-gray-100">
-                    <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
-                      <span>Completion</span>
-                      <span>{Math.min(100, (draft.files.length > 0 ? 33 : 0) + (draft.version ? 33 : 0) + (draft.changelog ? 34 : 0))}%</span>
-                    </div>
-                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full transition-all duration-500"
-                        style={{ width: `${Math.min(100, (draft.files.length > 0 ? 33 : 0) + (draft.version ? 33 : 0) + (draft.changelog ? 34 : 0))}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
@@ -242,3 +338,6 @@ export default function ReleasesList() {
     </div>
   );
 }
+
+// Performance: Export memoized version
+export default memo(ReleasesList);

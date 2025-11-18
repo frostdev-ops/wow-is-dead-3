@@ -1,28 +1,36 @@
-import { useEffect } from 'react';
-import { useReleaseOperations } from '../../hooks/useReleaseOperations';
+import { motion } from 'framer-motion';
+import {
+  useReleasesQuery,
+  useDeleteReleaseMutation,
+  useCopyReleaseToDraftMutation,
+} from '../../hooks/queries';
 import ReleaseCard from './ReleaseCard';
+import ReleaseRowSkeleton from './ReleaseRowSkeleton';
+import { Card, CardContent } from '@/components/ui/card';
 import type { ReleaseListProps } from '../../types/release';
 
 export default function ReleaseList({ showActions = true }: ReleaseListProps) {
-  const { releases, loading, error, listReleases, deleteRelease, copyReleaseToDraft } =
-    useReleaseOperations();
+  const releasesQuery = useReleasesQuery();
+  const deleteReleaseMutation = useDeleteReleaseMutation();
+  const copyReleaseMutation = useCopyReleaseToDraftMutation();
 
-  useEffect(() => {
-    listReleases();
-  }, []);
+  const releases = releasesQuery.data || [];
+  const loading = releasesQuery.isLoading;
+  const error = releasesQuery.error?.message;
 
   const handleDeleteRelease = async (version: string) => {
     if (confirm(`Are you sure you want to delete release ${version}?`)) {
-      await deleteRelease(version);
+      deleteReleaseMutation.mutate(version);
     }
   };
 
   const handleCopyReleaseToDraft = async (version: string) => {
-    const newDraft = await copyReleaseToDraft(version);
-    if (newDraft) {
-      // You might want to navigate to the draft editor here
-      // or show a success message
-    }
+    copyReleaseMutation.mutate(version, {
+      onSuccess: () => {
+        // You might want to navigate to the draft editor here
+        // or show a success message
+      },
+    });
   };
 
   if (loading && releases.length === 0) {

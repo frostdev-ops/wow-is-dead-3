@@ -1,29 +1,38 @@
-import { useEffect } from 'react';
 import { Package } from 'lucide-react';
-import { useDraftOperations } from '../../hooks/useDraftOperations';
+import { motion } from 'framer-motion';
+import {
+  useDraftsQuery,
+  useCreateDraftMutation,
+  useDeleteDraftMutation,
+  useDuplicateDraftMutation,
+} from '../../hooks/queries';
 import DraftCard from './DraftCard';
+import DraftCardSkeleton from './DraftCardSkeleton';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import type { DraftListProps } from '../../types/draft';
 
 export default function DraftList({ filter = 'all', onCreateDraft, onEditDraft }: DraftListProps) {
-  const {
-    drafts,
-    loading,
-    error,
-    listDrafts,
-    createDraft,
-    deleteDraft,
-    duplicateDraft,
-  } = useDraftOperations();
+  const draftsQuery = useDraftsQuery();
+  const createDraftMutation = useCreateDraftMutation();
+  const deleteDraftMutation = useDeleteDraftMutation();
+  const duplicateDraftMutation = useDuplicateDraftMutation();
 
-  useEffect(() => {
-    listDrafts();
-  }, [filter]);
+  const drafts = draftsQuery.data || [];
+  const loading = draftsQuery.isLoading || createDraftMutation.isPending;
+  const error = draftsQuery.error?.message;
 
   const handleCreateDraft = async () => {
-    await createDraft();
-    if (onCreateDraft) {
-      onCreateDraft();
-    }
+    createDraftMutation.mutate(
+      {},
+      {
+        onSuccess: () => {
+          if (onCreateDraft) {
+            onCreateDraft();
+          }
+        },
+      }
+    );
   };
 
   const handleEditDraft = (id: string) => {
@@ -33,71 +42,85 @@ export default function DraftList({ filter = 'all', onCreateDraft, onEditDraft }
   };
 
   const handleDuplicateDraft = async (id: string) => {
-    const newDraft = await duplicateDraft(id);
-    if (newDraft) {
-      // Success message handled by hook
-    }
+    duplicateDraftMutation.mutate(id);
   };
 
   const handleDeleteDraft = async (id: string, version: string) => {
     if (confirm(`Delete draft ${version || 'Untitled Draft'}?`)) {
-      await deleteDraft(id);
+      deleteDraftMutation.mutate(id);
     }
   };
 
   return (
-    <div className="card">
-      <div
-        style={{
-          marginBottom: '20px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}
-      >
-        <h2 style={{ margin: 0 }}>Drafts ({drafts.length})</h2>
-        <button className="btn-primary" onClick={handleCreateDraft} disabled={loading}>
-          {loading ? 'Creating...' : '+ Create New Draft'}
-        </button>
-      </div>
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle>Drafts ({drafts.length})</CardTitle>
+          <Button onClick={handleCreateDraft} disabled={loading}>
+            {loading ? 'Creating...' : '+ Create New Draft'}
+          </Button>
+        </div>
+      </CardHeader>
 
-      {error && (
-        <div className="alert alert-error" style={{ marginBottom: '16px' }}>
-          {error}
-        </div>
-      )}
+      <CardContent>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-4 mb-4 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive"
+          >
+            {error}
+          </motion.div>
+        )}
 
-      {loading && drafts.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
-          <p>Loading drafts...</p>
-        </div>
-      ) : drafts.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
-          <Package style={{ width: '48px', height: '48px', margin: '0 auto 16px', opacity: 0.5 }} />
-          <p style={{ fontSize: '16px', marginBottom: '16px' }}>No drafts yet</p>
-          <button className="btn-primary" onClick={handleCreateDraft}>
-            Create Your First Draft
-          </button>
-        </div>
-      ) : (
-        <div>
-          {drafts.map((draft) => (
-            <DraftCard
-              key={draft.id}
-              id={draft.id}
-              version={draft.version}
-              minecraft_version={draft.minecraft_version}
-              fabric_loader={draft.fabric_loader}
-              files={draft.files}
-              updated_at={draft.updated_at}
-              onEdit={handleEditDraft}
-              onDuplicate={handleDuplicateDraft}
-              onDelete={handleDeleteDraft}
-              isLoading={loading}
-            />
-          ))}
-        </div>
-      )}
-    </div>
+        {loading && drafts.length === 0 ? (
+          <div className="space-y-4">
+            {[1, 2, 3].map((i) => (
+              <DraftCardSkeleton key={i} />
+            ))}
+          </div>
+        ) : drafts.length === 0 ? (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex flex-col items-center justify-center py-12 text-center"
+          >
+            <Package className="w-12 h-12 mb-4 text-muted-foreground opacity-50" />
+            <p className="text-lg font-medium mb-4 text-muted-foreground">No drafts yet</p>
+            <Button onClick={handleCreateDraft}>
+              Create Your First Draft
+            </Button>
+          </motion.div>
+        ) : (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3 }}
+          >
+            {drafts.map((draft, index) => (
+              <motion.div
+                key={draft.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2, delay: index * 0.05 }}
+              >
+                <DraftCard
+                  id={draft.id}
+                  version={draft.version}
+                  minecraft_version={draft.minecraft_version}
+                  fabric_loader={draft.fabric_loader}
+                  files={draft.files}
+                  updated_at={draft.updated_at}
+                  onEdit={handleEditDraft}
+                  onDuplicate={handleDuplicateDraft}
+                  onDelete={handleDeleteDraft}
+                  isLoading={loading}
+                />
+              </motion.div>
+            ))}
+          </motion.div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

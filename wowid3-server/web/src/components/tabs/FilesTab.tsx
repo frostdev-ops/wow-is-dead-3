@@ -1,8 +1,52 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo, memo } from 'react';
 import { useDrafts } from '../../hooks/useDrafts';
 import { Upload, Trash2, FileText, FileArchive, File, Folder, Loader2 } from 'lucide-react';
 import axios from 'axios';
 import type { DraftRelease } from '../../types/releases';
+
+// Performance: Memoized FileItem component to prevent re-renders
+const FileItem = memo(({
+  file,
+  getFileIcon,
+  formatSize,
+  onRemove,
+  loading
+}: {
+  file: any;
+  getFileIcon: (path: string) => React.ReactNode;
+  formatSize: (bytes: number) => string;
+  onRemove: (path: string) => void;
+  loading: boolean;
+}) => {
+  return (
+    <div className="px-6 py-4 flex items-center justify-between hover:bg-gray-50">
+      <div className="flex items-center gap-3 flex-1">
+        {getFileIcon(file.path)}
+        <div className="flex-1">
+          <p className="font-medium text-gray-900">
+            {file.path.split('/').pop()}
+          </p>
+          <div className="flex gap-4 text-sm text-gray-500 mt-1">
+            <span>{formatSize(file.size)}</span>
+            <span className="font-mono text-xs">
+              {file.sha256.substring(0, 12)}...
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <button
+        onClick={() => onRemove(file.path)}
+        disabled={loading}
+        className="px-3 py-2 text-red-600 hover:bg-red-50 rounded disabled:opacity-50"
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
+    </div>
+  );
+});
+
+FileItem.displayName = 'FileItem';
 
 interface FilesTabProps {
   draft: DraftRelease;
@@ -15,12 +59,34 @@ const getAuthHeaders = () => {
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
-export default function FilesTab({ draft, onUpdate }: FilesTabProps) {
+function FilesTab({ draft, onUpdate }: FilesTabProps) {
   const { addFiles, removeFile, loading } = useDrafts();
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [extracting, setExtracting] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+
+  // Performance: Memoize icon getter to prevent recreation
+  const getFileIcon = useCallback((path: string) => {
+    if (path.endsWith('.jar')) return <FileArchive className="w-5 h-5 text-orange-500" />;
+    if (path.endsWith('.json')) return <FileText className="w-5 h-5 text-blue-500" />;
+    if (path.includes('/')) return <Folder className="w-5 h-5 text-yellow-500" />;
+    return <File className="w-5 h-5 text-gray-500" />;
+  }, []);
+
+  // Performance: Memoize size formatter
+  const formatSize = useCallback((bytes: number) => {
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let size = bytes;
+    let unitIndex = 0;
+
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex++;
+    }
+
+    return `${size.toFixed(1)} ${units[unitIndex]}`;
+  }, []);
 
   const uploadFiles = async (files: FileList) => {
     console.log('uploadFiles called with', files.length, 'files');
@@ -108,44 +174,28 @@ export default function FilesTab({ draft, onUpdate }: FilesTabProps) {
     }
   };
 
-  const handleRemoveFile = async (filePath: string) => {
+  // Performance: Memoize remove handler
+  const handleRemoveFile = useCallback(async (filePath: string) => {
     if (!confirm(`Remove ${filePath}?`)) return;
 
     const updatedDraft = await removeFile(draft.id, filePath);
     if (updatedDraft) {
       onUpdate(updatedDraft);
     }
-  };
+  }, [draft.id, removeFile, onUpdate]);
 
-  const getFileIcon = (path: string) => {
-    if (path.endsWith('.jar')) return <FileArchive className="w-5 h-5 text-orange-500" />;
-    if (path.endsWith('.json')) return <FileText className="w-5 h-5 text-blue-500" />;
-    if (path.includes('/')) return <Folder className="w-5 h-5 text-yellow-500" />;
-    return <File className="w-5 h-5 text-gray-500" />;
-  };
-
-  const formatSize = (bytes: number) => {
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let size = bytes;
-    let unitIndex = 0;
-
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024;
-      unitIndex++;
-    }
-
-    return `${size.toFixed(1)} ${units[unitIndex]}`;
-  };
-
-  // Group files by directory
-  const filesByDir: Record<string, typeof draft.files> = {};
-  draft.files.forEach((file) => {
-    const dir = file.path.includes('/') ? file.path.split('/')[0] : 'root';
-    if (!filesByDir[dir]) {
-      filesByDir[dir] = [];
-    }
-    filesByDir[dir].push(file);
-  });
+  // Performance: Group files by directory with useMemo
+  const filesByDir = useMemo(() => {
+    const grouped: Record<string, typeof draft.files> = {};
+    draft.files.forEach((file) => {
+      const dir = file.path.includes('/') ? file.path.split('/')[0] : 'root';
+      if (!grouped[dir]) {
+        grouped[dir] = [];
+      }
+      grouped[dir].push(file);
+    });
+    return grouped;
+  }, [draft.files]);
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -233,35 +283,16 @@ export default function FilesTab({ draft, onUpdate }: FilesTabProps) {
                   </div>
                 )}
 
-                {/* Files in directory */}
+                {/* Files in directory - Performance: Use memoized FileItem */}
                 {files.map((file) => (
-                  <div
+                  <FileItem
                     key={file.path}
-                    className="px-6 py-4 flex items-center justify-between hover:bg-gray-50"
-                  >
-                    <div className="flex items-center gap-3 flex-1">
-                      {getFileIcon(file.path)}
-                      <div className="flex-1">
-                        <p className="font-medium text-gray-900">
-                          {file.path.split('/').pop()}
-                        </p>
-                        <div className="flex gap-4 text-sm text-gray-500 mt-1">
-                          <span>{formatSize(file.size)}</span>
-                          <span className="font-mono text-xs">
-                            {file.sha256.substring(0, 12)}...
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={() => handleRemoveFile(file.path)}
-                      disabled={loading}
-                      className="px-3 py-2 text-red-600 hover:bg-red-50 rounded disabled:opacity-50"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                    file={file}
+                    getFileIcon={getFileIcon}
+                    formatSize={formatSize}
+                    onRemove={handleRemoveFile}
+                    loading={loading}
+                  />
                 ))}
               </div>
             ))}
@@ -271,3 +302,6 @@ export default function FilesTab({ draft, onUpdate }: FilesTabProps) {
     </div>
   );
 }
+
+// Performance: Export memoized version
+export default memo(FilesTab);
