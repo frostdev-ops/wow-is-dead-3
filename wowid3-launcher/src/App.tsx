@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { useModpack, useServer, useTheme } from './hooks';
+import { useSettingsStore } from './stores/settingsStore';
 import LauncherHome from './components/LauncherHome';
 import SettingsScreen from './components/SettingsScreen';
 import ChristmasBackground from './components/theme/ChristmasBackground';
@@ -25,7 +26,13 @@ function AppContent() {
   const retryIntervalRef = useRef<number | null>(null);
   const { checkUpdates, latestManifest } = useModpack();
   const { startPolling } = useServer();
+  const { initializeGameDirectory } = useSettingsStore();
   useTheme(); // Apply theme on mount
+
+  // Initialize OS-specific game directory on mount
+  useEffect(() => {
+    initializeGameDirectory();
+  }, [initializeGameDirectory]);
 
   // Crossfade from fallback to main audio
   const startCrossfade = () => {

@@ -7,19 +7,21 @@ import { useToast } from './ui/ToastContainer';
 import { VersionSelector, InstallProgress } from './installer';
 
 export default function SettingsScreen() {
-  const { gameDirectory, ramAllocation, serverAddress, manifestUrl, setGameDirectory, setRamAllocation, setServerAddress, setManifestUrl } = useSettingsStore();
+  const { gameDirectory, ramAllocation, serverAddress, manifestUrl, keepLauncherOpen, setGameDirectory, setRamAllocation, setServerAddress, setManifestUrl, setKeepLauncherOpen } = useSettingsStore();
   const { addToast } = useToast();
 
   const [tempGameDir, setTempGameDir] = useState(gameDirectory);
   const [tempRam, setTempRam] = useState(ramAllocation);
   const [tempServerAddr, setTempServerAddr] = useState(serverAddress);
   const [tempManifestUrl, setTempManifestUrl] = useState(manifestUrl);
+  const [tempKeepLauncherOpen, setTempKeepLauncherOpen] = useState(keepLauncherOpen);
 
   const handleSave = () => {
     setGameDirectory(tempGameDir);
     setRamAllocation(tempRam);
     setServerAddress(tempServerAddr);
     setManifestUrl(tempManifestUrl);
+    setKeepLauncherOpen(tempKeepLauncherOpen);
     addToast('Settings saved successfully', 'success');
   };
 
@@ -28,6 +30,7 @@ export default function SettingsScreen() {
     setTempRam(ramAllocation);
     setTempServerAddr(serverAddress);
     setTempManifestUrl(manifestUrl);
+    setTempKeepLauncherOpen(keepLauncherOpen);
   };
 
   return (
@@ -118,6 +121,31 @@ export default function SettingsScreen() {
               placeholder="https://example.com/manifest.json"
               helperText="URL to the modpack manifest file"
             />
+          </div>
+        </Card>
+
+        {/* Launcher Behavior */}
+        <Card>
+          <h2 className="text-xl font-bold mb-4" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>Launcher Behavior</h2>
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="keepLauncherOpen"
+                checked={tempKeepLauncherOpen}
+                onChange={(e) => setTempKeepLauncherOpen(e.target.checked)}
+                className="w-5 h-5 rounded cursor-pointer"
+                style={{ accentColor: '#FFD700' }}
+              />
+              <label htmlFor="keepLauncherOpen" className="flex flex-col cursor-pointer">
+                <span className="text-sm font-semibold" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
+                  Keep launcher open during gameplay
+                </span>
+                <span className="text-xs mt-1" style={{ color: '#999' }}>
+                  Shows a live log viewer with game controls instead of minimizing the launcher window
+                </span>
+              </label>
+            </div>
           </div>
         </Card>
 

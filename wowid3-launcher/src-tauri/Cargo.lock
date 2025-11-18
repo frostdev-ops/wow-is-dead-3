@@ -6287,6 +6287,7 @@ dependencies = [
  "futures-util",
  "hostname",
  "keyring",
+ "lazy_static",
  "num_cpus",
  "oauth2",
  "open",

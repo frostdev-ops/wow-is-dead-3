@@ -13,3 +13,5 @@ pub mod audio;
 pub mod java_runtime;
 pub mod logger;
 pub mod encrypted_storage;
+pub mod log_reader;
+pub mod paths;

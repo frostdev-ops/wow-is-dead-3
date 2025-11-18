@@ -3,11 +3,18 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::Arc;
 use tokio::process::{Child, Command};
+use tokio::sync::Mutex;
 
 use super::game_installer::get_installed_version;
 use super::library_manager;
 use super::minecraft_version::{Argument, ArgumentValue};
+
+// Global game process ID tracker
+lazy_static::lazy_static! {
+    pub static ref GAME_PROCESS_ID: Arc<Mutex<Option<u32>>> = Arc::new(Mutex::new(None));
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LaunchConfig {
@@ -75,16 +82,31 @@ pub async fn launch_game_with_metadata(
     arg_map.insert("launcher_version".to_string(), "1.0.0".to_string());
     arg_map.insert("classpath".to_string(), classpath.clone());
 
-    // Build JVM arguments
+    // Build JVM arguments with optimized GC settings
     let mut jvm_args = vec![
         format!("-Xmx{}M", config.ram_mb),
         format!("-Xms{}M", config.ram_mb / 2),
+        // G1GC optimizations
         "-XX:+UseG1GC".to_string(),
+        "-XX:+ParallelRefProcEnabled".to_string(),
+        "-XX:MaxGCPauseMillis=200".to_string(),
         "-XX:+UnlockExperimentalVMOptions".to_string(),
-        "-XX:G1NewSizePercent=20".to_string(),
+        "-XX:+DisableExplicitGC".to_string(),
+        "-XX:G1NewSizePercent=30".to_string(),
+        "-XX:G1MaxNewSizePercent=40".to_string(),
+        "-XX:G1HeapRegionSize=8M".to_string(),
         "-XX:G1ReservePercent=20".to_string(),
-        "-XX:MaxGCPauseMillis=50".to_string(),
-        "-XX:G1HeapRegionSize=32M".to_string(),
+        "-XX:G1HeapWastePercent=5".to_string(),
+        "-XX:G1MixedGCCountTarget=4".to_string(),
+        "-XX:InitiatingHeapOccupancyPercent=15".to_string(),
+        "-XX:G1MixedGCLiveThresholdPercent=90".to_string(),
+        "-XX:G1RSetUpdatingPauseTimePercent=5".to_string(),
+        "-XX:SurvivorRatio=32".to_string(),
+        "-XX:+PerfDisableSharedMem".to_string(),
+        "-XX:MaxTenuringThreshold=1".to_string(),
+        // Minecraft-specific optimizations
+        "-Dorg.lwjgl.opengl.Display.allowSoftwareOpenGL=true".to_string(),
+        "-Dfml.earlyprogresswindow=false".to_string(),
     ];
 
     // Add Fabric-specific JVM argument if this is a Fabric loader
@@ -164,7 +186,107 @@ pub async fn launch_game_with_metadata(
         .spawn()
         .context("Failed to spawn Minecraft process")?;
 
+    // Store the process ID for later control (kill/stop)
+    if let Some(pid) = child.id() {
+        let mut game_pid = GAME_PROCESS_ID.lock().await;
+        *game_pid = Some(pid);
+        eprintln!("[Minecraft] Started with PID: {}", pid);
+    }
+
     Ok(child)
+}
+
+/// Stop the Minecraft game gracefully (on Unix) or forcefully (on Windows)
+/// Note: Graceful shutdown via stdin is not possible with this approach
+/// Consider implementing an RPC/IPC mechanism if graceful shutdown is critical
+pub async fn stop_game() -> Result<()> {
+    let mut game_pid = GAME_PROCESS_ID.lock().await;
+
+    if let Some(pid) = *game_pid {
+        #[cfg(unix)]
+        {
+            // On Unix, send SIGTERM for graceful shutdown
+            use std::process::Command;
+            let _ = Command::new("kill")
+                .arg("-15") // SIGTERM
+                .arg(pid.to_string())
+                .output();
+        }
+
+        #[cfg(windows)]
+        {
+            // On Windows, forcefully terminate
+            use std::process::Command;
+            let _ = Command::new("taskkill")
+                .args(&["/PID", &pid.to_string(), "/F"])
+                .output();
+        }
+
+        eprintln!("[Minecraft] Stop signal sent to PID: {}", pid);
+    }
+
+    *game_pid = None;
+    Ok(())
+}
+
+/// Kill the Minecraft game forcefully
+pub async fn kill_game() -> Result<()> {
+    let mut game_pid = GAME_PROCESS_ID.lock().await;
+
+    if let Some(pid) = *game_pid {
+        #[cfg(unix)]
+        {
+            use std::process::Command;
+            let _ = Command::new("kill")
+                .arg("-9") // SIGKILL
+                .arg(pid.to_string())
+                .output();
+        }
+
+        #[cfg(windows)]
+        {
+            use std::process::Command;
+            let _ = Command::new("taskkill")
+                .args(&["/PID", &pid.to_string(), "/F"])
+                .output();
+        }
+
+        eprintln!("[Minecraft] Kill signal sent to PID: {}", pid);
+        *game_pid = None;
+    }
+
+    Ok(())
+}
+
+/// Check if the game is currently running
+pub async fn is_game_running() -> bool {
+    let game_pid = GAME_PROCESS_ID.lock().await;
+
+    if let Some(pid) = *game_pid {
+        // Check if process with this PID still exists using OS-level check
+        #[cfg(unix)]
+        {
+            // On Unix, check if /proc/PID exists
+            std::path::Path::new(&format!("/proc/{}", pid)).exists()
+        }
+
+        #[cfg(windows)]
+        {
+            // On Windows, use tasklist to check if process exists
+            use std::process::Command;
+            if let Ok(output) = Command::new("tasklist")
+                .args(&["/FI", &format!("PID eq {}", pid), "/NH"])
+                .output()
+            {
+                let output_str = String::from_utf8_lossy(&output.stdout);
+                output_str.contains(&pid.to_string())
+            } else {
+                false
+            }
+        }
+    } else {
+        false
+    }
 }
 
 /// Resolve an argument (handles rules and variables)
