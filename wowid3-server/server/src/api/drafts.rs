@@ -25,14 +25,14 @@ pub async fn create_draft(
     Extension(_token): Extension<AdminToken>,
     Json(request): Json<CreateDraftRequest>,
 ) -> Result<Json<DraftRelease>, AppError> {
-    let draft = storage::create_draft(&state.config.storage_path(), request.version)?;
+    let draft = storage::create_draft(&state.config.storage_path(), request.version).await?;
 
     // If upload_id provided, add files from upload
     if let Some(upload_id) = request.upload_id {
         let upload_dir = state.config.uploads_path().join(&upload_id);
         if upload_dir.exists() {
             let files = scan_upload_files(&upload_dir, &state.config.base_url, &draft.id.to_string()).await?;
-            let updated_draft = storage::add_files_to_draft(&state.config.storage_path(), draft.id, files)?;
+            let updated_draft = storage::add_files_to_draft(&state.config.storage_path(), draft.id, files).await?;
 
             // Copy files to draft directory
             let draft_files_dir = storage::get_draft_files_dir(&state.config.storage_path(), draft.id);
@@ -50,7 +50,7 @@ pub async fn list_drafts(
     State(state): State<AdminState>,
     Extension(_token): Extension<AdminToken>,
 ) -> Result<Json<Vec<DraftRelease>>, AppError> {
-    let drafts = storage::list_drafts(&state.config.storage_path())?;
+    let drafts = storage::list_drafts(&state.config.storage_path()).await?;
     Ok(Json(drafts))
 }
 
@@ -60,7 +60,7 @@ pub async fn get_draft(
     Extension(_token): Extension<AdminToken>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<DraftRelease>, AppError> {
-    let draft = storage::read_draft(&state.config.storage_path(), id)?;
+    let draft = storage::read_draft(&state.config.storage_path(), id).await?;
     Ok(Json(draft))
 }
 
@@ -78,7 +78,7 @@ pub async fn update_draft(
         request.minecraft_version,
         request.fabric_loader,
         request.changelog,
-    )?;
+    ).await?;
 
     Ok(Json(draft))
 }
@@ -89,7 +89,7 @@ pub async fn delete_draft(
     Extension(_token): Extension<AdminToken>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    storage::delete_draft(&state.config.storage_path(), id)?;
+    storage::delete_draft(&state.config.storage_path(), id).await?;
 
     Ok(Json(json!({
         "message": "Draft deleted successfully",
@@ -103,7 +103,7 @@ pub async fn analyze_draft(
     Extension(_token): Extension<AdminToken>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<VersionSuggestions>, AppError> {
-    let draft = storage::read_draft(&state.config.storage_path(), id)?;
+    let draft = storage::read_draft(&state.config.storage_path(), id).await?;
     let draft_files_dir = storage::get_draft_files_dir(&state.config.storage_path(), id);
 
     let mut suggestions = analyze_files(&draft_files_dir)?;
@@ -141,7 +141,7 @@ pub async fn add_files(
     let files = scan_upload_files(&upload_dir, &state.config.base_url, &id.to_string()).await?;
 
     // Add to draft
-    let draft = storage::add_files_to_draft(&state.config.storage_path(), id, files)?;
+    let draft = storage::add_files_to_draft(&state.config.storage_path(), id, files).await?;
 
     // Copy files to draft directory
     let draft_files_dir = storage::get_draft_files_dir(&state.config.storage_path(), id);
@@ -156,7 +156,7 @@ pub async fn remove_file(
     Extension(_token): Extension<AdminToken>,
     Path((id, file_path)): Path<(Uuid, String)>,
 ) -> Result<Json<DraftRelease>, AppError> {
-    let draft = storage::remove_file_from_draft(&state.config.storage_path(), id, &file_path)?;
+    let draft = storage::remove_file_from_draft(&state.config.storage_path(), id, &file_path).await?;
     Ok(Json(draft))
 }
 
@@ -173,7 +173,7 @@ pub async fn update_file(
         &file_path,
         request.sha256,
         request.url,
-    )?;
+    ).await?;
 
     Ok(Json(draft))
 }
@@ -184,7 +184,7 @@ pub async fn generate_changelog_for_draft(
     Extension(_token): Extension<AdminToken>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<GeneratedChangelog>, AppError> {
-    let draft = storage::read_draft(&state.config.storage_path(), id)?;
+    let draft = storage::read_draft(&state.config.storage_path(), id).await?;
 
     // Get previous version files
     let versions = storage::manifest::list_versions(&state.config).await?;
@@ -211,7 +211,8 @@ pub async fn publish_draft(
     Extension(_token): Extension<AdminToken>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let draft = storage::read_draft(&state.config.storage_path(), id)?;
+    let start = std::time::Instant::now();
+    let draft = storage::read_draft(&state.config.storage_path(), id).await?;
 
     // Validate draft has required fields
     if draft.version.is_empty() || draft.minecraft_version.is_empty() || draft.fabric_loader.is_empty() {
@@ -273,8 +274,16 @@ pub async fn publish_draft(
     // Set as latest
     storage::manifest::set_latest_manifest(&state.config, &draft.version).await?;
 
+    // Invalidate cache after publishing
+    state.cache.invalidate_manifest("latest").await;
+    state.cache.invalidate_manifest(&format!("version:{}", draft.version)).await;
+
     // Delete draft
-    storage::delete_draft(&state.config.storage_path(), id)?;
+    storage::delete_draft(&state.config.storage_path(), id).await?;
+
+    let duration = start.elapsed();
+    tracing::info!("publish_draft completed in {:?} (version: {}, {} files)",
+        duration, draft.version, manifest.files.len());
 
     Ok(Json(json!({
         "message": "Draft published successfully",
@@ -289,7 +298,7 @@ pub async fn duplicate_draft(
     Extension(_token): Extension<AdminToken>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<DraftRelease>, AppError> {
-    let source_draft = storage::read_draft(&state.config.storage_path(), id)?;
+    let source_draft = storage::read_draft(&state.config.storage_path(), id).await?;
 
     // Create new draft with copied metadata
     let new_version = if !source_draft.version.is_empty() {
@@ -298,7 +307,7 @@ pub async fn duplicate_draft(
         None
     };
 
-    let new_draft = storage::create_draft(&state.config.storage_path(), new_version)?;
+    let new_draft = storage::create_draft(&state.config.storage_path(), new_version).await?;
 
     // Copy metadata
     let updated_draft = storage::update_draft(
@@ -308,7 +317,7 @@ pub async fn duplicate_draft(
         Some(source_draft.minecraft_version.clone()),
         Some(source_draft.fabric_loader.clone()),
         Some(source_draft.changelog.clone()),
-    )?;
+    ).await?;
 
     // Copy files if source draft has any
     if !source_draft.files.is_empty() {
@@ -326,7 +335,7 @@ pub async fn duplicate_draft(
             &state.config.storage_path(),
             new_draft.id,
             fresh_files,
-        )?;
+        ).await?;
 
         Ok(Json(updated_draft))
     } else {
@@ -551,7 +560,7 @@ pub async fn write_file_content(
     };
 
     // Try to update existing file or add new one
-    let draft = storage::read_draft(&state.config.storage_path(), id)?;
+    let draft = storage::read_draft(&state.config.storage_path(), id).await?;
     let mut files = draft.files;
 
     if let Some(existing) = files.iter_mut().find(|f| f.path == request.path) {
@@ -561,7 +570,7 @@ pub async fn write_file_content(
         files.push(draft_file);
     }
 
-    storage::add_files_to_draft(&state.config.storage_path(), id, files)?;
+    storage::add_files_to_draft(&state.config.storage_path(), id, files).await?;
 
     Ok(Json(json!({
         "message": "File saved successfully",
@@ -638,7 +647,7 @@ pub async fn rename_file(
 
     // Update draft file list if it's a file
     if new_path.is_file() {
-        let draft = storage::read_draft(&state.config.storage_path(), id)?;
+        let draft = storage::read_draft(&state.config.storage_path(), id).await?;
         let mut files = draft.files;
 
         let new_relative_path = new_path
@@ -650,7 +659,7 @@ pub async fn rename_file(
             file.path = new_relative_path.clone();
         }
 
-        storage::add_files_to_draft(&state.config.storage_path(), id, files)?;
+        storage::add_files_to_draft(&state.config.storage_path(), id, files).await?;
 
         Ok(Json(json!({
             "message": "File renamed successfully",
@@ -698,14 +707,14 @@ pub async fn move_file(
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to move: {}", e)))?;
 
     // Update draft file list
-    let draft = storage::read_draft(&state.config.storage_path(), id)?;
+    let draft = storage::read_draft(&state.config.storage_path(), id).await?;
     let mut files = draft.files;
 
     if let Some(file) = files.iter_mut().find(|f| f.path == request.source_path) {
         file.path = request.dest_path.clone();
     }
 
-    storage::add_files_to_draft(&state.config.storage_path(), id, files)?;
+    storage::add_files_to_draft(&state.config.storage_path(), id, files).await?;
 
     Ok(Json(json!({
         "message": "File moved successfully",

@@ -17,13 +17,24 @@ use tokio_util::io::ReaderStream;
 #[derive(Clone)]
 pub struct PublicState {
     pub config: Arc<Config>,
+    pub cache: crate::cache::CacheManager,
 }
 
 /// GET /api/manifest/latest
 pub async fn get_latest_manifest(
     State(state): State<PublicState>,
 ) -> Result<Json<Manifest>, AppError> {
+    // Try to get from cache first
+    if let Some(manifest) = state.cache.get_manifest("latest").await {
+        return Ok(Json((*manifest).clone()));
+    }
+
+    // Cache miss - read from disk
     let manifest = storage::read_latest_manifest(&state.config).await?;
+
+    // Store in cache
+    state.cache.put_manifest("latest".to_string(), manifest.clone()).await;
+
     Ok(Json(manifest))
 }
 
@@ -32,7 +43,19 @@ pub async fn get_manifest_by_version(
     State(state): State<PublicState>,
     Path(version): Path<String>,
 ) -> Result<Json<Manifest>, AppError> {
+    let cache_key = format!("version:{}", version);
+
+    // Try to get from cache first
+    if let Some(manifest) = state.cache.get_manifest(&cache_key).await {
+        return Ok(Json((*manifest).clone()));
+    }
+
+    // Cache miss - read from disk
     let manifest = storage::read_manifest(&state.config, &version).await?;
+
+    // Store in cache
+    state.cache.put_manifest(cache_key, manifest.clone()).await;
+
     Ok(Json(manifest))
 }
 
