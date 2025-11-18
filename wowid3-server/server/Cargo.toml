@@ -49,3 +49,6 @@ zip = "0.6"
 
 # Version extraction and pattern matching
 regex = "1"
+
+# CLI argument parsing
+clap = { version = "4", features = ["derive"] }

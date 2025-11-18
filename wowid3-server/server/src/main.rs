@@ -1,4 +1,5 @@
 mod api;
+mod cli;
 mod config;
 mod middleware;
 mod models;
@@ -24,6 +25,8 @@ use axum::{
     routing::{delete, get, post},
     Router,
 };
+use clap::Parser;
+use cli::Cli;
 use config::Config;
 use middleware::auth::auth_middleware;
 use serde_json::json;
@@ -41,8 +44,20 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
+    // Parse CLI arguments
+    let cli = Cli::parse();
+
     // Load configuration
     let config = Config::from_env()?;
+
+    // Check if a CLI command was provided
+    if cli.command.is_some() {
+        // Run CLI command and exit
+        cli::run_cli(cli, config).await?;
+        return Ok(());
+    }
+
+    // No CLI command, start the web server
     info!("Loaded configuration");
     info!("Storage path: {:?}", config.storage_path());
     info!("API listening on {}:{}", config.api_host, config.api_port);
