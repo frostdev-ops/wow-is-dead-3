@@ -6,6 +6,9 @@ on:
       - 'launcher-v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -157,12 +160,13 @@ jobs:
           tag_name: ${{ steps.version.outputs.version }}
           name: WOWID3 Launcher ${{ steps.version.outputs.version }}
           files: |
-            windows-release/**
-            macos-release-x86_64/**
-            macos-release-aarch64/**
-            linux-deb-release/**
-            linux-appimage-release/**
+            windows-release/**/*
+            macos-release-x86_64/**/*
+            macos-release-aarch64/**/*
+            linux-deb-release/**/*
+            linux-appimage-release/**/*
           draft: false
           prerelease: false
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
