@@ -109,11 +109,12 @@ pub async fn launch_game_with_metadata(
         "-Dfml.earlyprogresswindow=false".to_string(),
     ];
 
-    // Force LWJGL to use X11 instead of Wayland on Wayland systems (prevents GLFW crashes)
+    // Use patched GLFW library on Wayland for proper Minecraft support
     #[cfg(target_os = "linux")]
     {
         if is_wayland_session() {
-            jvm_args.push("-Dorg.lwjgl.glfw.wayland=false".to_string());
+            // Use the patched glfw-wayland-minecraft-cursorfix library
+            jvm_args.push("-Dorg.lwjgl.glfw.libname=/usr/lib/libglfw.so.3".to_string());
         }
     }
 
@@ -186,6 +187,14 @@ pub async fn launch_game_with_metadata(
 
     // Set working directory
     cmd.current_dir(&game_dir);
+
+    // Use patched GLFW on Wayland - no environment modifications needed
+    #[cfg(target_os = "linux")]
+    {
+        if is_wayland_session() {
+            eprintln!("[Minecraft] Using patched GLFW library for native Wayland support");
+        }
+    }
 
     // Capture stdout/stderr for log streaming
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
