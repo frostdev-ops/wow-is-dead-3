@@ -258,7 +258,7 @@ export default function LauncherHome() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center h-full pt-90 p-0">
+    <div className="flex flex-col items-center justify-center h-full pt-32 p-0">
         {/* Logo Section */}
       <div className="text-center max-w-2xl mx-auto w-full pb-8 flex items-center justify-center">
         <img
