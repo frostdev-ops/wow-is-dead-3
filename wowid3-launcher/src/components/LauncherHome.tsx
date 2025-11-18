@@ -581,12 +581,12 @@ export default function LauncherHome() {
         <PlayerList status={status} />
         </div>
 
-        {/* Cat Model - Left side of cards */}
-        <div className="absolute left-[calc(50%-520px)] top-[-80%] -translate-x-1/2 -translate-y-1/2">
+        {/* Cat Model - Left side */}
+        <div className="fixed left-[calc(50%-730px)] top-[-80px]">
           <CatModel />
         </div>
 
-        {/* 3D Skin Viewer - Only show when authenticated */}
+        {/* 3D Skin Viewer - Right side - Only show when authenticated */}
         {isAuthenticated && user && (
           <div className="absolute left-[calc(50%+380px)] top-[-80px]">
             <SkinViewerComponent
