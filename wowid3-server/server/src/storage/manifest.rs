@@ -102,16 +102,30 @@ pub async fn write_manifest(config: &Config, manifest: &Manifest) -> Result<()> 
     Ok(())
 }
 
-/// Atomic write: write to temp file then rename to prevent partial writes
+/// Atomic write: write to temp file, fsync, then rename to prevent partial writes
 async fn write_atomic(path: &PathBuf, content: String) -> Result<()> {
-    let temp_path = path.with_extension("tmp");
+    use tokio::io::AsyncWriteExt;
+
+    let parent = path.parent().context("Invalid file path")?;
+    let temp_path = parent.join(format!(".tmp.{}", uuid::Uuid::new_v4()));
 
     // Write to temp file
-    fs::write(&temp_path, &content)
+    let mut file = fs::File::create(&temp_path)
         .await
-        .context("Failed to write temp file")?;
+        .context("Failed to create temp file")?;
 
-    // Rename temp file to final path (atomic on Unix)
+    file.write_all(content.as_bytes())
+        .await
+        .context("Failed to write to temp file")?;
+
+    // Ensure data is written to disk for data integrity
+    file.sync_all()
+        .await
+        .context("Failed to sync temp file to disk")?;
+
+    drop(file);
+
+    // Rename temp file to final path (atomic on Unix, near-atomic on Windows)
     fs::rename(&temp_path, path)
         .await
         .context("Failed to rename temp file to final path")?;

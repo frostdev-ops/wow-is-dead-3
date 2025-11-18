@@ -1,4 +1,5 @@
 mod api;
+mod cache;
 mod cli;
 mod config;
 mod middleware;
@@ -8,8 +9,9 @@ mod storage;
 mod utils;
 
 use api::admin::{
-    copy_release_to_draft, create_release, delete_release, get_blacklist, list_releases, login,
-    update_blacklist, upload_files, AdminState as AdminApiState,
+    clear_cache, clear_jar_cache, clear_manifest_cache, copy_release_to_draft, create_release,
+    delete_release, get_blacklist, get_cache_stats, list_releases, login, update_blacklist,
+    upload_files, AdminState as AdminApiState,
 };
 use api::drafts::{
     add_files, analyze_draft, browse_directory, create_directory, create_draft, delete_draft,
@@ -70,9 +72,14 @@ async fn main() -> anyhow::Result<()> {
 
     let config_arc = Arc::new(config.clone());
 
+    // Initialize cache manager
+    let cache_manager = cache::CacheManager::new();
+    info!("Cache manager initialized");
+
     // Create shared state for public API
     let public_state = PublicState {
         config: config_arc.clone(),
+        cache: cache_manager.clone(),
     };
 
     // Create shared state for admin API
@@ -80,6 +87,7 @@ async fn main() -> anyhow::Result<()> {
     let admin_state = AdminApiState {
         config: config_arc.clone(),
         admin_password: Arc::new(admin_password),
+        cache: cache_manager.clone(),
     };
 
     // Build CORS layer
@@ -110,6 +118,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/admin/releases/:version/copy-to-draft", post(copy_release_to_draft))
         .route("/api/admin/releases/:version", delete(delete_release))
         .route("/api/admin/blacklist", get(get_blacklist).put(update_blacklist))
+        // Cache management routes
+        .route("/api/admin/cache/stats", get(get_cache_stats))
+        .route("/api/admin/cache/clear", post(clear_cache))
+        .route("/api/admin/cache/clear/manifests", post(clear_manifest_cache))
+        .route("/api/admin/cache/clear/jar", post(clear_jar_cache))
         // Draft management routes
         .route("/api/admin/drafts", post(create_draft).get(list_drafts))
         .route("/api/admin/drafts/:id", get(get_draft).put(update_draft).delete(delete_draft))

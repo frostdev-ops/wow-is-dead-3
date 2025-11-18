@@ -1,5 +1,7 @@
-import { Edit, Copy, Trash2 } from 'lucide-react';
+import { Edit, Copy, Trash2, FileText, Clock } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import type { DraftCardProps } from '../../types/draft';
 
 export default function DraftCard({
@@ -15,51 +17,60 @@ export default function DraftCard({
   isLoading = false,
 }: DraftCardProps) {
   return (
-    <div
-      style={{
-        padding: '16px',
-        borderBottom: '1px solid #eee',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-      }}
-    >
-      <div>
-        <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: 600 }}>
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border-b border-border hover:bg-accent/50 transition-colors">
+      <div className="flex-1 min-w-0">
+        <h3 className="text-base font-semibold mb-2 truncate">
           {version || 'Untitled Draft'}
         </h3>
-        <div style={{ fontSize: '12px', color: '#999', display: 'flex', gap: '16px' }}>
-          {minecraft_version && <span>Minecraft {minecraft_version}</span>}
-          {fabric_loader && <span>Fabric {fabric_loader}</span>}
-          <span>{files.length} files</span>
-          <span>Updated {formatDistanceToNow(new Date(updated_at), { addSuffix: true })}</span>
+        <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
+          {minecraft_version && (
+            <Badge variant="secondary" className="text-xs">
+              Minecraft {minecraft_version}
+            </Badge>
+          )}
+          {fabric_loader && (
+            <Badge variant="secondary" className="text-xs">
+              Fabric {fabric_loader}
+            </Badge>
+          )}
+          <span className="flex items-center gap-1">
+            <FileText className="h-3 w-3" />
+            {files.length} files
+          </span>
+          <span className="flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            {formatDistanceToNow(new Date(updated_at), { addSuffix: true })}
+          </span>
         </div>
       </div>
-      <div style={{ display: 'flex', gap: '8px' }}>
-        <button
-          className="btn-secondary"
-          style={{ padding: '6px 12px', fontSize: '12px' }}
+      <div className="flex flex-wrap sm:flex-nowrap gap-2">
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => onEdit(id)}
           disabled={isLoading}
         >
-          <Edit style={{ width: '16px', height: '16px', marginRight: '4px' }} /> Edit
-        </button>
-        <button
-          className="btn-secondary"
-          style={{ padding: '6px 12px', fontSize: '12px', background: '#6366f1', color: '#fff' }}
+          <Edit className="h-4 w-4" />
+          <span className="ml-2">Edit</span>
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
           onClick={() => onDuplicate(id, version)}
           disabled={isLoading}
         >
-          <Copy style={{ width: '16px', height: '16px', marginRight: '4px' }} /> Duplicate
-        </button>
-        <button
-          className="btn-danger"
-          style={{ padding: '6px 12px', fontSize: '12px' }}
+          <Copy className="h-4 w-4" />
+          <span className="ml-2">Duplicate</span>
+        </Button>
+        <Button
+          variant="destructive"
+          size="sm"
           onClick={() => onDelete(id, version)}
           disabled={isLoading}
         >
-          <Trash2 style={{ width: '16px', height: '16px', marginRight: '4px' }} /> Delete
-        </button>
+          <Trash2 className="h-4 w-4" />
+          <span className="ml-2">Delete</span>
+        </Button>
       </div>
     </div>
   );

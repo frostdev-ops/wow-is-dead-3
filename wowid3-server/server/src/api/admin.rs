@@ -27,6 +27,7 @@ use zip::ZipArchive;
 pub struct AdminState {
     pub config: Arc<Config>,
     pub admin_password: Arc<String>,
+    pub cache: crate::cache::CacheManager,
 }
 
 /// Extract a zip file to the specified output directory
@@ -111,6 +112,7 @@ pub async fn upload_files(
     Extension(_token): Extension<AdminToken>,
     mut multipart: Multipart,
 ) -> Result<Json<Vec<UploadResponse>>, AppError> {
+    let start = std::time::Instant::now();
     let upload_id = Uuid::new_v4().to_string();
     let upload_dir = state.config.uploads_path().join(&upload_id);
     fs::create_dir_all(&upload_dir)
@@ -218,6 +220,9 @@ pub async fn upload_files(
         }
     }
 
+    let duration = start.elapsed();
+    tracing::info!("upload_files completed in {:?} ({} files, upload_id: {})", duration, responses.len(), upload_id);
+
     Ok(Json(responses))
 }
 
@@ -227,6 +232,8 @@ pub async fn create_release(
     Extension(_token): Extension<AdminToken>,
     Json(request): Json<CreateReleaseRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let start = std::time::Instant::now();
+
     // Get upload directory
     let upload_dir = state.config.uploads_path().join(&request.upload_id);
 
@@ -338,10 +345,18 @@ pub async fn create_release(
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to update latest manifest: {}", e)))?;
 
+    // Invalidate cache after creating release
+    state.cache.invalidate_manifest("latest").await;
+    state.cache.invalidate_manifest(&format!("version:{}", request.version)).await;
+
     // Clean up upload directory
     fs::remove_dir_all(&upload_dir)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to clean up uploads: {}", e)))?;
+
+    let duration = start.elapsed();
+    tracing::info!("create_release completed in {:?} (version: {}, {} files, {} bytes)",
+        duration, request.version, manifest.files.len(), total_size);
 
     Ok(Json(json!({
         "message": "Release created successfully",
@@ -352,21 +367,56 @@ pub async fn create_release(
     })))
 }
 
-/// GET /api/admin/releases - List all releases
+/// Query parameters for pagination
+#[derive(serde::Deserialize)]
+pub struct PaginationQuery {
+    #[serde(default = "default_page")]
+    pub page: usize,
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+}
+
+fn default_page() -> usize { 1 }
+fn default_limit() -> usize { 20 }
+
+/// Paginated response wrapper
+#[derive(serde::Serialize)]
+pub struct PaginatedReleaseResponse {
+    pub releases: Vec<ReleaseInfo>,
+    pub page: usize,
+    pub limit: usize,
+    pub total: usize,
+    pub total_pages: usize,
+}
+
+/// GET /api/admin/releases - List all releases with pagination
 pub async fn list_releases(
     State(state): State<AdminState>,
     Extension(_token): Extension<AdminToken>,
-) -> Result<Json<ReleaseListResponse>, AppError> {
+    axum::extract::Query(pagination): axum::extract::Query<PaginationQuery>,
+) -> Result<Json<PaginatedReleaseResponse>, AppError> {
+    let start = std::time::Instant::now();
+
     let versions = storage::manifest::list_versions(&state.config)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to list versions: {}", e)))?;
 
+    let total = versions.len();
+    let limit = pagination.limit.min(100).max(1); // Cap at 100, min 1
+    let page = pagination.page.max(1); // Min page 1
+    let total_pages = (total + limit - 1) / limit; // Ceiling division
+
+    // Calculate pagination bounds
+    let start_idx = (page - 1) * limit;
+    let end_idx = (start_idx + limit).min(total);
+
     let mut releases = Vec::new();
 
-    for version in versions {
-        match storage::manifest::read_manifest(&state.config, &version).await {
+    // Only process releases for the current page
+    for version in versions.iter().skip(start_idx).take(end_idx - start_idx) {
+        match storage::manifest::read_manifest(&state.config, version).await {
             Ok(manifest) => {
-                let release_dir = state.config.release_path(&version);
+                let release_dir = state.config.release_path(version);
                 let mut total_size = 0u64;
                 let mut file_count = 0;
 
@@ -396,7 +446,16 @@ pub async fn list_releases(
     // Sort by version (newest first)
     releases.sort_by(|a, b| b.version.cmp(&a.version));
 
-    Ok(Json(ReleaseListResponse { releases }))
+    let duration = start.elapsed();
+    tracing::info!("list_releases took {:?} (page {} of {}, {} items)", duration, page, total_pages, releases.len());
+
+    Ok(Json(PaginatedReleaseResponse {
+        releases,
+        page,
+        limit,
+        total,
+        total_pages,
+    }))
 }
 
 /// DELETE /api/admin/releases/:version - Delete a release
@@ -448,7 +507,7 @@ pub async fn copy_release_to_draft(
 
     // Create new draft with copied metadata
     let new_version = Some(format!("{}-copy", version));
-    let new_draft = storage::create_draft(&state.config.storage_path(), new_version)?;
+    let new_draft = storage::create_draft(&state.config.storage_path(), new_version).await?;
 
     // Copy metadata
     let _updated_draft = storage::update_draft(
@@ -458,7 +517,7 @@ pub async fn copy_release_to_draft(
         Some(manifest.minecraft_version.clone()),
         Some(manifest.fabric_loader.clone()),
         Some(manifest.changelog.clone()),
-    )?;
+    ).await?;
 
     // Copy files from release to draft
     let release_dir = state.config.release_path(&version);
@@ -476,7 +535,7 @@ pub async fn copy_release_to_draft(
         &state.config.storage_path(),
         new_draft.id,
         fresh_files,
-    )?;
+    ).await?;
 
     Ok(Json(final_draft))
 }
@@ -607,6 +666,48 @@ pub async fn update_blacklist(
     Ok(Json(json!({
         "message": "Blacklist updated successfully",
         "pattern_count": request.patterns.len()
+    })))
+}
+
+/// GET /api/admin/cache/stats - Get cache statistics
+pub async fn get_cache_stats(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+) -> Result<Json<crate::cache::CacheStats>, AppError> {
+    let stats = state.cache.get_stats().await;
+    Ok(Json(stats))
+}
+
+/// POST /api/admin/cache/clear - Clear all caches
+pub async fn clear_cache(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    state.cache.clear_all().await;
+    Ok(Json(json!({
+        "message": "All caches cleared successfully"
+    })))
+}
+
+/// POST /api/admin/cache/clear/manifests - Clear manifest cache only
+pub async fn clear_manifest_cache(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    state.cache.clear_manifests().await;
+    Ok(Json(json!({
+        "message": "Manifest cache cleared successfully"
+    })))
+}
+
+/// POST /api/admin/cache/clear/jar - Clear JAR metadata cache only
+pub async fn clear_jar_cache(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    state.cache.clear_jar_metadata().await;
+    Ok(Json(json!({
+        "message": "JAR metadata cache cleared successfully"
     })))
 }
 

@@ -1,21 +1,20 @@
 import { useState } from 'react';
 import { useAuthStore } from '../store/authStore';
-import { useAdmin } from '../hooks/useAdmin';
+import { useLoginMutation } from '../hooks/queries';
 import './LoginPage.css';
 
 export default function LoginPage() {
   const [password, setPassword] = useState('');
   const { setToken } = useAuthStore();
-  const { login, loading, error } = useAdmin();
+  const loginMutation = useLoginMutation();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      const token = await login(password);
-      setToken(token);
-    } catch {
-      // Error is handled in hook
-    }
+    loginMutation.mutate(password, {
+      onSuccess: (token) => {
+        setToken(token);
+      },
+    });
   };
 
   return (
@@ -27,7 +26,11 @@ export default function LoginPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
-          {error && <div className="alert alert-error">{error}</div>}
+          {loginMutation.isError && (
+            <div className="alert alert-error">
+              {loginMutation.error?.message || 'Login failed'}
+            </div>
+          )}
 
           <div className="form-group">
             <label htmlFor="password" className="form-label">
@@ -40,17 +43,17 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter admin password"
               className="form-input"
-              disabled={loading}
+              disabled={loginMutation.isPending}
               autoFocus
             />
           </div>
 
           <button
             type="submit"
-            disabled={loading || !password}
+            disabled={loginMutation.isPending || !password}
             className="btn-login"
           >
-            {loading ? 'Logging in...' : 'Login'}
+            {loginMutation.isPending ? 'Logging in...' : 'Login'}
           </button>
         </form>
 

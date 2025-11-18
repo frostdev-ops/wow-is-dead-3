@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import { useDrafts } from '../../hooks/useDrafts';
 import Editor from '@monaco-editor/react';
 import ReactMarkdown from 'react-markdown';
@@ -10,18 +10,19 @@ interface ChangelogTabProps {
   onUpdate: (draft: DraftRelease) => void;
 }
 
-export default function ChangelogTab({ draft, onUpdate }: ChangelogTabProps) {
+function ChangelogTab({ draft, onUpdate }: ChangelogTabProps) {
   const { generateChangelog, loading } = useDrafts();
   const [generating, setGenerating] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
 
-  const handleEditorChange = (value: string | undefined) => {
+  // Performance: Memoize callbacks to prevent re-renders
+  const handleEditorChange = useCallback((value: string | undefined) => {
     if (value !== undefined) {
       onUpdate({ ...draft, changelog: value });
     }
-  };
+  }, [draft, onUpdate]);
 
-  const handleGenerate = async () => {
+  const handleGenerate = useCallback(async () => {
     setGenerating(true);
     try {
       const result = await generateChangelog(draft.id);
@@ -45,7 +46,7 @@ export default function ChangelogTab({ draft, onUpdate }: ChangelogTabProps) {
     } finally {
       setGenerating(false);
     }
-  };
+  }, [draft.id, generateChangelog, draft, onUpdate]);
 
   return (
     <div className="h-full flex flex-col">
@@ -135,3 +136,6 @@ export default function ChangelogTab({ draft, onUpdate }: ChangelogTabProps) {
     </div>
   );
 }
+
+// Performance: Export memoized version
+export default memo(ChangelogTab);
