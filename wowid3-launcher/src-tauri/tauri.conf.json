@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "WOWID3 Launcher - Christmas Edition",
-        "width": 1000,
-        "height": 700,
+        "width": 1300,
+        "height": 900,
         "resizable": true,
         "fullscreen": false,
         "decorations": true,
