@@ -8,7 +8,6 @@ use tauri::Manager;
 const MAX_DOWNLOAD_RETRIES: u32 = 3;
 const RETRY_DELAY_MS: u64 = 2000;
 const JAVA_CACHE_DIR: &str = "cache/java";
-const JAVA_VERSION: &str = "21";
 
 /// Platform-specific Java runtime info
 #[derive(Debug, Clone)]
@@ -324,6 +323,7 @@ async fn extract_java_archive(archive_path: &PathBuf, extract_to: &PathBuf) -> R
 }
 
 /// Clear Java runtime cache (for testing/troubleshooting)
+#[allow(dead_code)]
 pub async fn clear_java_cache(app_handle: &tauri::AppHandle) -> Result<()> {
     let cache_dir = get_cache_dir(app_handle)?;
 

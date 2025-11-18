@@ -20,6 +20,7 @@ pub struct Manifest {
 }
 
 impl Manifest {
+    #[allow(dead_code)]
     pub fn new(
         version: String,
         minecraft_version: String,
@@ -35,10 +36,12 @@ impl Manifest {
         }
     }
 
+    #[allow(dead_code)]
     pub fn add_file(&mut self, file: ManifestFile) {
         self.files.push(file);
     }
 
+    #[allow(dead_code)]
     pub fn total_size(&self) -> u64 {
         self.files.iter().map(|f| f.size).sum()
     }

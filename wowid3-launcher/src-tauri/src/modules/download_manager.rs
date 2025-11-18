@@ -39,6 +39,7 @@ pub struct DownloadTask {
 #[derive(Debug, Clone)]
 pub struct DownloadProgress {
     pub url: String,
+    #[allow(dead_code)]
     pub bytes_downloaded: u64,
     pub total_bytes: u64,
     pub completed: bool,

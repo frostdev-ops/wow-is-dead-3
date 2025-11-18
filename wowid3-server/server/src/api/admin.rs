@@ -58,7 +58,6 @@ pub async fn upload_files(
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create upload directory: {}", e)))?;
 
     let mut responses = Vec::new();
-    let mut multipart = multipart;
 
     while let Some(field) = multipart
         .next_field()

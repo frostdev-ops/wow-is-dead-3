@@ -18,7 +18,7 @@ use api::public::{get_latest_manifest, get_manifest_by_version, serve_file, serv
 use axum::{
     middleware as axum_middleware,
     response::Json,
-    routing::{delete, get, post, put},
+    routing::{delete, get, post},
     Router,
 };
 use config::Config;

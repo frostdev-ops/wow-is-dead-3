@@ -9,6 +9,6 @@ pub use admin::{
 pub use manifest::{Manifest, ManifestFile};
 pub use release::{
     AddFilesRequest, CreateDraftRequest, CreateReleaseRequest, DraftFile, DraftRelease,
-    GeneratedChangelog, ModInfo, ReleaseState, UpdateDraftRequest, UpdateFileRequest,
+    GeneratedChangelog, ModInfo, UpdateDraftRequest, UpdateFileRequest,
     VersionSuggestions,
 };

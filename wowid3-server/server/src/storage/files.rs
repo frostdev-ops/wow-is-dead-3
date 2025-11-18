@@ -26,6 +26,7 @@ pub async fn calculate_checksum(file_path: &Path) -> Result<String> {
 }
 
 /// Get file size in bytes
+#[allow(dead_code)]
 pub async fn get_file_size(file_path: &Path) -> Result<u64> {
     let metadata = fs::metadata(file_path)
         .await
@@ -35,6 +36,7 @@ pub async fn get_file_size(file_path: &Path) -> Result<u64> {
 }
 
 /// Copy a file from source to destination
+#[allow(dead_code)]
 pub async fn copy_file(from: &Path, to: &Path) -> Result<()> {
     // Ensure parent directory exists
     if let Some(parent) = to.parent() {
@@ -49,6 +51,7 @@ pub async fn copy_file(from: &Path, to: &Path) -> Result<()> {
 }
 
 /// Delete a directory and all its contents
+#[allow(dead_code)]
 pub async fn delete_directory(path: &Path) -> Result<()> {
     if path.exists() {
         fs::remove_dir_all(path)
@@ -59,6 +62,7 @@ pub async fn delete_directory(path: &Path) -> Result<()> {
 }
 
 /// Walk a directory recursively and return all file paths relative to base
+#[allow(dead_code)]
 pub async fn walk_directory(base_path: &Path) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
 
@@ -88,6 +92,7 @@ pub async fn walk_directory(base_path: &Path) -> Result<Vec<PathBuf>> {
 }
 
 /// Check if a path matches any of the blacklist patterns (glob)
+#[allow(dead_code)]
 pub fn matches_blacklist(path: &Path, blacklist_patterns: &[String]) -> bool {
     let path_str = path.to_string_lossy();
 

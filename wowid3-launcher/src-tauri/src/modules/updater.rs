@@ -14,7 +14,6 @@ use super::download_manager::{
 };
 
 const MAX_DOWNLOAD_RETRIES: u32 = 3;
-const RETRY_DELAY_MS: u64 = 1000;
 const MANIFEST_FETCH_TIMEOUT_SECS: u64 = 10;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,12 +100,14 @@ async fn verify_file_checksum(file_path: &PathBuf, expected_sha256: &str) -> Res
 }
 
 /// Download and verify a single file with retry logic
+#[allow(dead_code)]
 pub async fn download_file_with_retry(
     file: &ManifestFile,
     base_dir: &PathBuf,
     max_retries: u32,
 ) -> Result<()> {
     let mut retries = 0;
+    const RETRY_DELAY_MS: u64 = 1000;
 
     loop {
         match download_file(file, base_dir).await {
@@ -135,6 +136,7 @@ pub async fn download_file_with_retry(
 }
 
 /// Download and verify a single file
+#[allow(dead_code)]
 pub async fn download_file(file: &ManifestFile, base_dir: &PathBuf) -> Result<()> {
     let file_path = base_dir.join(&file.path);
 

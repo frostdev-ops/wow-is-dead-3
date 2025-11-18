@@ -6,6 +6,7 @@ use axum::{
 };
 use std::sync::Arc;
 
+#[allow(dead_code)]
 pub struct AdminState {
     pub admin_password: Arc<String>,
 }
@@ -35,4 +36,4 @@ pub async fn auth_middleware(
 }
 
 #[derive(Clone)]
-pub struct AdminToken(pub String);
+pub struct AdminToken(#[allow(dead_code)] pub String);

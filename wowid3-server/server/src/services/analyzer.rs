@@ -175,6 +175,7 @@ pub fn suggest_next_version(current: &str, change_type: ChangeType) -> String {
 }
 
 /// Type of version change
+#[allow(dead_code)]
 pub enum ChangeType {
     Major,
     Minor,
