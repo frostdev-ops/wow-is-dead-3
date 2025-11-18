@@ -54,21 +54,23 @@ pub async fn launch_game_with_metadata(
         &version_meta.libraries,
         &libraries_dir,
         &client_jar,
+        game_dir,
         &features,
     )?;
 
     // Prepare argument substitution map
+    // Note: Since working directory will be set to game_dir, use relative paths
     let mut arg_map = HashMap::new();
     arg_map.insert("auth_player_name".to_string(), config.username.clone());
     arg_map.insert("version_name".to_string(), version_meta.id.clone());
-    arg_map.insert("game_directory".to_string(), game_dir.display().to_string());
-    arg_map.insert("assets_root".to_string(), game_dir.join("assets").display().to_string());
+    arg_map.insert("game_directory".to_string(), ".".to_string()); // Current directory since cwd = game_dir
+    arg_map.insert("assets_root".to_string(), "assets".to_string()); // Relative to game_dir
     arg_map.insert("assets_index_name".to_string(), version_meta.asset_index.id.clone());
     arg_map.insert("auth_uuid".to_string(), config.uuid.clone());
     arg_map.insert("auth_access_token".to_string(), config.access_token.clone());
     arg_map.insert("user_type".to_string(), "msa".to_string());
     arg_map.insert("version_type".to_string(), version_meta.version_type.clone());
-    arg_map.insert("natives_directory".to_string(), game_dir.join("natives").display().to_string());
+    arg_map.insert("natives_directory".to_string(), "natives".to_string()); // Relative to game_dir
     arg_map.insert("launcher_name".to_string(), "wowid3-launcher".to_string());
     arg_map.insert("launcher_version".to_string(), "1.0.0".to_string());
     arg_map.insert("classpath".to_string(), classpath.clone());
@@ -87,8 +89,10 @@ pub async fn launch_game_with_metadata(
 
     // Add Fabric-specific JVM argument if this is a Fabric loader
     if version_meta.main_class.contains("fabric") {
-        jvm_args.push(format!("-Dfabric.gameJar={}", client_jar.display()));
-        eprintln!("[Fabric] Added gameJar argument: {}", client_jar.display());
+        // Normalize to forward slashes for cross-platform compatibility (Minecraft convention)
+        let game_jar_path = client_jar.to_string_lossy().replace("\\", "/");
+        jvm_args.push(format!("-Dfabric.gameJar={}", game_jar_path));
+        eprintln!("[Fabric] Added gameJar argument: {}", game_jar_path);
     }
 
     // Add JVM arguments from version metadata
