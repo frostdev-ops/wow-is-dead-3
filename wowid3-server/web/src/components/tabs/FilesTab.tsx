@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useDrafts } from '../../hooks/useDrafts';
-import { Upload, Trash2, FileText, FileArchive, File, Folder } from 'lucide-react';
+import { Upload, Trash2, FileText, FileArchive, File, Folder, Loader2 } from 'lucide-react';
+import axios from 'axios';
 import type { DraftRelease } from '../../types/releases';
 
 interface FilesTabProps {
@@ -8,32 +9,102 @@ interface FilesTabProps {
   onUpdate: (draft: DraftRelease) => void;
 }
 
+// Get auth token from localStorage
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('auth_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
 export default function FilesTab({ draft, onUpdate }: FilesTabProps) {
   const { addFiles, removeFile, loading } = useDrafts();
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [extracting, setExtracting] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
+  const uploadFiles = async (files: FileList) => {
+    console.log('uploadFiles called with', files.length, 'files');
     setUploading(true);
+    setUploadProgress(0);
     try {
-      // Create form data for file upload
+      // Step 1: Upload files to get upload_id
+      console.log('Step 1: Uploading to /api/admin/upload');
       const formData = new FormData();
       for (let i = 0; i < files.length; i++) {
         formData.append('files', files[i]);
       }
 
-      const updatedDraft = await addFiles(draft.id, {
-        files: Array.from(files).map((f) => ({ path: f.name })),
+      const uploadResponse = await axios.post('/api/admin/upload', formData, {
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'multipart/form-data',
+        },
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setUploadProgress(percentCompleted);
+          }
+        },
       });
 
+      console.log('Upload response:', uploadResponse.data);
+
+      // Check if any files were extracted from zip
+      const hasExtractedFiles = uploadResponse.data.some((file: any) =>
+        file.message && file.message.includes('Extracted from')
+      );
+
+      if (hasExtractedFiles) {
+        setExtracting(true);
+      }
+
+      const upload_id = uploadResponse.data[0].upload_id;
+      console.log('Step 2: Adding files to draft with upload_id:', upload_id);
+
+      // Step 2: Add files to draft using upload_id
+      const updatedDraft = await addFiles(draft.id, { upload_id });
+      console.log('addFiles result:', updatedDraft);
       if (updatedDraft) {
         onUpdate(updatedDraft);
       }
+    } catch (error: any) {
+      console.error('Upload failed:', error);
+      console.error('Error response:', error.response);
+      alert(`Upload failed: ${error.response?.data?.error || error.message}`);
     } finally {
       setUploading(false);
-      e.target.value = '';
+      setUploadProgress(0);
+      setExtracting(false);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    await uploadFiles(files);
+    e.target.value = '';
+  };
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true);
+    } else if (e.type === 'dragleave') {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    if (uploading || loading) return;
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      await uploadFiles(files);
     }
   };
 
@@ -81,11 +152,22 @@ export default function FilesTab({ draft, onUpdate }: FilesTabProps) {
       {/* Upload section */}
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <h2 className="text-xl font-bold mb-4">Upload Files</h2>
-        <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+        <div
+          className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+            dragActive
+              ? 'border-blue-500 bg-blue-50'
+              : 'border-gray-300'
+          }`}
+          onDragEnter={handleDrag}
+          onDragLeave={handleDrag}
+          onDragOver={handleDrag}
+          onDrop={handleDrop}
+        >
           <input
             type="file"
             id="file-upload"
             multiple
+            accept=".zip,.jar,.json,.toml,.txt,*"
             onChange={handleFileUpload}
             disabled={uploading || loading}
             className="hidden"
@@ -94,14 +176,34 @@ export default function FilesTab({ draft, onUpdate }: FilesTabProps) {
             htmlFor="file-upload"
             className={`cursor-pointer ${uploading || loading ? 'opacity-50' : ''}`}
           >
-            <Upload className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+            {uploading ? (
+              <Loader2 className="w-12 h-12 mx-auto mb-4 text-blue-500 animate-spin" />
+            ) : (
+              <Upload className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+            )}
             <p className="text-lg font-medium text-gray-700 mb-2">
-              {uploading ? 'Uploading...' : 'Click to upload files'}
+              {extracting
+                ? 'Extracting zip files...'
+                : uploading
+                ? `Uploading... ${uploadProgress}%`
+                : 'Click to upload files or drag a zip'}
             </p>
             <p className="text-sm text-gray-500">
-              Upload mods, configs, or any files for your modpack
+              Upload .zip archives (auto-extracted), mods, configs, or any modpack files
             </p>
           </label>
+
+          {/* Progress bar */}
+          {uploading && uploadProgress > 0 && (
+            <div className="mt-4 w-full max-w-md mx-auto">
+              <div className="bg-gray-200 rounded-full h-3 overflow-hidden">
+                <div
+                  className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full transition-all duration-300 ease-out"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

@@ -16,6 +16,7 @@ use api::drafts::{
 };
 use api::public::{get_latest_manifest, get_manifest_by_version, serve_file, serve_java_runtime, PublicState};
 use axum::{
+    extract::DefaultBodyLimit,
     middleware as axum_middleware,
     response::Json,
     routing::{delete, get, post},
@@ -108,6 +109,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(public_routes)
         .merge(admin_login)
         .merge(admin_routes)
+        .layer(DefaultBodyLimit::max(20 * 1024 * 1024 * 1024)) // 20GB limit
         .layer(cors);
 
     // Start server

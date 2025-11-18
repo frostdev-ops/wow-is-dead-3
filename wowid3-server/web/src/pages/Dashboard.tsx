@@ -14,7 +14,7 @@ interface UploadSession {
 export default function Dashboard() {
   const { clearToken } = useAuthStore();
   const { loading, error, uploadFiles, createRelease, listReleases, deleteRelease, getBlacklist, updateBlacklist } = useAdmin();
-  const { drafts, listDrafts, createDraft, getDraft, updateDraft: updateDraftAPI, deleteDraft: deleteDraftAPI, loading: draftLoading } = useDrafts();
+  const { drafts, listDrafts, createDraft, getDraft, updateDraft: updateDraftAPI, deleteDraft: deleteDraftAPI, publishDraft, loading: draftLoading } = useDrafts();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'upload' | 'releases' | 'release-wizard' | 'edit-draft' | 'blacklist'>('dashboard');
   const [draftFilter, setDraftFilter] = useState<'all' | 'drafts'>('all');
   const [editingDraft, setEditingDraft] = useState<any>(null);
@@ -188,7 +188,8 @@ export default function Dashboard() {
     });
 
     try {
-      const response = await fetch(`/api/admin/drafts/${editingDraft.id}/files`, {
+      // Step 1: Upload files to get upload_id
+      const uploadResponse = await fetch('/api/admin/upload', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
@@ -196,11 +197,32 @@ export default function Dashboard() {
         body: formData
       });
 
-      if (!response.ok) {
-        throw new Error(`Upload failed: ${response.statusText}`);
+      if (!uploadResponse.ok) {
+        throw new Error(`Upload failed: ${uploadResponse.statusText}`);
       }
 
-      const updatedDraft = await response.json();
+      const uploadData = await uploadResponse.json();
+      if (!uploadData || uploadData.length === 0) {
+        throw new Error('No upload_id received from server');
+      }
+
+      const upload_id = uploadData[0].upload_id;
+
+      // Step 2: Add files to draft using upload_id
+      const addFilesResponse = await fetch(`/api/admin/drafts/${editingDraft.id}/files`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ upload_id })
+      });
+
+      if (!addFilesResponse.ok) {
+        throw new Error(`Failed to add files to draft: ${addFilesResponse.statusText}`);
+      }
+
+      const updatedDraft = await addFilesResponse.json();
       setEditingDraft(updatedDraft);
       setUploadSuccess(`${files.length} file(s) uploaded successfully`);
     } catch (err: any) {
@@ -228,6 +250,33 @@ export default function Dashboard() {
       setUploadSuccess('File removed successfully');
     } catch (err: any) {
       setUploadError(err.message || 'Failed to remove file');
+    }
+  };
+
+  const handlePublishDraft = async () => {
+    if (!editingDraft) return;
+
+    // Validate required fields
+    if (!editingDraft.version || !editingDraft.minecraft_version || !editingDraft.fabric_loader) {
+      setUploadError('Please fill in all required fields: Version, Minecraft Version, and Fabric Loader');
+      return;
+    }
+
+    if (!editingDraft.files || editingDraft.files.length === 0) {
+      setUploadError('Please upload at least one file before publishing');
+      return;
+    }
+
+    if (!confirm(`Publish release ${editingDraft.version}? This will make it the latest version available to players.`)) {
+      return;
+    }
+
+    const success = await publishDraft(editingDraft.id);
+    if (success) {
+      setUploadSuccess(`Release ${editingDraft.version} published successfully!`);
+      setEditingDraft(null);
+      setActiveTab('release-wizard');
+      listDrafts();
     }
   };
 
@@ -624,40 +673,56 @@ export default function Dashboard() {
 
                   {/* Upload Area */}
                   <div style={{
-                    border: '2px dashed #007bff',
+                    border: loading ? '2px solid #007bff' : '2px dashed #007bff',
                     borderRadius: '4px',
                     padding: '20px',
                     textAlign: 'center',
                     marginBottom: '20px',
-                    backgroundColor: '#0f0f1e',
-                    cursor: 'pointer',
-                    color: '#a0a0a0'
+                    backgroundColor: loading ? '#1a2332' : '#0f0f1e',
+                    cursor: loading ? 'wait' : 'pointer',
+                    color: '#a0a0a0',
+                    opacity: loading ? 0.7 : 1
                   }}
                   onDrop={(e) => {
                     e.preventDefault();
+                    if (loading) return;
                     const files = e.dataTransfer.files;
                     handleFileUpload(files);
                   }}
                   onDragOver={(e) => e.preventDefault()}
-                  onClick={() => document.getElementById('file-upload-input')?.click()}
+                  onClick={() => !loading && document.getElementById('file-upload-input')?.click()}
                   >
                     <input
                       id="file-upload-input"
                       type="file"
                       multiple
+                      accept=".zip,.jar,.json,.toml,.txt,*"
                       style={{ display: 'none' }}
                       onChange={(e) => {
-                        if (e.target.files) {
+                        if (e.target.files && !loading) {
                           handleFileUpload(e.target.files);
                         }
                       }}
                     />
-                    <p style={{ margin: '0 0 8px 0', color: '#007bff', fontWeight: 500 }}>
-                      Drag and drop files here or click to browse
-                    </p>
-                    <p style={{ margin: 0, fontSize: '12px', color: '#666' }}>
-                      Upload mods, configs, or any files for your modpack
-                    </p>
+                    {loading ? (
+                      <>
+                        <p style={{ margin: '0 0 8px 0', color: '#007bff', fontWeight: 600 }}>
+                          ⏳ Uploading files...
+                        </p>
+                        <p style={{ margin: 0, fontSize: '12px', color: '#666' }}>
+                          Please wait, this may take a while for large files
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p style={{ margin: '0 0 8px 0', color: '#007bff', fontWeight: 500 }}>
+                          📁 Drag and drop .zip files here or click to browse
+                        </p>
+                        <p style={{ margin: 0, fontSize: '12px', color: '#666' }}>
+                          Zip files are auto-extracted. Folders must be zipped first!
+                        </p>
+                      </>
+                    )}
                   </div>
 
                   {/* File List */}
@@ -716,19 +781,48 @@ export default function Dashboard() {
                     <p style={{ color: '#a0a0a0', marginBottom: '8px' }}><strong style={{ color: '#fff' }}>Version:</strong> {editingDraft.version || '(not set)'}</p>
                     <p style={{ color: '#a0a0a0', marginBottom: '8px' }}><strong style={{ color: '#fff' }}>Minecraft:</strong> {editingDraft.minecraft_version || '(not set)'}</p>
                     <p style={{ color: '#a0a0a0', marginBottom: '8px' }}><strong style={{ color: '#fff' }}>Fabric Loader:</strong> {editingDraft.fabric_loader || '(not set)'}</p>
-                    <p style={{ color: '#a0a0a0' }}><strong style={{ color: '#fff' }}>Files:</strong> {editingDraft.files?.length || 0}</p>
+                    <p style={{ color: '#a0a0a0', marginBottom: '8px' }}><strong style={{ color: '#fff' }}>Files:</strong> {editingDraft.files?.length || 0}</p>
+                    <p style={{ color: '#a0a0a0' }}><strong style={{ color: '#fff' }}>Changelog:</strong> {editingDraft.changelog ? `${editingDraft.changelog.substring(0, 50)}...` : '(not set)'}</p>
                   </div>
-                  <button
-                    className="btn-primary"
-                    style={{ marginTop: '16px' }}
-                    onClick={() => {
-                      setActiveTab('release-wizard');
-                      setEditingDraft(null);
-                      listDrafts();
-                    }}
-                  >
-                    Done Editing
-                  </button>
+
+                  {/* Validation warnings */}
+                  {(!editingDraft.version || !editingDraft.minecraft_version || !editingDraft.fabric_loader || !editingDraft.files?.length) && (
+                    <div className="alert alert-error" style={{ marginTop: '16px' }}>
+                      <strong>Missing required fields:</strong>
+                      <ul style={{ marginTop: '8px', marginBottom: 0, paddingLeft: '20px' }}>
+                        {!editingDraft.version && <li>Version number</li>}
+                        {!editingDraft.minecraft_version && <li>Minecraft version</li>}
+                        {!editingDraft.fabric_loader && <li>Fabric loader version</li>}
+                        {!editingDraft.files?.length && <li>At least one file</li>}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: '16px', display: 'flex', gap: '12px' }}>
+                    <button
+                      className="btn-primary"
+                      style={{
+                        flex: 1,
+                        background: 'linear-gradient(135deg, #10b981, #059669)',
+                        fontSize: '16px',
+                        padding: '12px 24px'
+                      }}
+                      onClick={handlePublishDraft}
+                      disabled={loading || draftLoading || !editingDraft.version || !editingDraft.minecraft_version || !editingDraft.fabric_loader || !editingDraft.files?.length}
+                    >
+                      {loading || draftLoading ? '🚀 Publishing...' : '🚀 Publish Release'}
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      onClick={() => {
+                        setActiveTab('release-wizard');
+                        setEditingDraft(null);
+                        listDrafts();
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               )}
 

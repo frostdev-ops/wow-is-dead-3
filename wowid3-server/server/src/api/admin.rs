@@ -16,14 +16,74 @@ use axum::{
 use chrono::Utc;
 use serde_json::json;
 use sha2::Digest;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::fs;
+use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
+use zip::ZipArchive;
 
 #[derive(Clone)]
 pub struct AdminState {
     pub config: Arc<Config>,
     pub admin_password: Arc<String>,
+}
+
+/// Extract a zip file to the specified output directory
+/// Returns a list of (relative_path, size) tuples for all extracted files
+async fn extract_zip(zip_path: &PathBuf, output_dir: &PathBuf) -> Result<Vec<(String, u64)>, AppError> {
+    // Read the zip file
+    let zip_file = std::fs::File::open(zip_path)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to open zip file: {}", e)))?;
+
+    let mut archive = ZipArchive::new(zip_file)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read zip archive: {}", e)))?;
+
+    let mut extracted_files = Vec::new();
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read zip entry: {}", e)))?;
+
+        // Get the file path and sanitize it (prevent path traversal)
+        let file_path = file.enclosed_name()
+            .ok_or_else(|| AppError::BadRequest("Invalid file path in zip".to_string()))?
+            .to_path_buf();
+
+        let output_path = output_dir.join(&file_path);
+        let is_dir = file.is_dir();
+
+        if is_dir {
+            // Create directory
+            std::fs::create_dir_all(&output_path)
+                .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create directory: {}", e)))?;
+        } else {
+            // Create parent directories if needed
+            if let Some(parent) = output_path.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create parent directory: {}", e)))?;
+            }
+
+            // Extract file
+            let mut output_file = std::fs::File::create(&output_path)
+                .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create output file: {}", e)))?;
+
+            std::io::copy(&mut file, &mut output_file)
+                .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to extract file: {}", e)))?;
+
+            // Get file size and relative path
+            let file_size = output_path.metadata()
+                .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to get file metadata: {}", e)))?
+                .len();
+
+            let relative_path = file_path.to_string_lossy().to_string();
+            extracted_files.push((relative_path, file_size));
+
+            tracing::info!("Extracted: {} ({} bytes)", file_path.display(), file_size);
+        }
+    }
+
+    Ok(extracted_files)
 }
 
 /// POST /api/admin/login - Authenticate and get token
@@ -45,7 +105,7 @@ pub async fn login(
     }
 }
 
-/// POST /api/admin/upload - Upload modpack files
+/// POST /api/admin/upload - Upload modpack files (with automatic zip extraction)
 pub async fn upload_files(
     State(state): State<AdminState>,
     Extension(_token): Extension<AdminToken>,
@@ -69,40 +129,93 @@ pub async fn upload_files(
             .ok_or_else(|| AppError::BadRequest("Missing file name".to_string()))?
             .to_string();
 
-        // Create nested directory structure if the file is in subdirectories
-        let file_path = upload_dir.join(&file_name);
-        if let Some(parent) = file_path.parent() {
-            fs::create_dir_all(parent)
+        let is_zip = file_name.to_lowercase().ends_with(".zip");
+
+        // Stream file to disk
+        let temp_path = if is_zip {
+            upload_dir.join(format!("temp_{}", file_name))
+        } else {
+            let file_path = upload_dir.join(&file_name);
+            if let Some(parent) = file_path.parent() {
+                fs::create_dir_all(parent)
+                    .await
+                    .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create subdirectory: {}", e)))?;
+            }
+            file_path
+        };
+
+        // Stream to disk and calculate hash simultaneously
+        let mut file = fs::File::create(&temp_path)
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create file: {}", e)))?;
+
+        let mut hasher = sha2::Sha256::new();
+        let mut total_bytes = 0u64;
+
+        // Stream data in chunks
+        let mut stream = field;
+        while let Some(chunk) = stream
+            .chunk()
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read chunk: {}", e)))?
+        {
+            hasher.update(&chunk);
+            total_bytes += chunk.len() as u64;
+            file.write_all(&chunk)
                 .await
-                .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create subdirectory: {}", e)))?;
+                .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to write chunk: {}", e)))?;
         }
 
-        // Read file data
-        let data = field
-            .bytes()
+        file.flush()
             .await
-            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read file data: {}", e)))?;
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to flush file: {}", e)))?;
+        drop(file);
 
-        let file_size = data.len() as u64;
-
-        // Calculate SHA256
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(&data);
         let sha256 = format!("{:x}", hasher.finalize());
 
-        // Write file
-        fs::write(&file_path, &data)
-            .await
-            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to write file: {}", e)))?;
+        tracing::info!("Uploaded: {} ({} bytes, sha256: {})", file_name, total_bytes, &sha256[..12]);
 
-        responses.push(UploadResponse {
-            upload_id: upload_id.clone(),
-            file_name,
-            file_size,
-            sha256,
-            message: "File uploaded successfully".to_string(),
-        });
+        if is_zip {
+            // Extract zip file
+            tracing::info!("Extracting zip file: {}", file_name);
+            let extracted_files = extract_zip(&temp_path, &upload_dir).await?;
+
+            // Delete temp zip file
+            fs::remove_file(&temp_path)
+                .await
+                .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to remove temp zip: {}", e)))?;
+
+            // Calculate hashes for extracted files and add to responses
+            for (relative_path, file_size) in extracted_files {
+                let file_path = upload_dir.join(&relative_path);
+                let data = fs::read(&file_path)
+                    .await
+                    .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read extracted file: {}", e)))?;
+
+                let mut file_hasher = sha2::Sha256::new();
+                file_hasher.update(&data);
+                let file_sha256 = format!("{:x}", file_hasher.finalize());
+
+                responses.push(UploadResponse {
+                    upload_id: upload_id.clone(),
+                    file_name: relative_path,
+                    file_size,
+                    sha256: file_sha256,
+                    message: format!("Extracted from {}", file_name),
+                });
+            }
+
+            tracing::info!("Extracted {} files from {}", responses.len(), file_name);
+        } else {
+            // Regular file (not a zip)
+            responses.push(UploadResponse {
+                upload_id: upload_id.clone(),
+                file_name,
+                file_size: total_bytes,
+                sha256,
+                message: "File uploaded successfully".to_string(),
+            });
+        }
     }
 
     Ok(Json(responses))

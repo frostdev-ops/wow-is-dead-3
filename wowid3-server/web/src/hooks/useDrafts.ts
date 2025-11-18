@@ -12,7 +12,31 @@ import type {
 
 const API_BASE = '/api/admin';
 
-// Get auth token from localStorage
+// Create axios instance with default config
+const api = axios.create({
+  baseURL: API_BASE,
+});
+
+// Add auth token and Content-Type to all requests
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('auth_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  // Force Content-Type for JSON requests
+  if (!config.headers['Content-Type']) {
+    config.headers['Content-Type'] = 'application/json';
+  }
+  console.log('Request config:', {
+    url: config.url,
+    method: config.method,
+    headers: config.headers,
+    data: config.data
+  });
+  return config;
+});
+
+// Get auth token from localStorage (legacy, keeping for compatibility)
 const getAuthHeaders = () => {
   const token = localStorage.getItem('auth_token');
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -131,17 +155,15 @@ export function useDrafts() {
     setLoading(true);
     setError(null);
     try {
-      const response = await axios.post<DraftRelease>(
-        `${API_BASE}/drafts/${id}/files`,
-        request,
-        {
-          headers: getAuthHeaders(),
-        }
+      const response = await api.post<DraftRelease>(
+        `/drafts/${id}/files`,
+        request
       );
       setCurrentDraft(response.data);
       return response.data;
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to add files');
+      console.error('Add files error:', err.response);
+      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to add files');
       return null;
     } finally {
       setLoading(false);
