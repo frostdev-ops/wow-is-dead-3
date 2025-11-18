@@ -115,7 +115,7 @@ export function MinecraftSetup() {
                 <motion.div
                   className="h-full"
                   style={{
-                    backgroundColor: '#FFD700',
+                    background: 'repeating-linear-gradient(45deg, #ffffff, #ffffff 10px, #ff0000 10px, #ff0000 20px)',
                   }}
                   initial={{ width: 0 }}
                   animate={{ width: `${progressPercentage}%` }}
