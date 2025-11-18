@@ -294,6 +294,7 @@ These are automatically set by:
 **Files**:
 - `GET /files/:version/*path` - Download modpack file for specific version
 - `GET /api/java/:filename` - Download Java runtime binaries
+- `GET /api/resources/:filename` - Download resource pack files
 
 **Health**:
 - `GET /health` - Server health check
@@ -325,6 +326,10 @@ These are automatically set by:
 - `POST /api/admin/drafts/:id/files` - Add files to draft
 - `PUT /api/admin/drafts/:id/files/*path` - Update file in draft
 - `DELETE /api/admin/drafts/:id/files/*path` - Remove file from draft
+
+**Resource Pack Management**:
+- `POST /api/admin/resources` - Upload resource pack files
+- `DELETE /api/admin/resources/:filename` - Delete resource pack
 
 **File Browser** (in-draft editing):
 - `GET /api/admin/drafts/:id/browse` - Browse directory

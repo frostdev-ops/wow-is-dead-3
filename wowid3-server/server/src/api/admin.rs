@@ -711,12 +711,131 @@ pub async fn clear_jar_cache(
     })))
 }
 
+/// POST /api/admin/resources - Upload resource pack files
+pub async fn upload_resource(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+    mut multipart: Multipart,
+) -> Result<Json<Vec<UploadResponse>>, AppError> {
+    let start = std::time::Instant::now();
+    let resources_dir = state.config.resources_path();
+
+    // Ensure resources directory exists
+    fs::create_dir_all(&resources_dir)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create resources directory: {}", e)))?;
+
+    let mut responses = Vec::new();
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Multipart error: {}", e)))?
+    {
+        let file_name = field
+            .file_name()
+            .ok_or_else(|| AppError::BadRequest("Missing file name".to_string()))?
+            .to_string();
+
+        // Prevent directory traversal
+        if file_name.contains('/') || file_name.contains('\\') || file_name.contains("..") {
+            return Err(AppError::BadRequest("Invalid file name".to_string()));
+        }
+
+        let file_path = resources_dir.join(&file_name);
+
+        // Stream to disk and calculate hash simultaneously
+        let mut file = fs::File::create(&file_path)
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create file: {}", e)))?;
+
+        let mut hasher = sha2::Sha256::new();
+        let mut total_bytes = 0u64;
+
+        // Stream data in chunks
+        let mut stream = field;
+        while let Some(chunk) = stream
+            .chunk()
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read chunk: {}", e)))?
+        {
+            hasher.update(&chunk);
+            total_bytes += chunk.len() as u64;
+            file.write_all(&chunk)
+                .await
+                .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to write chunk: {}", e)))?;
+        }
+
+        file.flush()
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to flush file: {}", e)))?;
+        drop(file);
+
+        let sha256 = format!("{:x}", hasher.finalize());
+
+        tracing::info!("Uploaded resource: {} ({} bytes, sha256: {})", file_name, total_bytes, &sha256[..12]);
+
+        responses.push(UploadResponse {
+            upload_id: "resources".to_string(),
+            file_name,
+            file_size: total_bytes,
+            sha256,
+            message: "Resource uploaded successfully".to_string(),
+        });
+    }
+
+    let duration = start.elapsed();
+    tracing::info!("upload_resource completed in {:?} ({} files)", duration, responses.len());
+
+    Ok(Json(responses))
+}
+
+/// DELETE /api/admin/resources/:filename - Delete a resource pack
+pub async fn delete_resource(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+    Path(filename): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    // Prevent directory traversal
+    if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
+        return Err(AppError::BadRequest("Invalid file name".to_string()));
+    }
+
+    let resources_dir = state.config.resources_path();
+    let file_path = resources_dir.join(&filename);
+
+    // Security: Ensure the file is within the resources directory
+    let canonical_resources = fs::canonicalize(&resources_dir).await.map_err(|_| {
+        AppError::Internal(anyhow::anyhow!("Resources directory not found"))
+    })?;
+
+    let canonical_file = fs::canonicalize(&file_path).await.map_err(|_| {
+        AppError::NotFound(format!("Resource {} not found", filename))
+    })?;
+
+    if !canonical_file.starts_with(&canonical_resources) {
+        return Err(AppError::Forbidden("Path traversal attempt detected".to_string()));
+    }
+
+    // Delete the file
+    fs::remove_file(&canonical_file)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to delete resource: {}", e)))?;
+
+    tracing::info!("Deleted resource: {}", filename);
+
+    Ok(Json(json!({
+        "message": format!("Resource {} deleted successfully", filename)
+    })))
+}
+
 // Error handling
 pub enum AppError {
     Internal(anyhow::Error),
     NotFound(String),
     BadRequest(String),
     Unauthorized(String),
+    Forbidden(String),
 }
 
 impl From<anyhow::Error> for AppError {
@@ -735,6 +854,7 @@ impl IntoResponse for AppError {
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
             AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
+            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
         };
 
         (status, Json(AdminError { error: message })).into_response()

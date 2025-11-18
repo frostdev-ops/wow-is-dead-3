@@ -68,6 +68,10 @@ impl Config {
         self.storage_path.join("uploads")
     }
 
+    pub fn resources_path(&self) -> PathBuf {
+        self.storage_path.join("resources")
+    }
+
     pub fn blacklist_path(&self) -> PathBuf {
         self.storage_path.join("config-blacklist.txt")
     }

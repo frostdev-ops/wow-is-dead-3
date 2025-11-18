@@ -1,7 +1,8 @@
 import React, { useState, useCallback, useMemo, memo } from 'react';
 import { useDrafts } from '../../hooks/useDrafts';
-import { Upload, Trash2, FileText, FileArchive, File, Folder, Loader2 } from 'lucide-react';
+import { Upload, Trash2, FileText, FileArchive, File, Folder, Loader2, Folder as FolderIcon } from 'lucide-react';
 import axios from 'axios';
+import FileBrowser from '../FileBrowser';
 import type { DraftRelease } from '../../types/releases';
 
 // Performance: Memoized FileItem component to prevent re-renders
@@ -65,6 +66,7 @@ function FilesTab({ draft, onUpdate }: FilesTabProps) {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [extracting, setExtracting] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const [showFileBrowser, setShowFileBrowser] = useState(false);
 
   // Performance: Memoize icon getter to prevent recreation
   const getFileIcon = useCallback((path: string) => {
@@ -259,44 +261,59 @@ function FilesTab({ draft, onUpdate }: FilesTabProps) {
 
       {/* File list */}
       <div className="bg-white rounded-lg shadow">
-        <div className="px-6 py-4 border-b">
+        <div className="px-6 py-4 border-b flex items-center justify-between">
           <h2 className="text-xl font-bold">
             Files ({draft.files.length})
           </h2>
+          <button
+            onClick={() => setShowFileBrowser(!showFileBrowser)}
+            className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+          >
+            {showFileBrowser ? 'Simple View' : 'File Browser'}
+          </button>
         </div>
 
-        {draft.files.length === 0 ? (
-          <div className="p-12 text-center text-gray-500">
-            <FileText className="w-16 h-16 mx-auto mb-4 opacity-50" />
-            <p>No files uploaded yet</p>
-            <p className="text-sm mt-2">Upload files to get started</p>
-          </div>
+        {showFileBrowser ? (
+          <FileBrowser
+            draftId={draft.id}
+            onFileChange={() => onUpdate(draft)}
+          />
         ) : (
-          <div className="divide-y">
-            {Object.entries(filesByDir).map(([dir, files]) => (
-              <div key={dir}>
-                {/* Directory header */}
-                {dir !== 'root' && (
-                  <div className="px-6 py-2 bg-gray-50 font-medium text-gray-700 flex items-center gap-2">
-                    <Folder className="w-4 h-4" />
-                    {dir}/
-                  </div>
-                )}
+          <>
+            {draft.files.length === 0 ? (
+              <div className="p-12 text-center text-gray-500">
+                <FileText className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                <p>No files uploaded yet</p>
+                <p className="text-sm mt-2">Upload files to get started</p>
+              </div>
+            ) : (
+              <div className="divide-y">
+                {Object.entries(filesByDir).map(([dir, files]) => (
+                  <div key={dir}>
+                    {/* Directory header */}
+                    {dir !== 'root' && (
+                      <div className="px-6 py-2 bg-gray-50 font-medium text-gray-700 flex items-center gap-2">
+                        <Folder className="w-4 h-4" />
+                        {dir}/
+                      </div>
+                    )}
 
-                {/* Files in directory - Performance: Use memoized FileItem */}
-                {files.map((file) => (
-                  <FileItem
-                    key={file.path}
-                    file={file}
-                    getFileIcon={getFileIcon}
-                    formatSize={formatSize}
-                    onRemove={handleRemoveFile}
-                    loading={loading}
-                  />
+                    {/* Files in directory - Performance: Use memoized FileItem */}
+                    {files.map((file) => (
+                      <FileItem
+                        key={file.path}
+                        file={file}
+                        getFileIcon={getFileIcon}
+                        formatSize={formatSize}
+                        onRemove={handleRemoveFile}
+                        loading={loading}
+                      />
+                    ))}
+                  </div>
                 ))}
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
       </div>
     </div>

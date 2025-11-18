@@ -167,6 +167,56 @@ pub async fn serve_file(
         .unwrap())
 }
 
+/// GET /api/resources/:filename
+pub async fn serve_resource(
+    State(state): State<PublicState>,
+    Path(filename): Path<String>,
+) -> Result<Response, AppError> {
+    // Security: Prevent directory traversal by ensuring filename is just a filename
+    if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
+        return Err(AppError::Forbidden("Invalid filename".to_string()));
+    }
+
+    // Construct full file path
+    let resources_path = state.config.resources_path();
+    let full_path = resources_path.join(&filename);
+
+    // Security: Ensure the file is within the resources directory (prevent path traversal)
+    let canonical_resources = fs::canonicalize(&resources_path).await.map_err(|_| {
+        AppError::Internal(anyhow::anyhow!("Resources directory not found"))
+    })?;
+
+    let canonical_file = fs::canonicalize(&full_path).await.map_err(|_| {
+        AppError::NotFound(format!("Resource {} not found", filename))
+    })?;
+
+    if !canonical_file.starts_with(&canonical_resources) {
+        return Err(AppError::Forbidden("Path traversal attempt detected".to_string()));
+    }
+
+    // Open and stream the file
+    let file = fs::File::open(&canonical_file).await.map_err(|_| {
+        AppError::NotFound(format!("Could not open resource: {}", filename))
+    })?;
+
+    // Guess content type from file extension
+    let content_type = mime_guess::from_path(&canonical_file)
+        .first_or_octet_stream()
+        .to_string();
+
+    // Create streaming body
+    let stream = ReaderStream::new(file);
+    let body = Body::from_stream(stream);
+
+    // Build response with proper headers
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", filename))
+        .body(body)
+        .unwrap())
+}
+
 // Error handling
 pub enum AppError {
     Internal(anyhow::Error),
