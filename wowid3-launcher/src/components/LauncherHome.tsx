@@ -10,27 +10,34 @@ import { ChangelogViewer } from './ChangelogViewer';
 import { PlayerList } from './PlayerList';
 import { useToast } from './ui/ToastContainer';
 import DeviceCodeModal from './DeviceCodeModal';
+import LogViewerModal from './LogViewerModal';
 import { SkinViewerComponent } from './SkinViewer';
 import { CatModel } from './CatModel';
 import { MinecraftSetup } from './MinecraftSetup';
 import type { DeviceCodeInfo } from '../hooks/useTauriCommands';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { invoke } from '@tauri-apps/api/core';
 
 export default function LauncherHome() {
   const { user, isAuthenticated, login, finishDeviceCodeAuth, isLoading: authLoading, error: authError } = useAuth();
   const { installedVersion, latestManifest, updateAvailable, isDownloading, downloadProgress, checkUpdates, install, error: modpackError } = useModpack();
   const { status } = useServer();
-  const { ramAllocation, gameDirectory } = useSettingsStore();
+  const { ramAllocation, gameDirectory, keepLauncherOpen, setMusicWasPaused } = useSettingsStore();
   const { addToast } = useToast();
   const { isConnected: discordConnected, isConnecting: discordConnecting, error: discordError, setPresence, clearPresence, connect: connectDiscord } = useDiscord();
   const { versionId, isInstalled: minecraftInstalled } = useMinecraftInstaller();
   const [isLaunching, setIsLaunching] = useState(false);
   const [showChangelog, setShowChangelog] = useState(false);
   const [deviceCodeInfo, setDeviceCodeInfo] = useState<DeviceCodeInfo | null>(null);
+  const [showLogViewer, setShowLogViewer] = useState(false);
   const hasCheckedForModpack = useRef(false);
   const modpackCheckRetries = useRef(0);
   const lastCheckAttempt = useRef<number>(0);
   const isInstallingRef = useRef(false);
+  const hasShownWelcomeToast = useRef(false);
+  const lastAuthError = useRef<string | null>(null);
+  const lastModpackError = useRef<string | null>(null);
 
   // Debug logging for auth state
   useEffect(() => {
@@ -44,26 +51,37 @@ export default function LauncherHome() {
     });
   }, [isAuthenticated, user, authLoading, isLaunching, isDownloading, updateAvailable]);
 
-  // Display auth errors as toasts
+  // Display auth errors as toasts (only when error changes)
   useEffect(() => {
-    if (authError) {
+    if (authError && authError !== lastAuthError.current) {
       addToast(authError, 'error');
+      lastAuthError.current = authError;
+    } else if (!authError) {
+      lastAuthError.current = null;
     }
-  }, [authError, addToast]);
+  }, [authError]);
 
-  // Display modpack errors as toasts
+  // Display modpack errors as toasts (only when error changes)
   useEffect(() => {
-    if (modpackError) {
+    if (modpackError && modpackError !== lastModpackError.current) {
       addToast(modpackError, 'error');
+      lastModpackError.current = modpackError;
+    } else if (!modpackError) {
+      lastModpackError.current = null;
     }
-  }, [modpackError, addToast]);
+  }, [modpackError]);
 
-  // Display success feedback when user logs in
+  // Display success feedback when user logs in (once per session)
   useEffect(() => {
-    if (isAuthenticated && user && !authLoading) {
+    if (isAuthenticated && user && !authLoading && !hasShownWelcomeToast.current) {
       addToast(`Welcome back, ${user.username}!`, 'success');
+      hasShownWelcomeToast.current = true;
     }
-  }, [isAuthenticated, user, authLoading, addToast]);
+    // Reset the flag when user logs out
+    if (!isAuthenticated) {
+      hasShownWelcomeToast.current = false;
+    }
+  }, [isAuthenticated, user, authLoading]);
 
   // Auto-check for updates and install modpack after authentication
   useEffect(() => {
@@ -168,6 +186,13 @@ export default function LauncherHome() {
       console.log('[Minecraft] Process exited with code:', event.payload.exit_code);
       setIsLaunching(false);
 
+      // Close log viewer (but keep it visible if keepLauncherOpen is true, for debugging)
+      if (!keepLauncherOpen) {
+        setShowLogViewer(false);
+      }
+
+      // Keep music muted after game closes (until launcher is closed and reopened)
+
       // Clear Discord presence when game exits
       if (discordConnected) {
         clearPresence().catch(console.error);
@@ -190,7 +215,7 @@ export default function LauncherHome() {
       unlistenExit.then(f => f());
       unlistenCrash.then(f => f());
     };
-  }, [addToast, discordConnected, clearPresence]);
+  }, [discordConnected, clearPresence]);
 
   const handlePlayClick = async () => {
     console.log('[UI] Play button clicked. isAuthenticated:', isAuthenticated, 'user:', user);
@@ -229,6 +254,32 @@ export default function LauncherHome() {
 
     try {
       setIsLaunching(true);
+
+      // Pause and mute background music
+      const audioElements = document.querySelectorAll('audio');
+      let wasPaused = false;
+      audioElements.forEach((audio) => {
+        if (!audio.paused) {
+          wasPaused = true;
+          audio.pause();
+        }
+        audio.muted = true;
+      });
+      setMusicWasPaused(wasPaused);
+
+      // Handle window and log viewer based on setting
+      if (!keepLauncherOpen) {
+        // Minimize the launcher window
+        try {
+          const appWindow = await getCurrentWindow();
+          await appWindow.minimize();
+        } catch (error) {
+          console.error('Failed to minimize window:', error);
+        }
+      } else {
+        // Show log viewer instead
+        setShowLogViewer(true);
+      }
 
       // Set Discord presence when launching
       if (discordConnected) {
@@ -551,6 +602,9 @@ export default function LauncherHome() {
           </div>
         </div>
       </div>
+
+      {/* Log Viewer Modal */}
+      <LogViewerModal isOpen={showLogViewer} onClose={() => setShowLogViewer(false)} />
     </div>
   );
 }

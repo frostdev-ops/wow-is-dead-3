@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { invoke } from '@tauri-apps/api/core';
 
 interface SettingsState {
   // Java settings
@@ -9,6 +10,9 @@ interface SettingsState {
   // Game settings
   gameDirectory: string;
   serverAddress: string;
+
+  // Internal state
+  _defaultGameDirectoryFetched: boolean;
 
   // Minecraft Installation settings
   minecraftVersion: string | null;      // Preferred Minecraft version
@@ -21,6 +25,8 @@ interface SettingsState {
   // Launcher settings
   theme: 'christmas' | 'dark' | 'light';
   manifestUrl: string;
+  keepLauncherOpen: boolean; // Show log viewer instead of minimizing
+  musicWasPaused: boolean; // Track if music was paused before game launch
 
   // Actions
   setJavaPath: (path: string | null) => void;
@@ -35,16 +41,20 @@ interface SettingsState {
   setIsMinecraftInstalled: (installed: boolean) => void;
   setTheme: (theme: 'christmas' | 'dark' | 'light') => void;
   setManifestUrl: (url: string) => void;
+  setKeepLauncherOpen: (keep: boolean) => void;
+  setMusicWasPaused: (paused: boolean) => void;
+  initializeGameDirectory: () => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       // Defaults
       javaPath: null, // Will use bundled Java
-      ramAllocation: 12512, // 4GB default
-      gameDirectory: './game',
+      ramAllocation: 12288, // 12GB default
+      gameDirectory: '', // Will be set by initializeGameDirectory()
       serverAddress: 'mc.frostdev.io:25565',
+      _defaultGameDirectoryFetched: false,
       minecraftVersion: '1.20.1', // Default from modpack requirements
       fabricEnabled: true, // Always enabled for WOWID3 modpack
       fabricVersion: '0.17.3', // Default from modpack requirements
@@ -53,6 +63,8 @@ export const useSettingsStore = create<SettingsState>()(
       isMinecraftInstalled: false, // Will be checked on startup
       theme: 'christmas',
       manifestUrl: 'https://wowid-launcher.frostdev.io/api/manifest/latest',
+      keepLauncherOpen: false, // Default to minimize launcher
+      musicWasPaused: false, // Track music state
 
       setJavaPath: (path) => set({ javaPath: path }),
       setRamAllocation: (ram) => set({ ramAllocation: ram }),
@@ -66,6 +78,38 @@ export const useSettingsStore = create<SettingsState>()(
       setIsMinecraftInstalled: (installed) => set({ isMinecraftInstalled: installed }),
       setTheme: (theme) => set({ theme }),
       setManifestUrl: (url) => set({ manifestUrl: url }),
+      setKeepLauncherOpen: (keep) => set({ keepLauncherOpen: keep }),
+      setMusicWasPaused: (paused) => set({ musicWasPaused: paused }),
+
+      // Initialize game directory with OS-specific default
+      initializeGameDirectory: async () => {
+        const state = get();
+
+        // Only fetch default if:
+        // 1. We haven't fetched it before, AND
+        // 2. gameDirectory is empty or still set to the old default
+        if (!state._defaultGameDirectoryFetched &&
+            (!state.gameDirectory || state.gameDirectory === './game')) {
+          try {
+            const defaultDir = await invoke<string>('cmd_get_default_game_directory');
+            console.log('[Settings] Using OS-specific game directory:', defaultDir);
+            set({
+              gameDirectory: defaultDir,
+              _defaultGameDirectoryFetched: true
+            });
+          } catch (error) {
+            console.error('[Settings] Failed to get default game directory:', error);
+            // Fallback to a safe default if Tauri command fails
+            const fallback = process.platform === 'win32'
+              ? 'C:\\Users\\Public\\wowid3-launcher\\game'
+              : `${process.env.HOME}/.local/share/wowid3-launcher/game`;
+            set({
+              gameDirectory: fallback,
+              _defaultGameDirectoryFetched: true
+            });
+          }
+        }
+      },
     }),
     {
       name: 'wowid3-settings', // localStorage key

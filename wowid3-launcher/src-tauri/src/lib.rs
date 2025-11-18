@@ -2,7 +2,7 @@ mod modules;
 
 use modules::auth::{authenticate_from_official_launcher, get_current_user, logout, refresh_token, get_device_code, complete_device_code_auth, MinecraftProfile, DeviceCodeInfo};
 use modules::discord::{DiscordClient, GamePresence};
-use modules::minecraft::{launch_game, launch_game_with_metadata, analyze_crash, LaunchConfig};
+use modules::minecraft::{launch_game, launch_game_with_metadata, analyze_crash, LaunchConfig, stop_game, kill_game, is_game_running};
 use modules::minecraft_version::{list_versions, get_latest_release, get_latest_snapshot, VersionInfo};
 use modules::fabric_installer::{get_fabric_loaders, get_latest_fabric_loader, FabricLoader};
 use modules::game_installer::{install_minecraft, is_version_installed, InstallConfig};
@@ -11,6 +11,8 @@ use modules::updater::{check_for_updates, get_installed_version, install_modpack
 use modules::audio::{get_cached_audio, download_and_cache_audio, clear_audio_cache};
 use modules::java_runtime::{get_cached_java, download_and_cache_java};
 use modules::logger::initialize_logger;
+use modules::log_reader::{read_latest_log, get_log_path, get_new_log_lines};
+use modules::paths::{get_default_game_directory, resolve_game_directory, validate_game_directory};
 use serde::Serialize;
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -513,6 +515,69 @@ async fn cmd_clear_audio_cache(app: AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+// Game Control Commands
+#[tauri::command]
+async fn cmd_stop_game() -> Result<(), String> {
+    stop_game()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cmd_kill_game() -> Result<(), String> {
+    kill_game()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cmd_is_game_running() -> bool {
+    is_game_running().await
+}
+
+// Log Reading Commands
+#[tauri::command]
+fn cmd_read_latest_log(game_dir: String, lines: usize) -> Result<Vec<String>, String> {
+    read_latest_log(&game_dir, lines)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn cmd_get_log_path(game_dir: String) -> String {
+    get_log_path(&game_dir)
+        .to_string_lossy()
+        .to_string()
+}
+
+#[tauri::command]
+fn cmd_get_new_log_lines(game_dir: String, known_line_count: usize) -> Result<Vec<String>, String> {
+    get_new_log_lines(&game_dir, known_line_count)
+        .map_err(|e| e.to_string())
+}
+
+// Path Management Commands
+#[tauri::command]
+fn cmd_get_default_game_directory(app: AppHandle) -> Result<String, String> {
+    get_default_game_directory(&app)
+        .map(|p| p.to_string_lossy().to_string())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn cmd_resolve_game_directory(app: AppHandle, path: String) -> Result<String, String> {
+    let path_buf = PathBuf::from(path);
+    resolve_game_directory(&app, &path_buf)
+        .map(|p| p.to_string_lossy().to_string())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn cmd_validate_game_directory(path: String) -> Result<(), String> {
+    let path_buf = PathBuf::from(path);
+    validate_game_directory(&path_buf)
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Initialize logger on startup
@@ -552,6 +617,15 @@ pub fn run() {
             cmd_get_cached_audio,
             cmd_download_and_cache_audio,
             cmd_clear_audio_cache,
+            cmd_stop_game,
+            cmd_kill_game,
+            cmd_is_game_running,
+            cmd_read_latest_log,
+            cmd_get_log_path,
+            cmd_get_new_log_lines,
+            cmd_get_default_game_directory,
+            cmd_resolve_game_directory,
+            cmd_validate_game_directory,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
