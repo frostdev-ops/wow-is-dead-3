@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
-use std::net::TcpStream;
+use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,10 +141,13 @@ fn extract_motd_text(description: &serde_json::Value) -> String {
 /// Implements the Minecraft Server List Ping protocol (Java Edition)
 /// Returns an offline ServerStatus if the server is unreachable instead of an error
 pub async fn ping_server(address: &str) -> Result<ServerStatus> {
+    eprintln!("[Server Ping] Starting ping for: {}", address);
+
     // Parse address into host and port
     let (host, port) = match parse_address(address) {
         Ok(addr) => addr,
         Err(e) => {
+            eprintln!("[Server Ping] Invalid address: {}", e);
             // Return offline status for invalid addresses
             return Ok(ServerStatus {
                 online: false,
@@ -157,29 +160,69 @@ pub async fn ping_server(address: &str) -> Result<ServerStatus> {
         }
     };
 
+    eprintln!("[Server Ping] Parsed address: {}:{}", host, port);
+
     // Run blocking I/O in tokio's blocking thread pool
-    let result = tokio::task::spawn_blocking(move || {
-        // Connect to server with timeout
-        let stream = TcpStream::connect_timeout(
-            &format!("{}:{}", host, port)
-                .parse()
-                .context("Failed to parse socket address")?,
-            Duration::from_secs(5),
-        )
-        .context("Failed to connect to server")?;
+    let result = tokio::task::spawn_blocking(move || -> Result<ServerStatus> {
+        let addr_str = format!("{}:{}", host, port);
+        eprintln!("[Server Ping] Attempting TCP connection to {}", addr_str);
+
+        // Resolve hostname to socket addresses (important for reverse proxies!)
+        eprintln!("[Server Ping] Resolving hostname: {}", host);
+        let addresses: Vec<_> = match addr_str.to_socket_addrs() {
+            Ok(addrs) => {
+                let addr_list: Vec<_> = addrs.collect();
+                eprintln!("[Server Ping] Resolved to {} address(es)", addr_list.len());
+                for addr in &addr_list {
+                    eprintln!("[Server Ping]   - {}", addr);
+                }
+                addr_list
+            },
+            Err(e) => {
+                eprintln!("[Server Ping] DNS resolution failed: {}", e);
+                return Err(anyhow::anyhow!("DNS resolution failed for '{}': {}", addr_str, e));
+            }
+        };
+
+        if addresses.is_empty() {
+            eprintln!("[Server Ping] No addresses returned from DNS lookup");
+            return Err(anyhow::anyhow!("No addresses resolved for '{}'", addr_str));
+        }
+
+        // Try to connect to the first resolved address
+        let socket_addr = addresses[0];
+        eprintln!("[Server Ping] Attempting connection to {}", socket_addr);
+
+        let stream = match TcpStream::connect_timeout(&socket_addr, Duration::from_secs(5)) {
+            Ok(s) => {
+                eprintln!("[Server Ping] TCP connection successful");
+                s
+            },
+            Err(e) => {
+                eprintln!("[Server Ping] TCP connection failed: {}", e);
+                return Err(anyhow::anyhow!("Failed to connect to {}: {}", socket_addr, e));
+            }
+        };
 
         // Set read/write timeouts
-        stream.set_read_timeout(Some(Duration::from_secs(5)))?;
-        stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+        stream.set_read_timeout(Some(Duration::from_secs(5)))
+            .context("Failed to set read timeout")?;
+        stream.set_write_timeout(Some(Duration::from_secs(5)))
+            .context("Failed to set write timeout")?;
 
+        eprintln!("[Server Ping] Sending Minecraft protocol handshake");
         ping_server_sync(stream, &host, port)
     })
     .await;
 
     // Handle various error cases gracefully
     match result {
-        Ok(Ok(status)) => Ok(status),
+        Ok(Ok(status)) => {
+            eprintln!("[Server Ping] Success! Server online: {}", status.online);
+            Ok(status)
+        },
         Ok(Err(e)) => {
+            eprintln!("[Server Ping] Protocol error: {}", e);
             // Server responded but there was a protocol error
             // Return offline status with error message
             Ok(ServerStatus {
@@ -192,6 +235,7 @@ pub async fn ping_server(address: &str) -> Result<ServerStatus> {
             })
         }
         Err(e) => {
+            eprintln!("[Server Ping] Task error: {}", e);
             // Task panicked or was cancelled
             Ok(ServerStatus {
                 online: false,
@@ -208,23 +252,21 @@ pub async fn ping_server(address: &str) -> Result<ServerStatus> {
 /// Synchronous server ping implementation
 fn ping_server_sync(mut stream: TcpStream, host: &str, port: u16) -> Result<ServerStatus> {
     // Step 1: Send handshake packet
-    // Packet ID: 0x00 (Handshake)
-    // Protocol Version: VarInt (use 765 for 1.20.4, -1 for unknown)
-    // Server Address: String
-    // Server Port: Unsigned Short
-    // Next State: VarInt (1 for status)
-
     let mut handshake_data = Vec::new();
 
     // Packet ID
     handshake_data.push(0x00);
 
     // Protocol version (-1 for any version)
+    // Note: -1 as i32 is 0xFFFFFFFF in two's complement
+    // When encoding as VarInt, we need to handle the right-shift correctly.
+    // Arithmetic right shift on negative numbers would keep the sign bit,
+    // creating an infinite loop, so we cast to u32 for logical shift.
     let mut protocol_bytes = Vec::new();
-    let mut value = -1i32;
-    loop {
+    let mut value: i32 = -1;
+    for _ in 0..5 {
         let mut temp = (value & 0x7F) as u8;
-        value >>= 7;
+        value = (value as u32 >> 7) as i32; // Use logical shift (unsigned cast)
         if value != 0 {
             temp |= 0x80;
         }
@@ -260,31 +302,69 @@ fn ping_server_sync(mut stream: TcpStream, host: &str, port: u16) -> Result<Serv
     // Next state (1 for status)
     handshake_data.push(0x01);
 
+    eprintln!("[Server Ping] Handshake packet built - size: {}", handshake_data.len());
+
     // Write packet length + packet data
-    write_varint(&mut stream, handshake_data.len() as i32)?;
-    stream.write_all(&handshake_data)?;
+    write_varint(&mut stream, handshake_data.len() as i32).context("Failed to write handshake length")?;
+    stream.write_all(&handshake_data).context("Failed to write handshake data")?;
+    eprintln!("[Server Ping] Handshake sent");
 
     // Step 2: Send status request packet
-    // Packet ID: 0x00 (Status Request)
-    // No additional data
-    write_varint(&mut stream, 1)?; // Packet length
-    stream.write_all(&[0x00])?; // Packet ID
+    eprintln!("[Server Ping] Sending status request");
+    write_varint(&mut stream, 1).context("Failed to write status request length")?; // Packet length
+    stream.write_all(&[0x00]).context("Failed to write status request ID")?; // Packet ID
+    eprintln!("[Server Ping] Status request sent");
 
     // Step 3: Read status response
-    let response_length = read_varint(&mut stream)?;
+    eprintln!("[Server Ping] Reading response length...");
+    let response_length = match read_varint(&mut stream) {
+        Ok(len) => {
+            eprintln!("[Server Ping] Response length: {}", len);
+            len
+        },
+        Err(e) => {
+            eprintln!("[Server Ping] Failed to read response length: {}", e);
+            return Err(anyhow!("Failed to read response length: {}", e));
+        }
+    };
 
     if response_length <= 0 || response_length > 1048576 {
+        eprintln!("[Server Ping] Invalid response length: {}", response_length);
         return Err(anyhow!("Invalid response length: {}", response_length));
     }
 
     // Read packet ID (should be 0x00)
-    let packet_id = read_varint(&mut stream)?;
+    eprintln!("[Server Ping] Reading packet ID...");
+    let packet_id = match read_varint(&mut stream) {
+        Ok(id) => {
+            eprintln!("[Server Ping] Packet ID: {}", id);
+            id
+        },
+        Err(e) => {
+            eprintln!("[Server Ping] Failed to read packet ID: {}", e);
+            return Err(anyhow!("Failed to read packet ID: {}", e));
+        }
+    };
+
     if packet_id != 0x00 {
+        eprintln!("[Server Ping] Unexpected packet ID: {} (expected 0)", packet_id);
         return Err(anyhow!("Unexpected packet ID: {}", packet_id));
     }
 
     // Read JSON response
-    let json_string = read_string(&mut stream)?;
+    eprintln!("[Server Ping] Reading JSON response...");
+    let json_string = match read_string(&mut stream) {
+        Ok(json) => {
+            eprintln!("[Server Ping] JSON length: {}", json.len());
+            json
+        },
+        Err(e) => {
+            eprintln!("[Server Ping] Failed to read JSON: {}", e);
+            return Err(anyhow!("Failed to read JSON response: {}", e));
+        }
+    };
+
+    eprintln!("[Server Ping] JSON received: {}", &json_string[..json_string.len().min(100)]);
 
     // Parse JSON
     let response: MinecraftStatusResponse = serde_json::from_str(&json_string)

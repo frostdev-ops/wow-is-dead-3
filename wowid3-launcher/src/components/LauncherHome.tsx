@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth, useModpack, useServer, useDiscord, useMinecraftInstaller } from '../hooks';
 import { launchGameWithMetadata } from '../hooks/useTauriCommands';
 import { useSettingsStore } from '../stores';
+import { useAudioStore } from '../stores/audioStore';
+import { useUIStore } from '../stores/uiStore';
 import { UserMenu } from './UserMenu';
 import { LoadingSpinner } from './ui/LoadingSpinner';
 import { ProgressBar } from './ui/ProgressBar';
@@ -10,27 +12,26 @@ import { ChangelogViewer } from './ChangelogViewer';
 import { PlayerList } from './PlayerList';
 import { useToast } from './ui/ToastContainer';
 import DeviceCodeModal from './DeviceCodeModal';
-import LogViewerModal from './LogViewerModal';
 import { SkinViewerComponent } from './SkinViewer';
 import { CatModel } from './CatModel';
 import { MinecraftSetup } from './MinecraftSetup';
 import type { DeviceCodeInfo } from '../hooks/useTauriCommands';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { invoke } from '@tauri-apps/api/core';
 
 export default function LauncherHome() {
   const { user, isAuthenticated, login, finishDeviceCodeAuth, isLoading: authLoading, error: authError } = useAuth();
   const { installedVersion, latestManifest, updateAvailable, isDownloading, downloadProgress, checkUpdates, install, error: modpackError } = useModpack();
   const { status } = useServer();
-  const { ramAllocation, gameDirectory, keepLauncherOpen, setMusicWasPaused } = useSettingsStore();
+  const { ramAllocation, gameDirectory, keepLauncherOpen } = useSettingsStore();
+  const { setMuted, setWasPaused } = useAudioStore();
+  const { setShowLogViewer } = useUIStore();
   const { addToast } = useToast();
   const { isConnected: discordConnected, isConnecting: discordConnecting, error: discordError, setPresence, clearPresence, connect: connectDiscord } = useDiscord();
   const { versionId, isInstalled: minecraftInstalled } = useMinecraftInstaller();
   const [isLaunching, setIsLaunching] = useState(false);
   const [showChangelog, setShowChangelog] = useState(false);
   const [deviceCodeInfo, setDeviceCodeInfo] = useState<DeviceCodeInfo | null>(null);
-  const [showLogViewer, setShowLogViewer] = useState(false);
   const hasCheckedForModpack = useRef(false);
   const modpackCheckRetries = useRef(0);
   const lastCheckAttempt = useRef<number>(0);
@@ -182,13 +183,23 @@ export default function LauncherHome() {
       }
     });
 
-    const unlistenExit = listen<{exit_code: number; crashed: boolean}>('minecraft-exit', (event) => {
+    const unlistenExit = listen<{exit_code: number; crashed: boolean}>('minecraft-exit', async (event) => {
       console.log('[Minecraft] Process exited with code:', event.payload.exit_code);
       setIsLaunching(false);
 
       // Close log viewer (but keep it visible if keepLauncherOpen is true, for debugging)
       if (!keepLauncherOpen) {
         setShowLogViewer(false);
+
+        // Show the launcher window again after game exits
+        try {
+          console.log('[Window] Showing launcher window after game exit...');
+          const appWindow = await getCurrentWindow();
+          await appWindow.show();
+          console.log('[Window] Window shown successfully');
+        } catch (error) {
+          console.error('[Window] Failed to show window:', error);
+        }
       }
 
       // Keep music muted after game closes (until launcher is closed and reopened)
@@ -263,21 +274,27 @@ export default function LauncherHome() {
           wasPaused = true;
           audio.pause();
         }
-        audio.muted = true;
       });
-      setMusicWasPaused(wasPaused);
+
+      // Use audioStore to manage mute state
+      setWasPaused(wasPaused);
+      setMuted(true);
 
       // Handle window and log viewer based on setting
       if (!keepLauncherOpen) {
-        // Minimize the launcher window
+        // Hide the launcher window (using hide() instead of minimize() for better Wayland support)
         try {
+          console.log('[Window] Attempting to hide launcher window...');
           const appWindow = await getCurrentWindow();
-          await appWindow.minimize();
+          await appWindow.hide();
+          console.log('[Window] Window hidden successfully');
         } catch (error) {
-          console.error('Failed to minimize window:', error);
+          console.error('[Window] Failed to hide window:', error);
+          addToast('Failed to hide launcher window', 'error');
         }
       } else {
         // Show log viewer instead
+        console.log('[Window] Keeping launcher open, showing log viewer');
         setShowLogViewer(true);
       }
 
@@ -525,10 +542,12 @@ export default function LauncherHome() {
           )}
         </AnimatePresence>
 
-        {/* Server MOTD */}
-        {status.online && status.motd && (
-          <div className="p-4 bg-slate-700 bg-opacity-50 border border-slate-600">
-            <p className="text-xs text-slate-400 mb-1">Server Message</p>
+        {/* Server MOTD or Error Message */}
+        {status.motd && (
+          <div className={`p-4 border ${status.online ? 'bg-slate-700 bg-opacity-50 border-slate-600' : 'bg-red-900 bg-opacity-30 border-red-600'}`}>
+            <p className="text-xs mb-1" style={{ color: status.online ? '#94a3b8' : '#f87171' }}>
+              {status.online ? 'Server Message' : 'Server Error'}
+            </p>
             <p className="text-white text-sm">{status.motd}</p>
           </div>
         )}
@@ -604,9 +623,6 @@ export default function LauncherHome() {
           </div>
         </div>
       </div>
-
-      {/* Log Viewer Modal */}
-      <LogViewerModal isOpen={showLogViewer} onClose={() => setShowLogViewer(false)} />
     </div>
   );
 }

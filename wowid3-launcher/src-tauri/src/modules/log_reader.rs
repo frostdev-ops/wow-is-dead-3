@@ -5,7 +5,6 @@ use std::path::PathBuf;
 /// Read the last N lines from the Minecraft latest.log file
 pub fn read_latest_log(game_dir: &str, lines: usize) -> IoResult<Vec<String>> {
     let log_path = PathBuf::from(game_dir)
-        .join(".minecraft")
         .join("logs")
         .join("latest.log");
 
@@ -34,7 +33,6 @@ pub fn read_latest_log(game_dir: &str, lines: usize) -> IoResult<Vec<String>> {
 /// Get the path to the latest.log file
 pub fn get_log_path(game_dir: &str) -> PathBuf {
     PathBuf::from(game_dir)
-        .join(".minecraft")
         .join("logs")
         .join("latest.log")
 }
@@ -83,7 +81,7 @@ mod tests {
     #[test]
     fn test_read_latest_log_with_file() {
         let temp_dir = TempDir::new().unwrap();
-        let log_dir = temp_dir.path().join(".minecraft/logs");
+        let log_dir = temp_dir.path().join("logs");
         fs::create_dir_all(&log_dir).unwrap();
 
         let log_file = log_dir.join("latest.log");
@@ -103,7 +101,7 @@ mod tests {
     #[test]
     fn test_read_latest_log_limit() {
         let temp_dir = TempDir::new().unwrap();
-        let log_dir = temp_dir.path().join(".minecraft/logs");
+        let log_dir = temp_dir.path().join("logs");
         fs::create_dir_all(&log_dir).unwrap();
 
         let log_file = log_dir.join("latest.log");
@@ -122,7 +120,7 @@ mod tests {
     #[test]
     fn test_get_new_log_lines() {
         let temp_dir = TempDir::new().unwrap();
-        let log_dir = temp_dir.path().join(".minecraft/logs");
+        let log_dir = temp_dir.path().join("logs");
         fs::create_dir_all(&log_dir).unwrap();
 
         let log_file = log_dir.join("latest.log");

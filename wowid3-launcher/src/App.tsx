@@ -3,8 +3,11 @@ import { invoke } from '@tauri-apps/api/core';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { useModpack, useServer, useTheme } from './hooks';
 import { useSettingsStore } from './stores/settingsStore';
+import { useAudioStore } from './stores/audioStore';
+import { useUIStore } from './stores/uiStore';
 import LauncherHome from './components/LauncherHome';
 import SettingsScreen from './components/SettingsScreen';
+import LogViewerModal from './components/LogViewerModal';
 import ChristmasBackground from './components/theme/ChristmasBackground';
 import { ToastProvider } from './components/ui/ToastContainer';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -16,7 +19,6 @@ const FALLBACK_AUDIO_URL = '/wid3menu-fallback.mp3';
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<'home' | 'settings'>('home');
-  const [isMuted, setIsMuted] = useState(false);
   const [showChangelog, setShowChangelog] = useState(false);
   const [showChangelogModal, setShowChangelogModal] = useState(false);
   const [audioState, setAudioState] = useState<'loading' | 'fallback' | 'transitioning' | 'main'>('loading');
@@ -27,6 +29,8 @@ function AppContent() {
   const { checkUpdates, latestManifest } = useModpack();
   const { startPolling } = useServer();
   const { initializeGameDirectory } = useSettingsStore();
+  const { isMuted, setMuted } = useAudioStore();
+  const { showLogViewer, setShowLogViewer } = useUIStore();
   useTheme(); // Apply theme on mount
 
   // Initialize OS-specific game directory on mount
@@ -141,51 +145,71 @@ function AppContent() {
       const cachedPath = await invoke<string | null>('cmd_get_cached_audio');
 
       if (cachedPath) {
-        console.log('[Audio] Found cached audio:', cachedPath);
+        console.log('[Audio] Found cached audio, attempting to load');
         try {
           // Use convertFileSrc to get proper Tauri asset URL (no Blob overhead)
           const assetUrl = convertFileSrc(cachedPath);
-          console.log('[Audio] Converted to asset URL:', assetUrl);
 
           if (mainRef.current) {
             mainRef.current.src = assetUrl;
-            setMainAudioReady(true);
-            console.log('[Audio] Main audio ready from cache');
+            // Set timeout for load attempt - if not loaded in 10 seconds, give up
+            const loadTimeout = setTimeout(() => {
+              console.log('[Audio] Main audio load timeout, using fallback');
+              mainRef.current!.src = ''; // Clear the failing source
+            }, 10000);
+
+            mainRef.current.onloadeddata = () => {
+              clearTimeout(loadTimeout);
+              console.log('[Audio] Main audio successfully loaded');
+              setMainAudioReady(true);
+            };
+            mainRef.current.onerror = () => {
+              clearTimeout(loadTimeout);
+              console.log('[Audio] Main audio failed to load, using fallback');
+              mainRef.current!.src = ''; // Clear the failing source
+            };
           }
           return;
         } catch (err) {
-          console.log('[Audio] Failed to load cached audio:', err);
+          console.log('[Audio] Error setting up cached audio:', err);
         }
       }
 
-      // Download audio
-      console.log('[Audio] Starting background download...');
-      const downloadedPath = await invoke<string>('cmd_download_and_cache_audio', {
-        url: AUDIO_SERVER_URL,
-      });
+      // If we get here, download audio
+      console.log('[Audio] Downloading audio from server...');
+      try {
+        const downloadedPath = await invoke<string>('cmd_download_and_cache_audio', {
+          url: AUDIO_SERVER_URL,
+        });
 
-      console.log('[Audio] Download complete:', downloadedPath);
+        console.log('[Audio] Download complete, setting up main audio');
 
-      // Use convertFileSrc to get proper Tauri asset URL
-      const assetUrl = convertFileSrc(downloadedPath);
-      console.log('[Audio] Converted to asset URL:', assetUrl);
+        // Use convertFileSrc to get proper Tauri asset URL
+        const assetUrl = convertFileSrc(downloadedPath);
 
-      if (mainRef.current) {
-        mainRef.current.src = assetUrl;
-        setMainAudioReady(true);
-        console.log('[Audio] Main audio ready from download');
+        if (mainRef.current) {
+          mainRef.current.src = assetUrl;
+          const loadTimeout = setTimeout(() => {
+            console.log('[Audio] Downloaded audio load timeout, using fallback');
+            mainRef.current!.src = '';
+          }, 10000);
+
+          mainRef.current.onloadeddata = () => {
+            clearTimeout(loadTimeout);
+            console.log('[Audio] Downloaded audio successfully loaded');
+            setMainAudioReady(true);
+          };
+          mainRef.current.onerror = () => {
+            clearTimeout(loadTimeout);
+            console.log('[Audio] Downloaded audio failed to load, using fallback');
+            mainRef.current!.src = '';
+          };
+        }
+      } catch (downloadErr) {
+        console.log('[Audio] Download failed, will use fallback audio:', downloadErr);
       }
     } catch (err) {
-      console.log('[Audio] Failed to load main audio:', err);
-
-      // Set up retry every 5 minutes
-      if (!retryIntervalRef.current) {
-        console.log('[Audio] Scheduling retry in 5 minutes');
-        retryIntervalRef.current = setInterval(() => {
-          console.log('[Audio] Retrying download...');
-          loadMainAudio();
-        }, 5 * 60 * 1000); // 5 minutes
-      }
+      console.log('[Audio] Unexpected error in audio setup:', err);
     }
   };
 
@@ -323,7 +347,25 @@ function AppContent() {
             </svg>
           </button>
           <button
-            onClick={() => setIsMuted(!isMuted)}
+            onClick={() => setShowLogViewer(true)}
+            className="p-5 transition-all bg-black bg-opacity-40 text-white hover:bg-opacity-60"
+            style={{
+              backdropFilter: 'blur(12px)',
+              border: '2px solid rgba(255, 255, 255, 0.3)',
+              borderRadius: '0',
+            }}
+            title="View Game Logs"
+          >
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+              <polyline points="10 9 9 9 8 9" />
+            </svg>
+          </button>
+          <button
+            onClick={() => setMuted(!isMuted)}
             className="p-5 transition-all bg-black bg-opacity-40 text-white hover:bg-opacity-60"
             style={{
               backdropFilter: 'blur(12px)',
@@ -449,6 +491,12 @@ function AppContent() {
           onClose={() => setShowChangelogModal(false)}
         />
       )}
+
+      {/* Log Viewer Modal - Global, persists across tabs */}
+      <LogViewerModal
+        isOpen={showLogViewer}
+        onClose={() => setShowLogViewer(false)}
+      />
     </div>
   );
 }

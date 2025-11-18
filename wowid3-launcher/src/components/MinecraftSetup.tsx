@@ -6,7 +6,6 @@ import { INSTALL_STEP_LABELS } from '../types/minecraft';
 export function MinecraftSetup() {
   const {
     selectedVersion,
-    selectedFabricLoader,
     isInstalled,
     isInstalling,
     installProgress,

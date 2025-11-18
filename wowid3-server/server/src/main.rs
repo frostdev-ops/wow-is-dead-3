@@ -2,12 +2,17 @@ mod api;
 mod config;
 mod middleware;
 mod models;
+mod services;
 mod storage;
 mod utils;
 
 use api::admin::{
     create_release, delete_release, get_blacklist, list_releases, login, update_blacklist,
     upload_files, AdminState as AdminApiState,
+};
+use api::drafts::{
+    add_files, analyze_draft, create_draft, delete_draft, generate_changelog_for_draft,
+    get_draft, list_drafts, publish_draft, remove_file, update_draft, update_file,
 };
 use api::public::{get_latest_manifest, get_manifest_by_version, serve_file, serve_java_runtime, PublicState};
 use axum::{
@@ -42,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
     // Create storage directories
     tokio::fs::create_dir_all(config.releases_path()).await?;
     tokio::fs::create_dir_all(config.uploads_path()).await?;
-    tokio::fs::create_dir_all(config.uploads_path()).await?;
+    tokio::fs::create_dir_all(config.storage_path().join("drafts")).await?;
     info!("Storage directories initialized");
 
     let config_arc = Arc::new(config.clone());
@@ -86,6 +91,14 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/admin/releases", post(create_release).get(list_releases))
         .route("/api/admin/releases/:version", delete(delete_release))
         .route("/api/admin/blacklist", get(get_blacklist).put(update_blacklist))
+        // Draft management routes
+        .route("/api/admin/drafts", post(create_draft).get(list_drafts))
+        .route("/api/admin/drafts/:id", get(get_draft).put(update_draft).delete(delete_draft))
+        .route("/api/admin/drafts/:id/analyze", post(analyze_draft))
+        .route("/api/admin/drafts/:id/files", post(add_files))
+        .route("/api/admin/drafts/:id/files/*path", delete(remove_file).put(update_file))
+        .route("/api/admin/drafts/:id/generate-changelog", post(generate_changelog_for_draft))
+        .route("/api/admin/drafts/:id/publish", post(publish_draft))
         .layer(axum_middleware::from_fn(auth_middleware))
         .with_state(admin_state);
 

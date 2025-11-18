@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { invoke } from '@tauri-apps/api/core';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useToast } from './ui/ToastContainer';
 import { ChevronDown, X, Square, Zap, AlertCircle } from 'lucide-react';
 
 interface LogLine {
@@ -22,9 +23,13 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
   const [isScrolledToBottom, setIsScrolledToBottom] = useState(true);
   const [isGameRunning, setIsGameRunning] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isStoppingGame, setIsStoppingGame] = useState(false);
+  const [isKillingGame, setIsKillingGame] = useState(false);
   const logsContainerRef = useRef<HTMLDivElement>(null);
-  const logPollingRef = useRef<NodeJS.Timeout | null>(null);
+  const logPollingRef = useRef<number | null>(null);
+  const logsRef = useRef<LogLine[]>([]);
   const gameDir = useSettingsStore((state) => state.gameDirectory);
+  const { addToast } = useToast();
 
   // Parse log line with syntax highlighting info
   const parseLogLine = (line: string): LogLine => {
@@ -76,8 +81,6 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
   const renderLogLine = (line: LogLine, index: number) => {
     // Detect stack traces
     const isStackTrace = line.raw.trim().startsWith('at ');
-    // Detect file paths
-    const hasFilePath = /([a-zA-Z]:\\[\w\\/.]+|\/[\w/.]+)/.test(line.raw);
     // Detect exception/error names
     const hasException = /\w+Exception|\w+Error/.test(line.raw);
 
@@ -115,76 +118,139 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
   // Load initial logs
   const loadLogs = useCallback(async () => {
     try {
+      console.log('[LogViewer] Loading logs...');
+      console.log('[LogViewer] gameDir value:', gameDir);
+      console.log('[LogViewer] gameDir type:', typeof gameDir);
+      console.log('[LogViewer] gameDir defined?', gameDir !== undefined && gameDir !== null);
+
+      if (!gameDir) {
+        console.error('[LogViewer] gameDir is not set!');
+        return;
+      }
+
       setLoading(true);
       const logLines = await invoke<string[]>('cmd_read_latest_log', {
-        game_dir: gameDir,
+        gameDir: gameDir,
         lines: 500,
       });
-      setLogs(logLines.map(parseLogLine));
+      console.log('[LogViewer] Received log lines:', logLines?.length || 0);
+      if (logLines && logLines.length > 0) {
+        console.log('[LogViewer] First few lines:', logLines.slice(0, 3));
+      }
+      const parsedLogs = logLines.map(parseLogLine);
+      logsRef.current = parsedLogs;
+      setLogs(parsedLogs);
+      console.log('[LogViewer] Set logs state, count:', parsedLogs.length);
     } catch (error) {
-      console.error('Failed to load logs:', error);
+      console.error('[LogViewer] Failed to load logs:', error);
+      console.error('[LogViewer] Error type:', typeof error);
+      console.error('[LogViewer] Error details:', JSON.stringify(error, null, 2));
+      addToast(`Failed to load logs: ${error}`, 'error');
     } finally {
       setLoading(false);
     }
-  }, [gameDir]);
+  }, [gameDir, addToast]);
 
   // Check if game is running
   const checkGameStatus = useCallback(async () => {
     try {
+      console.log('[LogViewer] Checking game status...');
       const running = await invoke<boolean>('cmd_is_game_running');
-      setIsGameRunning(running);
-      if (!running) {
-        // Stop polling if game is no longer running
-        if (logPollingRef.current) {
-          clearInterval(logPollingRef.current);
-          logPollingRef.current = null;
+      console.log('[LogViewer] Game status result:', running);
+      setIsGameRunning((prevRunning) => {
+        if (prevRunning !== running) {
+          console.log('[LogViewer] Game status CHANGED:', running ? 'running' : 'stopped');
         }
-      }
+        return running;
+      });
+      // Don't stop polling when game stops - we still want to show historical logs
     } catch (error) {
-      console.error('Failed to check game status:', error);
+      console.error('[LogViewer] Failed to check game status:', error);
+      setIsGameRunning(false);
     }
   }, []);
 
   // Poll for new logs
   const startLogPolling = useCallback(() => {
-    if (logPollingRef.current) clearInterval(logPollingRef.current);
+    if (logPollingRef.current) {
+      console.log('[LogViewer] Clearing existing polling interval');
+      clearInterval(logPollingRef.current);
+    }
+
+    console.log('[LogViewer] Starting log polling with gameDir:', gameDir);
+    let pollCount = 0;
 
     logPollingRef.current = setInterval(async () => {
+      pollCount++;
       try {
+        if (!gameDir) {
+          console.warn('[LogViewer] Poll #' + pollCount + ': gameDir not set, skipping');
+          return;
+        }
+
+        const currentLineCount = logsRef.current.length;
+        console.log('[LogViewer] Poll #' + pollCount + ': Checking for new logs (known lines:', currentLineCount + ')');
+
         const newLines = await invoke<string[]>('cmd_get_new_log_lines', {
-          game_dir: gameDir,
-          known_line_count: logs.length,
+          gameDir: gameDir,
+          knownLineCount: currentLineCount,
         });
 
+        console.log('[LogViewer] Poll #' + pollCount + ': Received', newLines?.length || 0, 'new lines');
+
         if (newLines && newLines.length > 0) {
-          setLogs((prevLogs) => [
-            ...prevLogs,
-            ...newLines.map(parseLogLine),
-          ]);
+          console.log('[LogViewer] Poll #' + pollCount + ': Adding new log lines to display');
+          const parsedNewLines = newLines.map(parseLogLine);
+          const updatedLogs = [...logsRef.current, ...parsedNewLines];
+          logsRef.current = updatedLogs;
+          setLogs(updatedLogs);
         }
 
         // Check if game is still running
         await checkGameStatus();
       } catch (error) {
-        console.error('Error polling logs:', error);
+        console.error('[LogViewer] Poll #' + pollCount + ': Error polling logs:', error);
       }
-    }, 500);
-  }, [gameDir, logs.length, checkGameStatus]);
+    }, 1000); // Increased to 1 second to reduce console spam
+  }, [gameDir, checkGameStatus]);
 
   // Initialize on mount
   useEffect(() => {
-    if (isOpen) {
-      loadLogs();
-      checkGameStatus();
-      startLogPolling();
+    if (!isOpen) {
+      // Clear logs when modal closes
+      logsRef.current = [];
+      setLogs([]);
+      if (logPollingRef.current) {
+        clearInterval(logPollingRef.current);
+        logPollingRef.current = null;
+      }
+      return;
     }
+
+    console.log('[LogViewer] Modal opened, loading logs...');
+
+    // Clear old logs and reload fresh
+    logsRef.current = [];
+    setLogs([]);
+    setLoading(true);
+
+    // Load logs
+    loadLogs();
+
+    // Check game status
+    checkGameStatus();
+
+    // Start polling
+    startLogPolling();
 
     return () => {
       if (logPollingRef.current) {
         clearInterval(logPollingRef.current);
+        logPollingRef.current = null;
       }
     };
-  }, [isOpen, loadLogs, checkGameStatus, startLogPolling]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]); // Only depend on isOpen to prevent infinite loops
 
   // Auto-scroll to bottom when new logs arrive (smart scroll)
   useEffect(() => {
@@ -204,18 +270,38 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
   // Stop game gracefully
   const handleStopGame = async () => {
     try {
+      setIsStoppingGame(true);
       await invoke('cmd_stop_game');
+      addToast('Game stopped successfully', 'success');
+
+      // Wait a moment for process to stop, then refresh status
+      setTimeout(async () => {
+        await checkGameStatus();
+      }, 500);
     } catch (error) {
       console.error('Failed to stop game:', error);
+      addToast(`Failed to stop game: ${error}`, 'error');
+    } finally {
+      setIsStoppingGame(false);
     }
   };
 
   // Kill game forcefully
   const handleKillGame = async () => {
     try {
+      setIsKillingGame(true);
       await invoke('cmd_kill_game');
+      addToast('Game killed successfully', 'success');
+
+      // Wait a moment for process to terminate, then refresh status
+      setTimeout(async () => {
+        await checkGameStatus();
+      }, 500);
     } catch (error) {
       console.error('Failed to kill game:', error);
+      addToast(`Failed to kill game: ${error}`, 'error');
+    } finally {
+      setIsKillingGame(false);
     }
   };
 
@@ -319,17 +405,37 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
                   <>
                     <button
                       onClick={handleStopGame}
-                      className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-sm transition-colors font-medium"
+                      disabled={isStoppingGame || isKillingGame}
+                      className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-sm transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <Square size={16} />
-                      Stop Game
+                      {isStoppingGame ? (
+                        <>
+                          <div className="animate-spin">◌</div>
+                          Stopping...
+                        </>
+                      ) : (
+                        <>
+                          <Square size={16} />
+                          Stop Game
+                        </>
+                      )}
                     </button>
                     <button
                       onClick={handleKillGame}
-                      className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm transition-colors font-medium"
+                      disabled={isStoppingGame || isKillingGame}
+                      className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <Zap size={16} />
-                      Kill
+                      {isKillingGame ? (
+                        <>
+                          <div className="animate-spin">◌</div>
+                          Killing...
+                        </>
+                      ) : (
+                        <>
+                          <Zap size={16} />
+                          Kill
+                        </>
+                      )}
                     </button>
                   </>
                 )}

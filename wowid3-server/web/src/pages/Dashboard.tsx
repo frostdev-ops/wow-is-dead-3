@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { useAdmin } from '../hooks/useAdmin';
+import { useDrafts } from '../hooks/useDrafts';
+import { Plus, Edit, Trash2, Package } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
 import './Dashboard.css';
 
 interface UploadSession {
@@ -11,7 +14,11 @@ interface UploadSession {
 export default function Dashboard() {
   const { clearToken } = useAuthStore();
   const { loading, error, uploadFiles, createRelease, listReleases, deleteRelease, getBlacklist, updateBlacklist } = useAdmin();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'upload' | 'releases' | 'blacklist'>('dashboard');
+  const { drafts, listDrafts, createDraft, getDraft, updateDraft: updateDraftAPI, deleteDraft: deleteDraftAPI, loading: draftLoading } = useDrafts();
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'upload' | 'releases' | 'release-wizard' | 'edit-draft' | 'blacklist'>('dashboard');
+  const [draftFilter, setDraftFilter] = useState<'all' | 'drafts'>('all');
+  const [editingDraft, setEditingDraft] = useState<any>(null);
+  const [editingTab, setEditingTab] = useState<'files' | 'metadata' | 'changelog' | 'review'>('metadata');
   const [uploadSession, setUploadSession] = useState<UploadSession | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
@@ -32,6 +39,8 @@ export default function Dashboard() {
       loadReleases();
     } else if (activeTab === 'blacklist') {
       loadBlacklist();
+    } else if (activeTab === 'release-wizard') {
+      listDrafts();
     }
   }, [activeTab]);
 
@@ -135,6 +144,93 @@ export default function Dashboard() {
     }
   };
 
+  const handleCreateDraft = async () => {
+    const draft = await createDraft({});
+    if (draft) {
+      setUploadSuccess(`Draft created: ${draft.version || 'Untitled'}`);
+      listDrafts();
+    }
+  };
+
+  const handleDeleteDraft = async (id: string, version: string) => {
+    if (confirm(`Delete draft ${version || 'Untitled Draft'}?`)) {
+      await deleteDraftAPI(id);
+      setUploadSuccess('Draft deleted');
+      listDrafts();
+    }
+  };
+
+  const handleEditDraft = async (id: string) => {
+    const draft = await getDraft(id);
+    if (draft) {
+      setEditingDraft(draft);
+      setEditingTab('metadata');
+      setActiveTab('edit-draft');
+    }
+  };
+
+  const handleUpdateDraft = async (updates: any) => {
+    if (!editingDraft) return;
+    const updated = { ...editingDraft, ...updates };
+    setEditingDraft(updated);
+    await updateDraftAPI(editingDraft.id, updates);
+    setUploadSuccess('Draft saved');
+  };
+
+  const handleFileUpload = async (files: FileList) => {
+    if (!editingDraft || files.length === 0) return;
+
+    setUploadError(null);
+    const formData = new FormData();
+
+    Array.from(files).forEach((file) => {
+      formData.append('files', file);
+    });
+
+    try {
+      const response = await fetch(`/api/admin/drafts/${editingDraft.id}/files`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+        },
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.statusText}`);
+      }
+
+      const updatedDraft = await response.json();
+      setEditingDraft(updatedDraft);
+      setUploadSuccess(`${files.length} file(s) uploaded successfully`);
+    } catch (err: any) {
+      setUploadError(err.message || 'Failed to upload files');
+    }
+  };
+
+  const handleRemoveFile = async (filePath: string) => {
+    if (!editingDraft) return;
+
+    try {
+      const response = await fetch(`/api/admin/drafts/${editingDraft.id}/files/${encodeURIComponent(filePath)}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Remove failed: ${response.statusText}`);
+      }
+
+      const updatedDraft = await response.json();
+      setEditingDraft(updatedDraft);
+      setUploadSuccess('File removed successfully');
+    } catch (err: any) {
+      setUploadError(err.message || 'Failed to remove file');
+    }
+  };
+
   return (
     <div className="app-layout">
       <div className="sidebar">
@@ -157,6 +253,12 @@ export default function Dashboard() {
             onClick={() => setActiveTab('releases')}
           >
             Manage Releases
+          </button>
+          <button
+            className={`sidebar-link ${activeTab === 'release-wizard' ? 'active' : ''}`}
+            onClick={() => setActiveTab('release-wizard')}
+          >
+            Release Wizard
           </button>
           <button
             className={`sidebar-link ${activeTab === 'blacklist' ? 'active' : ''}`}
@@ -337,6 +439,313 @@ export default function Dashboard() {
                 </tbody>
               </table>
             )}
+          </div>
+        )}
+
+        {activeTab === 'release-wizard' && (
+          <div>
+            <div className="page-header">
+              <h1 className="page-title">Release Wizard</h1>
+              <p className="page-description">Create and manage modpack releases with intelligent suggestions</p>
+            </div>
+
+            {error && <div className="alert alert-error">{error}</div>}
+            {draftLoading && <div className="alert alert-info">Loading drafts...</div>}
+            {uploadSuccess && <div className="alert alert-success">{uploadSuccess}</div>}
+
+            <div className="card">
+              <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 style={{ margin: 0 }}>Drafts ({drafts.length})</h2>
+                <button className="btn-primary" onClick={handleCreateDraft} disabled={draftLoading}>
+                  {draftLoading ? 'Creating...' : '+ Create New Draft'}
+                </button>
+              </div>
+
+              {drafts.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
+                  <Package style={{ width: '48px', height: '48px', margin: '0 auto 16px', opacity: 0.5 }} />
+                  <p style={{ fontSize: '16px', marginBottom: '16px' }}>No drafts yet</p>
+                  <button className="btn-primary" onClick={handleCreateDraft}>
+                    Create Your First Draft
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  {drafts.map((draft) => (
+                    <div key={draft.id} style={{
+                      padding: '16px',
+                      borderBottom: '1px solid #eee',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <div>
+                        <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: 600 }}>
+                          {draft.version || 'Untitled Draft'}
+                        </h3>
+                        <div style={{ fontSize: '12px', color: '#999', display: 'flex', gap: '16px' }}>
+                          {draft.minecraft_version && <span>Minecraft {draft.minecraft_version}</span>}
+                          {draft.fabric_loader && <span>Fabric {draft.fabric_loader}</span>}
+                          <span>{draft.files.length} files</span>
+                          <span>Updated {formatDistanceToNow(new Date(draft.updated_at), { addSuffix: true })}</span>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => handleEditDraft(draft.id)}>
+                          <Edit style={{ width: '16px', height: '16px', marginRight: '4px' }} /> Edit
+                        </button>
+                        <button className="btn-danger" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => handleDeleteDraft(draft.id, draft.version)}>
+                          <Trash2 style={{ width: '16px', height: '16px', marginRight: '4px' }} /> Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'edit-draft' && editingDraft && (
+          <div>
+            <div className="page-header">
+              <h1 className="page-title">{editingDraft.version || 'Untitled Draft'}</h1>
+              <p className="page-description">Edit your modpack release</p>
+            </div>
+
+            {error && <div className="alert alert-error">{error}</div>}
+            {uploadSuccess && <div className="alert alert-success">{uploadSuccess}</div>}
+
+            <div className="card">
+              {/* Tabs */}
+              <div style={{ display: 'flex', borderBottom: '2px solid #007bff', marginBottom: '20px', marginLeft: '-16px', marginRight: '-16px', paddingLeft: '16px' }}>
+                <button
+                  onClick={() => setEditingTab('metadata')}
+                  style={{
+                    padding: '12px 24px',
+                    border: 'none',
+                    background: editingTab === 'metadata' ? '#007bff' : 'transparent',
+                    color: editingTab === 'metadata' ? '#fff' : '#a0a0a0',
+                    cursor: 'pointer',
+                    fontWeight: editingTab === 'metadata' ? 600 : 500,
+                    fontSize: '14px',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  Metadata
+                </button>
+                <button
+                  onClick={() => setEditingTab('files')}
+                  style={{
+                    padding: '12px 24px',
+                    border: 'none',
+                    background: editingTab === 'files' ? '#007bff' : 'transparent',
+                    color: editingTab === 'files' ? '#fff' : '#a0a0a0',
+                    cursor: 'pointer',
+                    fontWeight: editingTab === 'files' ? 600 : 500,
+                    fontSize: '14px',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  Files
+                </button>
+                <button
+                  onClick={() => setEditingTab('changelog')}
+                  style={{
+                    padding: '12px 24px',
+                    border: 'none',
+                    background: editingTab === 'changelog' ? '#007bff' : 'transparent',
+                    color: editingTab === 'changelog' ? '#fff' : '#a0a0a0',
+                    cursor: 'pointer',
+                    fontWeight: editingTab === 'changelog' ? 600 : 500,
+                    fontSize: '14px',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  Changelog
+                </button>
+                <button
+                  onClick={() => setEditingTab('review')}
+                  style={{
+                    padding: '12px 24px',
+                    border: 'none',
+                    background: editingTab === 'review' ? '#007bff' : 'transparent',
+                    color: editingTab === 'review' ? '#fff' : '#a0a0a0',
+                    cursor: 'pointer',
+                    fontWeight: editingTab === 'review' ? 600 : 500,
+                    fontSize: '14px',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  Review
+                </button>
+              </div>
+
+              {/* Tab Content */}
+              {editingTab === 'metadata' && (
+                <div style={{ paddingTop: '10px' }}>
+                  <h3 style={{ marginTop: 0, color: '#fff' }}>Release Metadata</h3>
+                  <div className="form-group">
+                    <label className="form-label">Version</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={editingDraft.version || ''}
+                      onChange={(e) => handleUpdateDraft({ version: e.target.value })}
+                      placeholder="1.0.0"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Minecraft Version</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={editingDraft.minecraft_version || ''}
+                      onChange={(e) => handleUpdateDraft({ minecraft_version: e.target.value })}
+                      placeholder="1.20.1"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Fabric Loader</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={editingDraft.fabric_loader || ''}
+                      onChange={(e) => handleUpdateDraft({ fabric_loader: e.target.value })}
+                      placeholder="0.15.0"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {editingTab === 'files' && (
+                <div style={{ paddingTop: '10px' }}>
+                  <h3 style={{ marginTop: 0, color: '#fff' }}>Files ({editingDraft.files?.length || 0})</h3>
+
+                  {/* Upload Area */}
+                  <div style={{
+                    border: '2px dashed #007bff',
+                    borderRadius: '4px',
+                    padding: '20px',
+                    textAlign: 'center',
+                    marginBottom: '20px',
+                    backgroundColor: '#0f0f1e',
+                    cursor: 'pointer',
+                    color: '#a0a0a0'
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const files = e.dataTransfer.files;
+                    handleFileUpload(files);
+                  }}
+                  onDragOver={(e) => e.preventDefault()}
+                  onClick={() => document.getElementById('file-upload-input')?.click()}
+                  >
+                    <input
+                      id="file-upload-input"
+                      type="file"
+                      multiple
+                      style={{ display: 'none' }}
+                      onChange={(e) => {
+                        if (e.target.files) {
+                          handleFileUpload(e.target.files);
+                        }
+                      }}
+                    />
+                    <p style={{ margin: '0 0 8px 0', color: '#007bff', fontWeight: 500 }}>
+                      Drag and drop files here or click to browse
+                    </p>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#666' }}>
+                      Upload mods, configs, or any files for your modpack
+                    </p>
+                  </div>
+
+                  {/* File List */}
+                  {editingDraft.files && editingDraft.files.length > 0 ? (
+                    <div>
+                      <h4 style={{ marginTop: '16px', marginBottom: '8px', color: '#555' }}>Uploaded Files</h4>
+                      <div style={{ maxHeight: '400px', overflow: 'auto' }}>
+                        {editingDraft.files.map((file: any) => (
+                          <div key={file.path} style={{
+                            padding: '12px',
+                            borderBottom: '1px solid #eee',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                          }}>
+                            <div style={{ flex: 1 }}>
+                              <p style={{ margin: '0 0 4px 0', fontWeight: 500, color: '#333' }}>{file.path}</p>
+                              <p style={{ margin: 0, fontSize: '12px', color: '#999' }}>
+                                {(file.size / 1024 / 1024).toFixed(2)} MB
+                              </p>
+                            </div>
+                            <button
+                              className="btn-danger"
+                              style={{ padding: '4px 8px', fontSize: '12px', marginLeft: '8px' }}
+                              onClick={() => handleRemoveFile(file.path)}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p style={{ color: '#999', textAlign: 'center', marginTop: '20px' }}>No files uploaded yet</p>
+                  )}
+                </div>
+              )}
+
+              {editingTab === 'changelog' && (
+                <div style={{ paddingTop: '10px' }}>
+                  <h3 style={{ marginTop: 0, color: '#fff' }}>Changelog</h3>
+                  <textarea
+                    className="form-input"
+                    style={{ minHeight: '200px' }}
+                    value={editingDraft.changelog || ''}
+                    onChange={(e) => handleUpdateDraft({ changelog: e.target.value })}
+                    placeholder="Enter your changelog..."
+                  />
+                </div>
+              )}
+
+              {editingTab === 'review' && (
+                <div style={{ paddingTop: '10px' }}>
+                  <h3 style={{ marginTop: 0, color: '#fff' }}>Review Before Publishing</h3>
+                  <div style={{ background: '#1a1a2e', padding: '16px', borderRadius: '4px', marginTop: '16px', border: '1px solid #333' }}>
+                    <p style={{ color: '#a0a0a0', marginBottom: '8px' }}><strong style={{ color: '#fff' }}>Version:</strong> {editingDraft.version || '(not set)'}</p>
+                    <p style={{ color: '#a0a0a0', marginBottom: '8px' }}><strong style={{ color: '#fff' }}>Minecraft:</strong> {editingDraft.minecraft_version || '(not set)'}</p>
+                    <p style={{ color: '#a0a0a0', marginBottom: '8px' }}><strong style={{ color: '#fff' }}>Fabric Loader:</strong> {editingDraft.fabric_loader || '(not set)'}</p>
+                    <p style={{ color: '#a0a0a0' }}><strong style={{ color: '#fff' }}>Files:</strong> {editingDraft.files?.length || 0}</p>
+                  </div>
+                  <button
+                    className="btn-primary"
+                    style={{ marginTop: '16px' }}
+                    onClick={() => {
+                      setActiveTab('release-wizard');
+                      setEditingDraft(null);
+                      listDrafts();
+                    }}
+                  >
+                    Done Editing
+                  </button>
+                </div>
+              )}
+
+              {/* Back Button */}
+              <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #333' }}>
+                <button
+                  className="btn-secondary"
+                  onClick={() => {
+                    setActiveTab('release-wizard');
+                    setEditingDraft(null);
+                    listDrafts();
+                  }}
+                >
+                  Back to Drafts
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

@@ -7,4 +7,8 @@ pub use admin::{
     ReleaseInfo, ReleaseListResponse, UpdateBlacklistRequest, UploadResponse,
 };
 pub use manifest::{Manifest, ManifestFile};
-pub use release::CreateReleaseRequest;
+pub use release::{
+    AddFilesRequest, CreateDraftRequest, CreateReleaseRequest, DraftFile, DraftRelease,
+    GeneratedChangelog, ModInfo, ReleaseState, UpdateDraftRequest, UpdateFileRequest,
+    VersionSuggestions,
+};
