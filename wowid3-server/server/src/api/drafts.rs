@@ -321,8 +321,8 @@ pub async fn duplicate_draft(
         // Regenerate checksums from copied files instead of copying old checksums
         let fresh_files = scan_directory_files(&dest_files_dir).await?;
 
-        // Add files to draft with fresh checksums
-        let updated_draft = storage::add_files_to_draft(
+        // Set files in draft with fresh checksums (replaces, not appends)
+        let updated_draft = storage::set_draft_files(
             &state.config.storage_path(),
             new_draft.id,
             fresh_files,

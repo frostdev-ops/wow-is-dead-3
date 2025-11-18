@@ -471,8 +471,8 @@ pub async fn copy_release_to_draft(
     // This ensures files have accurate checksums even if they were modified
     let fresh_files = scan_directory_files(&draft_files_dir).await?;
 
-    // Add files to draft with fresh checksums
-    let final_draft = storage::add_files_to_draft(
+    // Set files in draft with fresh checksums (replaces, not appends)
+    let final_draft = storage::set_draft_files(
         &state.config.storage_path(),
         new_draft.id,
         fresh_files,

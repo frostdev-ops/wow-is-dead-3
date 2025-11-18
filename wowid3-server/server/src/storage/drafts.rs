@@ -157,6 +157,24 @@ pub fn add_files_to_draft(
     Ok(draft)
 }
 
+/// Replace all files in a draft with new files
+/// This is used when duplicating or copying releases to ensure deleted files are removed
+pub fn set_draft_files(
+    storage_path: &Path,
+    id: Uuid,
+    files: Vec<DraftFile>,
+) -> Result<DraftRelease> {
+    let mut draft = read_draft(storage_path, id)?;
+
+    // Replace entire file list
+    draft.files = files;
+    draft.updated_at = Utc::now();
+
+    write_draft(storage_path, &draft)?;
+
+    Ok(draft)
+}
+
 /// Remove a file from draft
 pub fn remove_file_from_draft(
     storage_path: &Path,
