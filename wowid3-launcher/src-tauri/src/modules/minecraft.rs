@@ -202,12 +202,21 @@ pub async fn launch_game_with_metadata(
     // Set working directory
     cmd.current_dir(&game_dir);
 
-    // Use patched GLFW on Wayland - no environment modifications needed
+    // Platform-specific environment variables
     #[cfg(target_os = "linux")]
     {
         if is_wayland_session() {
             eprintln!("[Minecraft] Using patched GLFW library for native Wayland support");
         }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Force Windows to use dedicated GPU (NVIDIA/AMD) instead of integrated Intel graphics
+        // This fixes "GLFW error 65542: WGL: The driver does not appear to support OpenGL"
+        cmd.env("SHIM_MCCOMPAT", "0x800000001"); // Disable compatibility shims
+        cmd.env("__GL_SYNC_TO_VBLANK", "0"); // Disable vsync for NVIDIA
+        eprintln!("[Minecraft] Forcing dedicated GPU usage on Windows");
     }
 
     // Capture stdout/stderr for log streaming
