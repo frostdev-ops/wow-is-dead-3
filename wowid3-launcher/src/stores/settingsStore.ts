@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
+import { platform } from '@tauri-apps/plugin-os';
+import { homeDir } from '@tauri-apps/api/path';
 
 interface SettingsState {
   // Java settings
@@ -99,14 +101,34 @@ export const useSettingsStore = create<SettingsState>()(
             });
           } catch (error) {
             console.error('[Settings] Failed to get default game directory:', error);
-            // Fallback to a safe default if Tauri command fails
-            const fallback = process.platform === 'win32'
-              ? 'C:\\Users\\Public\\wowid3-launcher\\game'
-              : `${process.env.HOME}/.local/share/wowid3-launcher/game`;
-            set({
-              gameDirectory: fallback,
-              _defaultGameDirectoryFetched: true
-            });
+            // Fallback to platform-specific default if Tauri command fails
+            try {
+              const currentPlatform = platform();
+              const home = await homeDir();
+              
+              let fallback: string;
+              if (currentPlatform === 'windows') {
+                fallback = 'C:\\Users\\Public\\wowid3-launcher\\game';
+              } else if (currentPlatform === 'macos') {
+                fallback = `${home}/Library/Application Support/wowid3-launcher/game`;
+              } else {
+                // Linux and other Unix-like systems
+                fallback = `${home}/.local/share/wowid3-launcher/game`;
+              }
+              
+              console.log('[Settings] Using platform-specific fallback:', fallback);
+              set({
+                gameDirectory: fallback,
+                _defaultGameDirectoryFetched: true
+              });
+            } catch (fallbackError) {
+              console.error('[Settings] Failed to determine platform fallback:', fallbackError);
+              // Last resort: use a relative path
+              set({
+                gameDirectory: './game',
+                _defaultGameDirectoryFetched: true
+              });
+            }
           }
         }
       },

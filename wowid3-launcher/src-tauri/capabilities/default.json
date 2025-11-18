@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "opener:default",
+    "os:default",
     "fs:allow-appcache-read-recursive",
     "fs:allow-cache-read-recursive"
   ]
