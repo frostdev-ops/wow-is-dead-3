@@ -1,9 +1,9 @@
 use crate::config::Config;
 use crate::middleware::AdminToken;
 use crate::models::{
-    AdminError, BlacklistResponse, CreateReleaseRequest, DeleteReleaseResponse, LoginRequest,
-    LoginResponse, Manifest, ManifestFile, ReleaseInfo, ReleaseListResponse,
-    UpdateBlacklistRequest, UploadResponse,
+    AdminError, BlacklistResponse, CreateReleaseRequest, DeleteReleaseResponse, DraftFile,
+    DraftRelease, LoginRequest, LoginResponse, Manifest, ManifestFile, ReleaseInfo,
+    ReleaseListResponse, UpdateBlacklistRequest, UploadResponse,
 };
 use crate::storage;
 use crate::utils;
@@ -433,6 +433,114 @@ pub async fn delete_release(
         message: format!("Release {} deleted successfully", version),
         deleted_version: version,
     }))
+}
+
+/// POST /api/admin/releases/:version/copy-to-draft - Copy a release to a new draft
+pub async fn copy_release_to_draft(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+    Path(version): Path<String>,
+) -> Result<Json<DraftRelease>, AppError> {
+    // Read the published release manifest
+    let manifest = storage::manifest::read_manifest(&state.config, &version)
+        .await
+        .map_err(|_| AppError::NotFound(format!("Release {} not found", version)))?;
+
+    // Create new draft with copied metadata
+    let new_version = Some(format!("{}-copy", version));
+    let new_draft = storage::create_draft(&state.config.storage_path(), new_version)?;
+
+    // Copy metadata
+    let _updated_draft = storage::update_draft(
+        &state.config.storage_path(),
+        new_draft.id,
+        Some(new_draft.version.clone()),
+        Some(manifest.minecraft_version.clone()),
+        Some(manifest.fabric_loader.clone()),
+        Some(manifest.changelog.clone()),
+    )?;
+
+    // Copy files from release to draft
+    let release_dir = state.config.release_path(&version);
+    let draft_files_dir = storage::get_draft_files_dir(&state.config.storage_path(), new_draft.id);
+
+    // Copy all files
+    copy_dir_all_recursive(&release_dir, &draft_files_dir).await?;
+
+    // Regenerate checksums from copied files instead of copying old checksums
+    // This ensures files have accurate checksums even if they were modified
+    let fresh_files = scan_directory_files(&draft_files_dir).await?;
+
+    // Add files to draft with fresh checksums
+    let final_draft = storage::add_files_to_draft(
+        &state.config.storage_path(),
+        new_draft.id,
+        fresh_files,
+    )?;
+
+    Ok(Json(final_draft))
+}
+
+// Helper function to recursively copy directories
+async fn copy_dir_all_recursive(src: &PathBuf, dst: &PathBuf) -> Result<(), AppError> {
+    fs::create_dir_all(dst).await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create directory: {}", e)))?;
+
+    for entry in walkdir::WalkDir::new(src).into_iter().filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path.is_file() {
+            let relative = path
+                .strip_prefix(src)
+                .map_err(|e| AppError::Internal(anyhow::anyhow!("Path error: {}", e)))?;
+
+            let dest_path = dst.join(relative);
+            if let Some(parent) = dest_path.parent() {
+                fs::create_dir_all(parent).await
+                    .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create parent directory: {}", e)))?;
+            }
+
+            fs::copy(path, &dest_path).await
+                .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to copy file: {}", e)))?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Scan a directory and generate DraftFile entries with fresh SHA256 checksums
+async fn scan_directory_files(dir: &PathBuf) -> Result<Vec<DraftFile>, AppError> {
+    let mut files = Vec::new();
+
+    for entry in walkdir::WalkDir::new(dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+    {
+        let path = entry.path();
+        let relative_path = path
+            .strip_prefix(dir)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Path error: {}", e)))?;
+
+        let relative_str = relative_path
+            .to_str()
+            .ok_or_else(|| AppError::Internal(anyhow::anyhow!("Invalid path encoding")))?;
+
+        // Calculate fresh checksum
+        let data = fs::read(path).await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read file: {}", e)))?;
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(&data);
+        let sha256 = format!("{:x}", hasher.finalize());
+
+        files.push(DraftFile {
+            path: relative_str.to_string(),
+            url: None, // URLs are generated when publishing
+            sha256,
+            size: data.len() as u64,
+        });
+    }
+
+    Ok(files)
 }
 
 /// GET /api/admin/blacklist - Get current blacklist

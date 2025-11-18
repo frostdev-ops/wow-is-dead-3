@@ -7,12 +7,14 @@ mod storage;
 mod utils;
 
 use api::admin::{
-    create_release, delete_release, get_blacklist, list_releases, login, update_blacklist,
-    upload_files, AdminState as AdminApiState,
+    copy_release_to_draft, create_release, delete_release, get_blacklist, list_releases, login,
+    update_blacklist, upload_files, AdminState as AdminApiState,
 };
 use api::drafts::{
-    add_files, analyze_draft, create_draft, delete_draft, generate_changelog_for_draft,
-    get_draft, list_drafts, publish_draft, remove_file, update_draft, update_file,
+    add_files, analyze_draft, browse_directory, create_directory, create_draft, delete_draft,
+    duplicate_draft, generate_changelog_for_draft, get_draft, list_drafts, move_file,
+    publish_draft, read_file_content, remove_file, rename_file, update_draft, update_file,
+    write_file_content,
 };
 use api::public::{get_latest_manifest, get_manifest_by_version, serve_file, serve_java_runtime, PublicState};
 use axum::{
@@ -90,6 +92,7 @@ async fn main() -> anyhow::Result<()> {
     let admin_routes = Router::new()
         .route("/api/admin/upload", post(upload_files))
         .route("/api/admin/releases", post(create_release).get(list_releases))
+        .route("/api/admin/releases/:version/copy-to-draft", post(copy_release_to_draft))
         .route("/api/admin/releases/:version", delete(delete_release))
         .route("/api/admin/blacklist", get(get_blacklist).put(update_blacklist))
         // Draft management routes
@@ -100,6 +103,14 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/admin/drafts/:id/files/*path", delete(remove_file).put(update_file))
         .route("/api/admin/drafts/:id/generate-changelog", post(generate_changelog_for_draft))
         .route("/api/admin/drafts/:id/publish", post(publish_draft))
+        .route("/api/admin/drafts/:id/duplicate", post(duplicate_draft))
+        // File browser routes
+        .route("/api/admin/drafts/:id/browse", get(browse_directory))
+        .route("/api/admin/drafts/:id/read-file", get(read_file_content))
+        .route("/api/admin/drafts/:id/write-file", post(write_file_content))
+        .route("/api/admin/drafts/:id/create-dir", post(create_directory))
+        .route("/api/admin/drafts/:id/rename", post(rename_file))
+        .route("/api/admin/drafts/:id/move", post(move_file))
         .layer(axum_middleware::from_fn(auth_middleware))
         .with_state(admin_state);
 

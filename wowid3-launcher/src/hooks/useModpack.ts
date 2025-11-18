@@ -36,6 +36,35 @@ export const useModpack = () => {
     checkInstalled();
   }, [gameDirectory, setInstalledVersion]);
 
+  // Poll for updates every 5 minutes
+  useEffect(() => {
+    const pollForUpdates = async () => {
+      try {
+        console.log('[Modpack] Polling for updates...');
+        const manifest = await checkForUpdates(manifestUrl);
+        setLatestManifest(manifest);
+
+        // Check if update is available
+        if (installedVersion && manifest.version !== installedVersion) {
+          console.log('[Modpack] Update available:', manifest.version);
+          setUpdateAvailable(true);
+        } else {
+          setUpdateAvailable(false);
+        }
+      } catch (err) {
+        console.error('[Modpack] Update check failed:', err);
+      }
+    };
+
+    // Check immediately on mount
+    pollForUpdates();
+
+    // Then poll every 5 minutes
+    const interval = setInterval(pollForUpdates, 5 * 60 * 1000); // 5 minutes
+
+    return () => clearInterval(interval);
+  }, [manifestUrl, installedVersion, setLatestManifest, setUpdateAvailable]);
+
   const checkUpdates = useCallback(async () => {
     try {
       setError(null);

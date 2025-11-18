@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { useAdmin } from '../hooks/useAdmin';
 import { useDrafts } from '../hooks/useDrafts';
-import { Plus, Edit, Trash2, Package } from 'lucide-react';
+import { Plus, Edit, Trash2, Package, Copy } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import FileBrowser from '../components/FileBrowser';
 import './Dashboard.css';
 
 interface UploadSession {
@@ -13,8 +14,8 @@ interface UploadSession {
 
 export default function Dashboard() {
   const { clearToken } = useAuthStore();
-  const { loading, error, uploadFiles, createRelease, listReleases, deleteRelease, getBlacklist, updateBlacklist } = useAdmin();
-  const { drafts, listDrafts, createDraft, getDraft, updateDraft: updateDraftAPI, deleteDraft: deleteDraftAPI, publishDraft, loading: draftLoading } = useDrafts();
+  const { loading, error, uploadFiles, createRelease, listReleases, deleteRelease, copyReleaseToDraft, getBlacklist, updateBlacklist } = useAdmin();
+  const { drafts, listDrafts, createDraft, getDraft, updateDraft: updateDraftAPI, deleteDraft: deleteDraftAPI, publishDraft, duplicateDraft, loading: draftLoading } = useDrafts();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'upload' | 'releases' | 'release-wizard' | 'edit-draft' | 'blacklist'>('dashboard');
   const [draftFilter, setDraftFilter] = useState<'all' | 'drafts'>('all');
   const [editingDraft, setEditingDraft] = useState<any>(null);
@@ -124,6 +125,17 @@ export default function Dashboard() {
     }
   };
 
+  const handleCopyReleaseToDraft = async (version: string) => {
+    try {
+      const newDraft = await copyReleaseToDraft(version);
+      setUploadSuccess(`Release ${version} copied to draft: ${newDraft.version}`);
+      setActiveTab('release-wizard');
+      listDrafts();
+    } catch (err: any) {
+      setUploadError(err.response?.data?.error || 'Failed to copy release to draft');
+    }
+  };
+
   const handleAddBlacklistPattern = () => {
     if (newPattern && !blacklistPatterns.includes(newPattern)) {
       setBlacklistPatterns([...blacklistPatterns, newPattern]);
@@ -156,6 +168,14 @@ export default function Dashboard() {
     if (confirm(`Delete draft ${version || 'Untitled Draft'}?`)) {
       await deleteDraftAPI(id);
       setUploadSuccess('Draft deleted');
+      listDrafts();
+    }
+  };
+
+  const handleDuplicateDraft = async (id: string, version: string) => {
+    const newDraft = await duplicateDraft(id);
+    if (newDraft) {
+      setUploadSuccess(`Draft duplicated: ${newDraft.version}`);
       listDrafts();
     }
   };
@@ -475,13 +495,24 @@ export default function Dashboard() {
                       <td>{(release.size_bytes / 1024 / 1024).toFixed(2)} MB</td>
                       <td>{new Date(release.created_at).toLocaleDateString()}</td>
                       <td>
-                        <button
-                          className="btn-danger"
-                          onClick={() => handleDeleteRelease(release.version)}
-                          disabled={loading}
-                        >
-                          Delete
-                        </button>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            className="btn-secondary"
+                            style={{ padding: '6px 12px', fontSize: '12px', background: '#6366f1', color: '#fff' }}
+                            onClick={() => handleCopyReleaseToDraft(release.version)}
+                            disabled={loading}
+                          >
+                            <Copy style={{ width: '14px', height: '14px', marginRight: '4px', display: 'inline' }} />
+                            Copy to Draft
+                          </button>
+                          <button
+                            className="btn-danger"
+                            onClick={() => handleDeleteRelease(release.version)}
+                            disabled={loading}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -542,6 +573,14 @@ export default function Dashboard() {
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => handleEditDraft(draft.id)}>
                           <Edit style={{ width: '16px', height: '16px', marginRight: '4px' }} /> Edit
+                        </button>
+                        <button
+                          className="btn-secondary"
+                          style={{ padding: '6px 12px', fontSize: '12px', background: '#6366f1', color: '#fff' }}
+                          onClick={() => handleDuplicateDraft(draft.id, draft.version)}
+                          disabled={draftLoading}
+                        >
+                          <Copy style={{ width: '16px', height: '16px', marginRight: '4px' }} /> Duplicate
                         </button>
                         <button className="btn-danger" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => handleDeleteDraft(draft.id, draft.version)}>
                           <Trash2 style={{ width: '16px', height: '16px', marginRight: '4px' }} /> Delete
@@ -669,95 +708,29 @@ export default function Dashboard() {
 
               {editingTab === 'files' && (
                 <div style={{ paddingTop: '10px' }}>
-                  <h3 style={{ marginTop: 0, color: '#fff' }}>Files ({editingDraft.files?.length || 0})</h3>
-
-                  {/* Upload Area */}
-                  <div style={{
-                    border: loading ? '2px solid #007bff' : '2px dashed #007bff',
-                    borderRadius: '4px',
-                    padding: '20px',
-                    textAlign: 'center',
-                    marginBottom: '20px',
-                    backgroundColor: loading ? '#1a2332' : '#0f0f1e',
-                    cursor: loading ? 'wait' : 'pointer',
-                    color: '#a0a0a0',
-                    opacity: loading ? 0.7 : 1
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    if (loading) return;
-                    const files = e.dataTransfer.files;
-                    handleFileUpload(files);
-                  }}
-                  onDragOver={(e) => e.preventDefault()}
-                  onClick={() => !loading && document.getElementById('file-upload-input')?.click()}
-                  >
-                    <input
-                      id="file-upload-input"
-                      type="file"
-                      multiple
-                      accept=".zip,.jar,.json,.toml,.txt,*"
-                      style={{ display: 'none' }}
-                      onChange={(e) => {
-                        if (e.target.files && !loading) {
-                          handleFileUpload(e.target.files);
-                        }
-                      }}
-                    />
-                    {loading ? (
-                      <>
-                        <p style={{ margin: '0 0 8px 0', color: '#007bff', fontWeight: 600 }}>
-                          ⏳ Uploading files...
-                        </p>
-                        <p style={{ margin: 0, fontSize: '12px', color: '#666' }}>
-                          Please wait, this may take a while for large files
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <p style={{ margin: '0 0 8px 0', color: '#007bff', fontWeight: 500 }}>
-                          📁 Drag and drop .zip files here or click to browse
-                        </p>
-                        <p style={{ margin: 0, fontSize: '12px', color: '#666' }}>
-                          Zip files are auto-extracted. Folders must be zipped first!
-                        </p>
-                      </>
-                    )}
+                  <h3 style={{ marginTop: 0, color: '#fff', marginBottom: '16px' }}>
+                    File Browser - Interactive Directory Management
+                  </h3>
+                  <FileBrowser
+                    draftId={editingDraft.id}
+                    onFileChange={async () => {
+                      // Refresh draft to update file list
+                      const draft = await getDraft(editingDraft.id);
+                      if (draft) {
+                        setEditingDraft(draft);
+                      }
+                    }}
+                  />
+                  <div style={{ marginTop: '16px', padding: '12px', background: '#1a1a2e', borderRadius: '4px', fontSize: '13px', color: '#a0a0a0' }}>
+                    <strong style={{ color: '#007bff' }}>✨ New Features:</strong>
+                    <ul style={{ marginTop: '8px', marginBottom: 0, paddingLeft: '20px' }}>
+                      <li>Browse and navigate directory structure with breadcrumb navigation</li>
+                      <li>Edit text files directly in the browser (JSON, TOML, TXT, etc.)</li>
+                      <li>Create new files and folders with custom names</li>
+                      <li>Delete files and folders with confirmation</li>
+                      <li>View file sizes and modification dates</li>
+                    </ul>
                   </div>
-
-                  {/* File List */}
-                  {editingDraft.files && editingDraft.files.length > 0 ? (
-                    <div>
-                      <h4 style={{ marginTop: '16px', marginBottom: '8px', color: '#555' }}>Uploaded Files</h4>
-                      <div style={{ maxHeight: '400px', overflow: 'auto' }}>
-                        {editingDraft.files.map((file: any) => (
-                          <div key={file.path} style={{
-                            padding: '12px',
-                            borderBottom: '1px solid #eee',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center'
-                          }}>
-                            <div style={{ flex: 1 }}>
-                              <p style={{ margin: '0 0 4px 0', fontWeight: 500, color: '#333' }}>{file.path}</p>
-                              <p style={{ margin: 0, fontSize: '12px', color: '#999' }}>
-                                {(file.size / 1024 / 1024).toFixed(2)} MB
-                              </p>
-                            </div>
-                            <button
-                              className="btn-danger"
-                              style={{ padding: '4px 8px', fontSize: '12px', marginLeft: '8px' }}
-                              onClick={() => handleRemoveFile(file.path)}
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <p style={{ color: '#999', textAlign: 'center', marginTop: '20px' }}>No files uploaded yet</p>
-                  )}
                 </div>
               )}
 

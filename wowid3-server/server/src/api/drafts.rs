@@ -7,15 +7,17 @@ use crate::models::{
 use crate::services::{analyze_files, generate_changelog, suggest_next_version, ChangeType};
 use crate::storage;
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     Extension, Json,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use tokio::fs;
 use uuid::Uuid;
 use walkdir::WalkDir;
+use chrono;
 
 /// POST /api/admin/drafts - Create a new draft
 pub async fn create_draft(
@@ -238,10 +240,12 @@ pub async fn publish_draft(
     let draft_files_dir = storage::get_draft_files_dir(&state.config.storage_path(), id);
     copy_dir_all(&draft_files_dir, &release_dir).await?;
 
-    // Convert DraftFile to ManifestFile
-    // Always generate release URLs when publishing (don't use draft URLs)
-    let manifest_files: Vec<ManifestFile> = draft
-        .files
+    // Regenerate checksums from the actual files on disk to ensure accuracy
+    // This is critical because files may have been edited via the file browser
+    let verified_files = scan_directory_files(&release_dir).await?;
+
+    // Convert DraftFile to ManifestFile with fresh checksums and release URLs
+    let manifest_files: Vec<ManifestFile> = verified_files
         .iter()
         .map(|f| ManifestFile {
             path: f.path.clone(),
@@ -276,6 +280,437 @@ pub async fn publish_draft(
         "message": "Draft published successfully",
         "version": draft.version,
         "file_count": manifest.files.len()
+    })))
+}
+
+/// POST /api/admin/drafts/:id/duplicate - Duplicate a draft with all files
+pub async fn duplicate_draft(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<DraftRelease>, AppError> {
+    let source_draft = storage::read_draft(&state.config.storage_path(), id)?;
+
+    // Create new draft with copied metadata
+    let new_version = if !source_draft.version.is_empty() {
+        Some(format!("{}-copy", source_draft.version))
+    } else {
+        None
+    };
+
+    let new_draft = storage::create_draft(&state.config.storage_path(), new_version)?;
+
+    // Copy metadata
+    let updated_draft = storage::update_draft(
+        &state.config.storage_path(),
+        new_draft.id,
+        Some(new_draft.version.clone()),
+        Some(source_draft.minecraft_version.clone()),
+        Some(source_draft.fabric_loader.clone()),
+        Some(source_draft.changelog.clone()),
+    )?;
+
+    // Copy files if source draft has any
+    if !source_draft.files.is_empty() {
+        let source_files_dir = storage::get_draft_files_dir(&state.config.storage_path(), id);
+        let dest_files_dir = storage::get_draft_files_dir(&state.config.storage_path(), new_draft.id);
+
+        // Copy all files from source to destination
+        copy_dir_all(&source_files_dir, &dest_files_dir).await?;
+
+        // Regenerate checksums from copied files instead of copying old checksums
+        let fresh_files = scan_directory_files(&dest_files_dir).await?;
+
+        // Add files to draft with fresh checksums
+        let updated_draft = storage::add_files_to_draft(
+            &state.config.storage_path(),
+            new_draft.id,
+            fresh_files,
+        )?;
+
+        Ok(Json(updated_draft))
+    } else {
+        Ok(Json(updated_draft))
+    }
+}
+
+/// File browser data structures
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BrowseQuery {
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FileEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub size: Option<u64>,
+    pub modified: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BrowseResponse {
+    pub current_path: String,
+    pub entries: Vec<FileEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ReadFileQuery {
+    pub path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WriteFileRequest {
+    pub path: String,
+    pub content: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateDirectoryRequest {
+    pub path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RenameRequest {
+    pub old_path: String,
+    pub new_name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MoveRequest {
+    pub source_path: String,
+    pub dest_path: String,
+}
+
+/// GET /api/admin/drafts/:id/browse?path=... - Browse directory contents
+pub async fn browse_directory(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<BrowseQuery>,
+) -> Result<Json<BrowseResponse>, AppError> {
+    let draft_files_dir = storage::get_draft_files_dir(&state.config.storage_path(), id);
+
+    // Get target directory
+    let target_dir = if let Some(ref path) = query.path {
+        draft_files_dir.join(path)
+    } else {
+        draft_files_dir.clone()
+    };
+
+    // Security check: ensure we're not escaping the draft directory
+    let canonical_target = target_dir.canonicalize()
+        .map_err(|_| AppError::NotFound("Directory not found".to_string()))?;
+    let canonical_base = draft_files_dir.canonicalize()
+        .unwrap_or(draft_files_dir.clone());
+
+    if !canonical_target.starts_with(&canonical_base) {
+        return Err(AppError::BadRequest("Invalid directory path".to_string()));
+    }
+
+    if !target_dir.exists() {
+        // Create the directory if it doesn't exist
+        fs::create_dir_all(&target_dir).await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create directory: {}", e)))?;
+    }
+
+    // Read directory entries
+    let mut entries = Vec::new();
+    let mut read_dir = fs::read_dir(&target_dir).await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read directory: {}", e)))?;
+
+    while let Some(entry) = read_dir.next_entry().await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read entry: {}", e)))? {
+
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        let file_path = entry.path();
+        let metadata = entry.metadata().await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to get metadata: {}", e)))?;
+
+        let is_dir = metadata.is_dir();
+        let size = if !is_dir { Some(metadata.len()) } else { None };
+
+        // Get relative path from draft files dir
+        let relative_path = file_path
+            .strip_prefix(&draft_files_dir)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| file_name.clone());
+
+        let modified = metadata.modified().ok()
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|duration| chrono::DateTime::from_timestamp(duration.as_secs() as i64, 0))
+            .flatten()
+            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string());
+
+        entries.push(FileEntry {
+            name: file_name,
+            path: relative_path,
+            is_dir,
+            size,
+            modified,
+        });
+    }
+
+    // Sort: directories first, then files, both alphabetically
+    entries.sort_by(|a, b| {
+        match (a.is_dir, b.is_dir) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.name.cmp(&b.name),
+        }
+    });
+
+    Ok(Json(BrowseResponse {
+        current_path: query.path.unwrap_or_default(),
+        entries,
+    }))
+}
+
+/// GET /api/admin/drafts/:id/read-file?path=... - Read text file contents
+pub async fn read_file_content(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<ReadFileQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let draft_files_dir = storage::get_draft_files_dir(&state.config.storage_path(), id);
+    let file_path = draft_files_dir.join(&query.path);
+
+    // Security check
+    let canonical_file = file_path.canonicalize()
+        .map_err(|_| AppError::NotFound("File not found".to_string()))?;
+    let canonical_base = draft_files_dir.canonicalize()
+        .unwrap_or(draft_files_dir);
+
+    if !canonical_file.starts_with(&canonical_base) {
+        return Err(AppError::BadRequest("Invalid file path".to_string()));
+    }
+
+    if !file_path.exists() || !file_path.is_file() {
+        return Err(AppError::NotFound("File not found".to_string()));
+    }
+
+    // Check if file is likely a text file
+    let content = fs::read(&file_path).await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read file: {}", e)))?;
+
+    // Try to convert to UTF-8
+    let text = String::from_utf8(content)
+        .map_err(|_| AppError::BadRequest("File is not a text file".to_string()))?;
+
+    Ok(Json(json!({
+        "path": query.path,
+        "content": text,
+        "size": text.len()
+    })))
+}
+
+/// PUT /api/admin/drafts/:id/write-file - Write/update text file contents
+pub async fn write_file_content(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<WriteFileRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let draft_files_dir = storage::get_draft_files_dir(&state.config.storage_path(), id);
+    let file_path = draft_files_dir.join(&request.path);
+
+    // Security check - ensure we're not escaping the draft directory
+    let parent_dir = file_path.parent()
+        .ok_or_else(|| AppError::BadRequest("Invalid file path".to_string()))?;
+
+    // Create parent directory if it doesn't exist
+    fs::create_dir_all(&parent_dir).await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create directory: {}", e)))?;
+
+    let canonical_parent = parent_dir.canonicalize()
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Path error: {}", e)))?;
+    let canonical_base = draft_files_dir.canonicalize()
+        .unwrap_or(draft_files_dir.clone());
+
+    if !canonical_parent.starts_with(&canonical_base) {
+        return Err(AppError::BadRequest("Invalid file path".to_string()));
+    }
+
+    // Write file
+    fs::write(&file_path, request.content.as_bytes()).await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to write file: {}", e)))?;
+
+    // Update draft file list with new/updated file
+    let data = request.content.as_bytes();
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    let sha256 = format!("{:x}", hasher.finalize());
+
+    let draft_file = DraftFile {
+        path: request.path.clone(),
+        url: None,
+        sha256: sha256.clone(),
+        size: data.len() as u64,
+    };
+
+    // Try to update existing file or add new one
+    let draft = storage::read_draft(&state.config.storage_path(), id)?;
+    let mut files = draft.files;
+
+    if let Some(existing) = files.iter_mut().find(|f| f.path == request.path) {
+        existing.sha256 = sha256.clone();
+        existing.size = data.len() as u64;
+    } else {
+        files.push(draft_file);
+    }
+
+    storage::add_files_to_draft(&state.config.storage_path(), id, files)?;
+
+    Ok(Json(json!({
+        "message": "File saved successfully",
+        "path": request.path,
+        "size": data.len(),
+        "sha256": sha256
+    })))
+}
+
+/// POST /api/admin/drafts/:id/create-dir - Create new directory
+pub async fn create_directory(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<CreateDirectoryRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let draft_files_dir = storage::get_draft_files_dir(&state.config.storage_path(), id);
+    let new_dir = draft_files_dir.join(&request.path);
+
+    // Security check
+    let parent = new_dir.parent()
+        .ok_or_else(|| AppError::BadRequest("Invalid directory path".to_string()))?;
+
+    fs::create_dir_all(&parent).await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create parent: {}", e)))?;
+
+    let canonical_parent = parent.canonicalize()
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Path error: {}", e)))?;
+    let canonical_base = draft_files_dir.canonicalize()
+        .unwrap_or(draft_files_dir);
+
+    if !canonical_parent.starts_with(&canonical_base) {
+        return Err(AppError::BadRequest("Invalid directory path".to_string()));
+    }
+
+    // Create directory
+    fs::create_dir_all(&new_dir).await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create directory: {}", e)))?;
+
+    Ok(Json(json!({
+        "message": "Directory created successfully",
+        "path": request.path
+    })))
+}
+
+/// POST /api/admin/drafts/:id/rename - Rename file or directory
+pub async fn rename_file(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<RenameRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let draft_files_dir = storage::get_draft_files_dir(&state.config.storage_path(), id);
+    let old_path = draft_files_dir.join(&request.old_path);
+
+    // Construct new path (same directory, different name)
+    let parent = old_path.parent()
+        .ok_or_else(|| AppError::BadRequest("Invalid path".to_string()))?;
+    let new_path = parent.join(&request.new_name);
+
+    // Security checks
+    let canonical_old = old_path.canonicalize()
+        .map_err(|_| AppError::NotFound("Source not found".to_string()))?;
+    let canonical_base = draft_files_dir.canonicalize()
+        .unwrap_or(draft_files_dir.clone());
+
+    if !canonical_old.starts_with(&canonical_base) {
+        return Err(AppError::BadRequest("Invalid source path".to_string()));
+    }
+
+    // Rename
+    fs::rename(&old_path, &new_path).await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to rename: {}", e)))?;
+
+    // Update draft file list if it's a file
+    if new_path.is_file() {
+        let draft = storage::read_draft(&state.config.storage_path(), id)?;
+        let mut files = draft.files;
+
+        let new_relative_path = new_path
+            .strip_prefix(&draft_files_dir)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| request.new_name.clone());
+
+        if let Some(file) = files.iter_mut().find(|f| f.path == request.old_path) {
+            file.path = new_relative_path.clone();
+        }
+
+        storage::add_files_to_draft(&state.config.storage_path(), id, files)?;
+
+        Ok(Json(json!({
+            "message": "File renamed successfully",
+            "old_path": request.old_path,
+            "new_path": new_relative_path
+        })))
+    } else {
+        Ok(Json(json!({
+            "message": "Directory renamed successfully",
+            "old_path": request.old_path,
+            "new_name": request.new_name
+        })))
+    }
+}
+
+/// POST /api/admin/drafts/:id/move - Move file to different directory
+pub async fn move_file(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<MoveRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let draft_files_dir = storage::get_draft_files_dir(&state.config.storage_path(), id);
+    let source_path = draft_files_dir.join(&request.source_path);
+    let dest_path = draft_files_dir.join(&request.dest_path);
+
+    // Security checks
+    let canonical_source = source_path.canonicalize()
+        .map_err(|_| AppError::NotFound("Source not found".to_string()))?;
+    let canonical_base = draft_files_dir.canonicalize()
+        .unwrap_or(draft_files_dir.clone());
+
+    if !canonical_source.starts_with(&canonical_base) {
+        return Err(AppError::BadRequest("Invalid source path".to_string()));
+    }
+
+    // Create destination parent if needed
+    if let Some(dest_parent) = dest_path.parent() {
+        fs::create_dir_all(dest_parent).await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create destination: {}", e)))?;
+    }
+
+    // Move
+    fs::rename(&source_path, &dest_path).await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to move: {}", e)))?;
+
+    // Update draft file list
+    let draft = storage::read_draft(&state.config.storage_path(), id)?;
+    let mut files = draft.files;
+
+    if let Some(file) = files.iter_mut().find(|f| f.path == request.source_path) {
+        file.path = request.dest_path.clone();
+    }
+
+    storage::add_files_to_draft(&state.config.storage_path(), id, files)?;
+
+    Ok(Json(json!({
+        "message": "File moved successfully",
+        "source_path": request.source_path,
+        "dest_path": request.dest_path
     })))
 }
 
@@ -343,4 +778,40 @@ async fn copy_dir_all(src: &PathBuf, dst: &PathBuf) -> Result<(), AppError> {
     }
 
     Ok(())
+}
+
+/// Scan a directory and generate DraftFile entries with fresh SHA256 checksums
+async fn scan_directory_files(dir: &PathBuf) -> Result<Vec<DraftFile>, AppError> {
+    let mut files = Vec::new();
+
+    for entry in WalkDir::new(dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+    {
+        let path = entry.path();
+        let relative_path = path
+            .strip_prefix(dir)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Path error: {}", e)))?;
+
+        let relative_str = relative_path
+            .to_str()
+            .ok_or_else(|| AppError::Internal(anyhow::anyhow!("Invalid path encoding")))?;
+
+        // Calculate fresh checksum
+        let data = fs::read(path).await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read file: {}", e)))?;
+        let mut hasher = Sha256::new();
+        hasher.update(&data);
+        let sha256 = format!("{:x}", hasher.finalize());
+
+        files.push(DraftFile {
+            path: relative_str.to_string(),
+            url: None, // URLs are generated when publishing
+            sha256,
+            size: data.len() as u64,
+        });
+    }
+
+    Ok(files)
 }

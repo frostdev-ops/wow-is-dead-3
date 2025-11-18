@@ -247,6 +247,27 @@ export function useDrafts() {
     }
   }, []);
 
+  const duplicateDraft = useCallback(async (id: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await axios.post<DraftRelease>(
+        `${API_BASE}/drafts/${id}/duplicate`,
+        {},
+        {
+          headers: getAuthHeaders(),
+        }
+      );
+      setCurrentDraft(response.data);
+      return response.data;
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to duplicate draft');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   return {
     drafts,
     currentDraft,
@@ -263,5 +284,6 @@ export function useDrafts() {
     updateFile,
     generateChangelog,
     publishDraft,
+    duplicateDraft,
   };
 }

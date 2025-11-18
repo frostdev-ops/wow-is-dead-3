@@ -149,6 +149,21 @@ export const useAdmin = () => {
     }
   };
 
+  const copyReleaseToDraft = async (version: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await api.post(`/admin/releases/${version}/copy-to-draft`);
+      return response.data;
+    } catch (err: any) {
+      const message = err.response?.data?.error || 'Failed to copy release to draft';
+      setError(message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
     loading,
     error,
@@ -157,6 +172,7 @@ export const useAdmin = () => {
     createRelease,
     listReleases,
     deleteRelease,
+    copyReleaseToDraft,
     getBlacklist,
     updateBlacklist,
   };

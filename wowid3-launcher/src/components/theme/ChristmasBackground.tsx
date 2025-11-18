@@ -129,7 +129,7 @@ export default function ChristmasBackground() {
       }, 7000);
     };
 
-    let timeoutId: NodeJS.Timeout | null = null;
+    let timeoutId: number | null = null;
 
     // Spawn delay decreases as cookie count increases
     const scheduleNext = () => {

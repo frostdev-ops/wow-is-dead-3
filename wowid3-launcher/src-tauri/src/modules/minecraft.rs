@@ -109,6 +109,14 @@ pub async fn launch_game_with_metadata(
         "-Dfml.earlyprogresswindow=false".to_string(),
     ];
 
+    // Force LWJGL to use X11 instead of Wayland on Wayland systems (prevents GLFW crashes)
+    #[cfg(target_os = "linux")]
+    {
+        if is_wayland_session() {
+            jvm_args.push("-Dorg.lwjgl.glfw.wayland=false".to_string());
+        }
+    }
+
     // Add Fabric-specific JVM argument if this is a Fabric loader
     if version_meta.main_class.contains("fabric") {
         // Normalize to forward slashes for cross-platform compatibility (Minecraft convention)
@@ -454,6 +462,19 @@ fn get_bundled_java_path() -> PathBuf {
     {
         PathBuf::from("./runtime/java/bin/java")
     }
+}
+
+/// Detect if running on a Wayland session (Linux only)
+#[cfg(target_os = "linux")]
+fn is_wayland_session() -> bool {
+    // Check common Wayland environment variables
+    std::env::var("WAYLAND_DISPLAY").is_ok()
+        || std::env::var("XDG_SESSION_TYPE").map(|v| v == "wayland").unwrap_or(false)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn is_wayland_session() -> bool {
+    false
 }
 
 /// Analyze crash report and return helpful error message
