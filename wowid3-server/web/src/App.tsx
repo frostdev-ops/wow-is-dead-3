@@ -14,6 +14,7 @@ const ReleasesPage = lazy(() => import('./pages/ReleasesPage'));
 const ReleaseEditorPage = lazy(() => import('./pages/ReleaseEditorPage'));
 const DraftsPage = lazy(() => import('./pages/DraftsPage'));
 const UploadPage = lazy(() => import('./pages/UploadPage'));
+const ResourcePacksPage = lazy(() => import('./pages/ResourcePacksPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 
 // Performance: Loading fallback component
@@ -62,6 +63,7 @@ function App() {
               <Route path="/releases" element={<ProtectedRoute><ReleasesPage /></ProtectedRoute>} />
               <Route path="/releases/:id/edit" element={<ProtectedRoute><ReleaseEditorPage /></ProtectedRoute>} />
               <Route path="/upload" element={<ProtectedRoute><UploadPage /></ProtectedRoute>} />
+              <Route path="/resources" element={<ProtectedRoute><ResourcePacksPage /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
 
               {/* Catch-all: Redirect to dashboard or login */}

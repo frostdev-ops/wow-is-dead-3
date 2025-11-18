@@ -164,6 +164,43 @@ export const useAdmin = () => {
     }
   };
 
+  const uploadResourcePacks = async (files: File[]) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      files.forEach((file) => {
+        formData.append('files', file, file.name);
+      });
+
+      const response = await api.post('/admin/resources', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      return response.data;
+    } catch (err: any) {
+      const message = err.response?.data?.error || 'Resource pack upload failed';
+      setError(message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteResourcePack = async (filename: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await api.delete(`/admin/resources/${filename}`);
+      return response.data;
+    } catch (err: any) {
+      const message = err.response?.data?.error || 'Failed to delete resource pack';
+      setError(message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
     loading,
     error,
@@ -175,5 +212,7 @@ export const useAdmin = () => {
     copyReleaseToDraft,
     getBlacklist,
     updateBlacklist,
+    uploadResourcePacks,
+    deleteResourcePack,
   };
 };

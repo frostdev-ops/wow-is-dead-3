@@ -111,6 +111,13 @@
   border-color: #007bff;
 }
 
+.file-browser-entry.drag-over {
+  background: #007bff22;
+  border-color: #007bff;
+  border-width: 2px;
+  border-style: dashed;
+}
+
 .file-browser-entry-info {
   display: flex;
   align-items: center;

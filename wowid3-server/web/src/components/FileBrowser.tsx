@@ -36,12 +36,20 @@ const FileEntryItem = memo(({
   entry,
   onOpen,
   onDelete,
-  onPreview
+  onPreview,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  isDragOver
 }: {
   entry: FileEntry;
   onOpen: (entry: FileEntry) => void;
   onDelete: (entry: FileEntry) => void;
   onPreview: (entry: FileEntry) => void;
+  onDragOver?: (e: React.DragEvent, entry: FileEntry) => void;
+  onDragLeave?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent, entry: FileEntry) => void;
+  isDragOver?: boolean;
 }) => {
   const formatSize = useCallback((bytes?: number) => {
     if (!bytes) return '-';
@@ -51,7 +59,12 @@ const FileEntryItem = memo(({
   }, []);
 
   return (
-    <div className="file-browser-entry">
+    <div
+      className={`file-browser-entry ${entry.is_dir && isDragOver ? 'drag-over' : ''}`}
+      onDragOver={entry.is_dir && onDragOver ? (e) => onDragOver(e, entry) : undefined}
+      onDragLeave={entry.is_dir && onDragLeave ? onDragLeave : undefined}
+      onDrop={entry.is_dir && onDrop ? (e) => onDrop(e, entry) : undefined}
+    >
       <div className="file-browser-entry-info" onClick={() => onOpen(entry)}>
         {entry.is_dir ? (
           <Folder size={20} className="file-icon folder" />
@@ -136,6 +149,9 @@ function FileBrowser({ draftId, onFileChange }: FileBrowserProps) {
 
   // Upload state
   const [uploading, setUploading] = useState(false);
+
+  // Drag-and-drop state
+  const [dragOverPath, setDragOverPath] = useState<string | null>(null);
 
   const authToken = localStorage.getItem('auth_token');
 
@@ -367,10 +383,7 @@ function FileBrowser({ draftId, onFileChange }: FileBrowserProps) {
     setCurrentPath(parts.join('/'));
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
+  const uploadFilesToPath = async (files: FileList, targetPath: string) => {
     setUploading(true);
     setError(null);
 
@@ -398,7 +411,7 @@ function FileBrowser({ draftId, onFileChange }: FileBrowserProps) {
 
       const upload_id = uploadData[0].upload_id;
 
-      // Step 2: Add files to draft in current directory
+      // Step 2: Add files to draft in target directory
       const addFilesResponse = await fetch(`/api/admin/drafts/${draftId}/files`, {
         method: 'POST',
         headers: {
@@ -407,7 +420,7 @@ function FileBrowser({ draftId, onFileChange }: FileBrowserProps) {
         },
         body: JSON.stringify({
           upload_id,
-          target_path: currentPath || undefined
+          target_path: targetPath || undefined
         }),
       });
 
@@ -415,15 +428,45 @@ function FileBrowser({ draftId, onFileChange }: FileBrowserProps) {
         throw new Error(`Failed to add files: ${addFilesResponse.statusText}`);
       }
 
-      setSuccess(`Uploaded ${files.length} file(s) successfully`);
+      setSuccess(`Uploaded ${files.length} file(s) to ${targetPath || 'root'}`);
       loadDirectory(currentPath);
       onFileChange?.();
     } catch (err: any) {
       setError(err.message || 'Failed to upload files');
     } finally {
       setUploading(false);
-      e.target.value = ''; // Reset input
     }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    await uploadFilesToPath(files, currentPath);
+    e.target.value = ''; // Reset input
+  };
+
+  const handleFileDrop = async (e: React.DragEvent, targetPath: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverPath(null);
+
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+
+    await uploadFilesToPath(files, targetPath);
+  };
+
+  const handleDragOver = (e: React.DragEvent, path: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverPath(path);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverPath(null);
   };
 
   return (
@@ -561,7 +604,13 @@ function FileBrowser({ draftId, onFileChange }: FileBrowserProps) {
       )}
 
       {/* File List - Performance: Virtualized for 1000+ files */}
-      <div className="file-browser-list" style={{ height: '500px', overflow: 'auto' }}>
+      <div
+        className="file-browser-list"
+        style={{ height: '500px', overflow: 'auto' }}
+        onDragOver={(e) => handleDragOver(e, currentPath)}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => handleFileDrop(e, currentPath)}
+      >
         {loading && <div className="file-browser-loading">Loading...</div>}
 
         {!loading && entries.length === 0 && (
@@ -607,6 +656,10 @@ function FileBrowser({ draftId, onFileChange }: FileBrowserProps) {
                     onOpen={handleOpenFile}
                     onDelete={handleDeleteEntry}
                     onPreview={handlePreviewFile}
+                    onDragOver={(e, entry) => handleDragOver(e, entry.path)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e, entry) => handleFileDrop(e, entry.path)}
+                    isDragOver={dragOverPath === entry.path}
                   />
                 </div>
               );

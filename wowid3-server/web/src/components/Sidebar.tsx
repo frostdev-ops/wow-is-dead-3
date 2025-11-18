@@ -6,6 +6,7 @@ import {
   Settings,
   Upload,
   FileText,
+  Archive,
 } from 'lucide-react';
 
 interface NavItem {
@@ -40,6 +41,11 @@ export function Sidebar() {
       icon: <Upload className="w-5 h-5" />,
     },
     {
+      label: 'Resources',
+      path: '/resources',
+      icon: <Archive className="w-5 h-5" />,
+    },
+    {
       label: 'Settings',
       path: '/settings',
       icon: <Settings className="w-5 h-5" />,
@@ -51,6 +57,7 @@ export function Sidebar() {
     if (path === '/drafts' && location.pathname === '/drafts') return true;
     if (path === '/releases' && location.pathname.startsWith('/releases')) return true;
     if (path === '/upload' && location.pathname === '/upload') return true;
+    if (path === '/resources' && location.pathname === '/resources') return true;
     if (path === '/settings' && location.pathname === '/settings') return true;
     return false;
   };

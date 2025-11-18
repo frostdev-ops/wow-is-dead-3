@@ -84,12 +84,12 @@ export default function ReleaseEditor() {
 
   if (loading || !currentDraft) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
+      <div className="flex flex-col items-center justify-center h-screen bg-background">
         <div className="relative mb-4">
-          <div className="w-16 h-16 border-4 border-blue-200 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-16 h-16 border-4 border-primary/20 rounded-full"></div>
+          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
         </div>
-        <p className="text-gray-600 font-medium">Loading release...</p>
+        <p className="text-foreground font-medium">Loading release...</p>
       </div>
     );
   }
@@ -99,25 +99,25 @@ export default function ReleaseEditor() {
   );
 
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
+    <div className="h-screen flex flex-col bg-background">
       {/* Header */}
-      <div className="bg-white/80 backdrop-blur-sm border-b border-gray-200 shadow-sm">
+      <div className="bg-card border-b border-border shadow-sm">
         <div className="px-6 py-4">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-4">
               <button
                 onClick={() => navigate('/releases')}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors duration-200"
+                className="p-2 hover:bg-accent rounded-lg transition-colors duration-200"
                 title="Back to releases"
               >
-                <ArrowLeft className="w-5 h-5 text-gray-600" />
+                <ArrowLeft className="w-5 h-5 text-muted-foreground" />
               </button>
               <div>
-                <h1 className="text-2xl font-bold text-gray-800">
+                <h1 className="text-2xl font-bold text-foreground">
                   {currentDraft.version || 'New Release'}
                 </h1>
-                <p className="text-sm text-gray-500 flex items-center gap-2">
-                  <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs font-medium rounded">DRAFT</span>
+                <p className="text-sm text-muted-foreground flex items-center gap-2">
+                  <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-500 text-xs font-medium rounded">DRAFT</span>
                   <span>•</span>
                   <span>Created {formatDistanceToNow(new Date(currentDraft.created_at), { addSuffix: true })}</span>
                 </p>
@@ -127,14 +127,14 @@ export default function ReleaseEditor() {
             {/* Auto-save status */}
             <div className="flex items-center gap-3">
               {editorState.hasUnsavedChanges ? (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-50 text-yellow-700 rounded-lg">
-                  <div className="w-2 h-2 bg-yellow-600 rounded-full animate-pulse"></div>
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-500/20 text-yellow-500 rounded-lg">
+                  <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
                   <Save className="w-4 h-4" />
                   <span className="text-sm font-medium">Saving...</span>
                 </div>
               ) : lastSaved ? (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 text-green-700 rounded-lg">
-                  <div className="w-2 h-2 bg-green-600 rounded-full"></div>
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-green-500/20 text-green-500 rounded-lg">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                   <Save className="w-4 h-4" />
                   <span className="text-sm font-medium">
                     Saved {formatDistanceToNow(lastSaved, { addSuffix: true })}
@@ -143,7 +143,7 @@ export default function ReleaseEditor() {
               ) : null}
 
               {hasErrors && (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 text-red-700 rounded-lg">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-red-500/20 text-red-500 rounded-lg">
                   <AlertCircle className="w-4 h-4" />
                   <span className="text-sm font-medium">Validation errors</span>
                 </div>
@@ -163,21 +163,21 @@ export default function ReleaseEditor() {
                   onClick={() => setCurrentTab(tab.id)}
                   className={`group relative px-5 py-2.5 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 ${
                     isActive
-                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg'
-                      : 'bg-white/60 text-gray-600 hover:bg-white hover:shadow-md'
+                      ? 'bg-primary text-primary-foreground shadow-lg'
+                      : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                   }`}
                 >
-                  <span className={isActive ? 'text-white' : 'text-gray-500 group-hover:text-gray-700'}>
+                  <span className={isActive ? 'text-primary-foreground' : 'text-muted-foreground group-hover:text-foreground'}>
                     {tab.icon}
                   </span>
                   <span>{tab.label}</span>
                   {tabErrors.length > 0 && (
-                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center shadow-lg">
+                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-destructive text-destructive-foreground text-xs font-bold rounded-full flex items-center justify-center shadow-lg">
                       {tabErrors.length}
                     </span>
                   )}
                   {isActive && (
-                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-white rounded-full"></div>
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary-foreground/30 rounded-full"></div>
                   )}
                 </button>
               );

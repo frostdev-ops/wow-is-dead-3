@@ -11,23 +11,34 @@ const FileItem = memo(({
   getFileIcon,
   formatSize,
   onRemove,
-  loading
+  loading,
+  onDragStart,
+  onDragEnd,
+  isDragging
 }: {
   file: any;
   getFileIcon: (path: string) => React.ReactNode;
   formatSize: (bytes: number) => string;
   onRemove: (path: string) => void;
   loading: boolean;
+  onDragStart?: (e: React.DragEvent, path: string) => void;
+  onDragEnd?: () => void;
+  isDragging?: boolean;
 }) => {
   return (
-    <div className="px-6 py-4 flex items-center justify-between hover:bg-gray-50">
+    <div
+      draggable
+      onDragStart={(e) => onDragStart?.(e, file.path)}
+      onDragEnd={onDragEnd}
+      className={`px-6 py-4 flex items-center justify-between hover:bg-accent/50 transition-colors cursor-move ${isDragging ? 'opacity-50' : ''}`}
+    >
       <div className="flex items-center gap-3 flex-1">
         {getFileIcon(file.path)}
         <div className="flex-1">
-          <p className="font-medium text-gray-900">
+          <p className="font-medium text-foreground">
             {file.path.split('/').pop()}
           </p>
-          <div className="flex gap-4 text-sm text-gray-500 mt-1">
+          <div className="flex gap-4 text-sm text-muted-foreground mt-1">
             <span>{formatSize(file.size)}</span>
             <span className="font-mono text-xs">
               {file.sha256.substring(0, 12)}...
@@ -39,7 +50,7 @@ const FileItem = memo(({
       <button
         onClick={() => onRemove(file.path)}
         disabled={loading}
-        className="px-3 py-2 text-red-600 hover:bg-red-50 rounded disabled:opacity-50"
+        className="px-3 py-2 text-destructive hover:bg-destructive/10 rounded disabled:opacity-50 transition-colors"
       >
         <Trash2 className="w-4 h-4" />
       </button>
@@ -67,6 +78,8 @@ function FilesTab({ draft, onUpdate }: FilesTabProps) {
   const [extracting, setExtracting] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [showFileBrowser, setShowFileBrowser] = useState(false);
+  const [draggingFile, setDraggingFile] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   // Performance: Memoize icon getter to prevent recreation
   const getFileIcon = useCallback((path: string) => {
@@ -186,6 +199,71 @@ function FilesTab({ draft, onUpdate }: FilesTabProps) {
     }
   }, [draft.id, removeFile, onUpdate]);
 
+  // Drag-and-drop handlers
+  const handleFileDragStart = (e: React.DragEvent, filePath: string) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', filePath);
+    setDraggingFile(filePath);
+  };
+
+  const handleFileDragEnd = () => {
+    setDraggingFile(null);
+    setDropTarget(null);
+  };
+
+  const handleFolderDragOver = (e: React.DragEvent, folder: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    setDropTarget(folder);
+  };
+
+  const handleFolderDragLeave = () => {
+    setDropTarget(null);
+  };
+
+  const handleFolderDrop = async (e: React.DragEvent, targetFolder: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropTarget(null);
+
+    const sourcePath = e.dataTransfer.getData('text/plain');
+    if (!sourcePath || sourcePath === draggingFile) {
+      setDraggingFile(null);
+      return;
+    }
+
+    const fileName = sourcePath.split('/').pop();
+    if (!fileName) return;
+
+    const destPath = targetFolder ? `${targetFolder}/${fileName}` : fileName;
+
+    try {
+      const response = await axios.post(
+        `/api/admin/drafts/${draft.id}/move`,
+        { source_path: sourcePath, dest_path: destPath },
+        { headers: getAuthHeaders() }
+      );
+
+      if (response.status === 200) {
+        // Refresh draft to get updated file list
+        const updatedDraft = { ...draft };
+        if (updatedDraft.files) {
+          const fileIndex = updatedDraft.files.findIndex(f => f.path === sourcePath);
+          if (fileIndex !== -1) {
+            updatedDraft.files[fileIndex].path = destPath;
+          }
+        }
+        onUpdate(updatedDraft);
+      }
+    } catch (error: any) {
+      console.error('Failed to move file:', error);
+      alert(`Failed to move file: ${error.response?.data?.error || error.message}`);
+    } finally {
+      setDraggingFile(null);
+    }
+  };
+
   // Performance: Group files by directory with useMemo
   const filesByDir = useMemo(() => {
     const grouped: Record<string, typeof draft.files> = {};
@@ -202,13 +280,13 @@ function FilesTab({ draft, onUpdate }: FilesTabProps) {
   return (
     <div className="p-6 max-w-6xl mx-auto">
       {/* Upload section */}
-      <div className="bg-white rounded-lg shadow p-6 mb-6">
-        <h2 className="text-xl font-bold mb-4">Upload Files</h2>
+      <div className="bg-card rounded-lg shadow p-6 mb-6 border border-border">
+        <h2 className="text-xl font-bold mb-4 text-foreground">Upload Files</h2>
         <div
           className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
             dragActive
-              ? 'border-blue-500 bg-blue-50'
-              : 'border-gray-300'
+              ? 'border-primary bg-primary/10'
+              : 'border-border'
           }`}
           onDragEnter={handleDrag}
           onDragLeave={handleDrag}
@@ -229,18 +307,18 @@ function FilesTab({ draft, onUpdate }: FilesTabProps) {
             className={`cursor-pointer ${uploading || loading ? 'opacity-50' : ''}`}
           >
             {uploading ? (
-              <Loader2 className="w-12 h-12 mx-auto mb-4 text-blue-500 animate-spin" />
+              <Loader2 className="w-12 h-12 mx-auto mb-4 text-primary animate-spin" />
             ) : (
-              <Upload className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+              <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
             )}
-            <p className="text-lg font-medium text-gray-700 mb-2">
+            <p className="text-lg font-medium text-foreground mb-2">
               {extracting
                 ? 'Extracting zip files...'
                 : uploading
                 ? `Uploading... ${uploadProgress}%`
                 : 'Click to upload files or drag a zip'}
             </p>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-muted-foreground">
               Upload .zip archives (auto-extracted), mods, configs, or any modpack files
             </p>
           </label>
@@ -248,9 +326,9 @@ function FilesTab({ draft, onUpdate }: FilesTabProps) {
           {/* Progress bar */}
           {uploading && uploadProgress > 0 && (
             <div className="mt-4 w-full max-w-md mx-auto">
-              <div className="bg-gray-200 rounded-full h-3 overflow-hidden">
+              <div className="bg-muted rounded-full h-3 overflow-hidden">
                 <div
-                  className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full transition-all duration-300 ease-out"
+                  className="bg-primary h-full transition-all duration-300 ease-out"
                   style={{ width: `${uploadProgress}%` }}
                 />
               </div>
@@ -260,14 +338,14 @@ function FilesTab({ draft, onUpdate }: FilesTabProps) {
       </div>
 
       {/* File list */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="px-6 py-4 border-b flex items-center justify-between">
-          <h2 className="text-xl font-bold">
+      <div className="bg-card rounded-lg shadow border border-border">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+          <h2 className="text-xl font-bold text-foreground">
             Files ({draft.files.length})
           </h2>
           <button
             onClick={() => setShowFileBrowser(!showFileBrowser)}
-            className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+            className="px-3 py-1 text-sm bg-primary/20 text-primary rounded hover:bg-primary/30 transition-colors"
           >
             {showFileBrowser ? 'Simple View' : 'File Browser'}
           </button>
@@ -281,18 +359,23 @@ function FilesTab({ draft, onUpdate }: FilesTabProps) {
         ) : (
           <>
             {draft.files.length === 0 ? (
-              <div className="p-12 text-center text-gray-500">
+              <div className="p-12 text-center text-muted-foreground">
                 <FileText className="w-16 h-16 mx-auto mb-4 opacity-50" />
                 <p>No files uploaded yet</p>
                 <p className="text-sm mt-2">Upload files to get started</p>
               </div>
             ) : (
-              <div className="divide-y">
+              <div className="divide-y divide-border">
                 {Object.entries(filesByDir).map(([dir, files]) => (
                   <div key={dir}>
                     {/* Directory header */}
                     {dir !== 'root' && (
-                      <div className="px-6 py-2 bg-gray-50 font-medium text-gray-700 flex items-center gap-2">
+                      <div
+                        className={`px-6 py-2 bg-muted font-medium text-foreground flex items-center gap-2 transition-all ${dropTarget === dir ? 'bg-primary/20 border-2 border-primary border-dashed' : ''}`}
+                        onDragOver={(e) => handleFolderDragOver(e, dir)}
+                        onDragLeave={handleFolderDragLeave}
+                        onDrop={(e) => handleFolderDrop(e, dir)}
+                      >
                         <Folder className="w-4 h-4" />
                         {dir}/
                       </div>
@@ -307,6 +390,9 @@ function FilesTab({ draft, onUpdate }: FilesTabProps) {
                         formatSize={formatSize}
                         onRemove={handleRemoveFile}
                         loading={loading}
+                        onDragStart={handleFileDragStart}
+                        onDragEnd={handleFileDragEnd}
+                        isDragging={draggingFile === file.path}
                       />
                     ))}
                   </div>
