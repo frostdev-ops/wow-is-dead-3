@@ -43,10 +43,9 @@ pub async fn launch_game_with_metadata(
         ));
     }
 
-    // Build classpath
-    let libraries_dir = game_dir.join("libraries");
-    let client_jar = game_dir
-        .join("versions")
+    // Build classpath with relative paths (since working directory will be game_dir)
+    let libraries_dir = PathBuf::from("libraries");
+    let client_jar = PathBuf::from("versions")
         .join(&version_meta.id)
         .join(format!("{}.jar", version_meta.id));
 
@@ -86,6 +85,12 @@ pub async fn launch_game_with_metadata(
         "-XX:G1HeapRegionSize=32M".to_string(),
     ];
 
+    // Add Fabric-specific JVM argument if this is a Fabric loader
+    if version_meta.main_class.contains("fabric") {
+        jvm_args.push(format!("-Dfabric.gameJar={}", client_jar.display()));
+        eprintln!("[Fabric] Added gameJar argument: {}", client_jar.display());
+    }
+
     // Add JVM arguments from version metadata
     if let Some(arguments) = &version_meta.arguments {
         for arg in &arguments.jvm {
@@ -112,11 +117,28 @@ pub async fn launch_game_with_metadata(
         }
     }
 
+    // Log the command for debugging BEFORE consuming the args
+    eprintln!("[Minecraft] Launching with Java: {:?}", java_path);
+    eprintln!("[Minecraft] Working directory: {:?}", game_dir);
+    eprintln!("[Minecraft] Main class: {}", version_meta.main_class);
+    eprintln!("[Minecraft] Classpath (first 500 chars): {}", &classpath[..classpath.len().min(500)]);
+    eprintln!("[Minecraft] JVM args count: {}", jvm_args.len());
+    eprintln!("[Minecraft] First 5 JVM args: {:?}", &jvm_args[..jvm_args.len().min(5)]);
+
+    // Find and log the -cp argument
+    for (i, arg) in jvm_args.iter().enumerate() {
+        if arg == "-cp" && i + 1 < jvm_args.len() {
+            eprintln!("[Minecraft] Found -cp at index {}, next arg length: {}", i, jvm_args[i + 1].len());
+            eprintln!("[Minecraft] Classpath starts with: {}", &jvm_args[i + 1][..jvm_args[i + 1].len().min(200)]);
+            break;
+        }
+    }
+
     // Construct command
     let mut cmd = Command::new(&java_path);
 
     // Add JVM arguments
-    for arg in jvm_args {
+    for arg in &jvm_args {
         cmd.arg(arg);
     }
 
@@ -124,7 +146,7 @@ pub async fn launch_game_with_metadata(
     cmd.arg(&version_meta.main_class);
 
     // Add game arguments
-    for arg in game_args {
+    for arg in &game_args {
         cmd.arg(arg);
     }
 
@@ -133,11 +155,6 @@ pub async fn launch_game_with_metadata(
 
     // Capture stdout/stderr for log streaming
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-
-    // Log the command for debugging
-    eprintln!("[Minecraft] Launching with Java: {:?}", java_path);
-    eprintln!("[Minecraft] Working directory: {:?}", game_dir);
-    eprintln!("[Minecraft] Main class: {}", version_meta.main_class);
 
     let child = cmd
         .spawn()

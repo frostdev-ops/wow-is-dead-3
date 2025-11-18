@@ -370,13 +370,23 @@ pub fn build_classpath(
             continue;
         }
 
-        if let Some(downloads) = &library.downloads {
+        let lib_path = if let Some(downloads) = &library.downloads {
+            // Use downloads path if available
             if let Some(artifact) = &downloads.artifact {
-                let lib_path = libraries_dir.join(&artifact.path);
-                if lib_path.exists() {
-                    classpath_entries.push(lib_path.to_string_lossy().to_string());
-                }
+                libraries_dir.join(&artifact.path)
+            } else {
+                // Fallback to Maven coordinates
+                libraries_dir.join(maven_to_path(&library.name))
             }
+        } else {
+            // No downloads info, construct from Maven coordinates
+            libraries_dir.join(maven_to_path(&library.name))
+        };
+
+        if lib_path.exists() {
+            classpath_entries.push(lib_path.to_string_lossy().to_string());
+        } else {
+            eprintln!("[Library] WARNING: Library not found: {:?} (from {})", lib_path, library.name);
         }
     }
 
@@ -392,7 +402,11 @@ pub fn build_classpath(
         ":"
     };
 
-    Ok(classpath_entries.join(separator))
+    let classpath = classpath_entries.join(separator);
+    eprintln!("[Library] Built classpath with {} entries", classpath_entries.len());
+    eprintln!("[Library] Classpath includes fabric-loader: {}", classpath.contains("fabric-loader"));
+
+    Ok(classpath)
 }
 
 #[cfg(test)]
