@@ -9,9 +9,11 @@ use modules::game_installer::{install_minecraft, is_version_installed, InstallCo
 use modules::server::{ping_server, ServerStatus};
 use modules::updater::{check_for_updates, get_installed_version, install_modpack, Manifest};
 use modules::audio::{get_cached_audio, download_and_cache_audio, clear_audio_cache};
+use modules::java_runtime::{get_cached_java, download_and_cache_java};
+use modules::logger::initialize_logger;
 use serde::Serialize;
 use std::path::PathBuf;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 // Authentication Commands
 #[tauri::command]
@@ -66,9 +68,49 @@ async fn cmd_complete_device_code_auth(device_code: String, interval: u64) -> Re
 
 // Minecraft Launch Commands
 #[tauri::command]
-async fn cmd_launch_game(app: AppHandle, config: LaunchConfig) -> Result<String, String> {
+async fn cmd_launch_game(app: AppHandle, mut config: LaunchConfig) -> Result<String, String> {
+    // Resolve game directory if it's relative and doesn't exist in current dir
+    if config.game_dir.is_relative() {
+        // Check if it exists relative to current directory first
+        if !config.game_dir.exists() {
+            // If not, resolve to app data directory
+            if let Ok(app_data_dir) = app.path().app_data_dir() {
+                config.game_dir = app_data_dir.join(&config.game_dir);
+                eprintln!("[Launcher] Resolved game directory to: {:?}", config.game_dir);
+            }
+        } else {
+            eprintln!("[Launcher] Using existing game directory: {:?}", config.game_dir);
+        }
+    }
+
     // Store game_dir for crash analysis
     let game_dir = config.game_dir.clone();
+
+    // Resolve Java path if not set - use downloaded runtime
+    if config.java_path.is_none() {
+        // Try to get cached Java first
+        match get_cached_java(&app).await {
+            Ok(Some(java_path)) => {
+                config.java_path = Some(java_path);
+            }
+            Ok(None) => {
+                // Download Java from release server
+                eprintln!("[Launcher] Java not cached, downloading from release server...");
+                let java_url = "https://wowid-launcher.frostdev.io/api/java";
+                match download_and_cache_java(&app, java_url.to_string()).await {
+                    Ok(java_path) => {
+                        config.java_path = Some(java_path);
+                    }
+                    Err(e) => {
+                        return Err(format!("Failed to download Java runtime: {}", e));
+                    }
+                }
+            }
+            Err(e) => {
+                return Err(format!("Failed to check for cached Java: {}", e));
+            }
+        }
+    }
 
     // Launch the game process
     let mut process = launch_game(config)
@@ -151,11 +193,51 @@ async fn cmd_launch_game(app: AppHandle, config: LaunchConfig) -> Result<String,
 #[tauri::command]
 async fn cmd_launch_game_with_metadata(
     app: AppHandle,
-    config: LaunchConfig,
+    mut config: LaunchConfig,
     version_id: String,
 ) -> Result<String, String> {
+    // Resolve game directory if it's relative and doesn't exist in current dir
+    if config.game_dir.is_relative() {
+        // Check if it exists relative to current directory first
+        if !config.game_dir.exists() {
+            // If not, resolve to app data directory
+            if let Ok(app_data_dir) = app.path().app_data_dir() {
+                config.game_dir = app_data_dir.join(&config.game_dir);
+                eprintln!("[Launcher] Resolved game directory to: {:?}", config.game_dir);
+            }
+        } else {
+            eprintln!("[Launcher] Using existing game directory: {:?}", config.game_dir);
+        }
+    }
+
     // Store game_dir for crash analysis
     let game_dir = config.game_dir.clone();
+
+    // Resolve Java path if not set - use downloaded runtime
+    if config.java_path.is_none() {
+        // Try to get cached Java first
+        match get_cached_java(&app).await {
+            Ok(Some(java_path)) => {
+                config.java_path = Some(java_path);
+            }
+            Ok(None) => {
+                // Download Java from release server
+                eprintln!("[Launcher] Java not cached, downloading from release server...");
+                let java_url = "https://wowid-launcher.frostdev.io/api/java";
+                match download_and_cache_java(&app, java_url.to_string()).await {
+                    Ok(java_path) => {
+                        config.java_path = Some(java_path);
+                    }
+                    Err(e) => {
+                        return Err(format!("Failed to download Java runtime: {}", e));
+                    }
+                }
+            }
+            Err(e) => {
+                return Err(format!("Failed to check for cached Java: {}", e));
+            }
+        }
+    }
 
     // Launch the game process
     let mut process = launch_game_with_metadata(config, &version_id)
@@ -433,9 +515,13 @@ async fn cmd_clear_audio_cache(app: AppHandle) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Initialize logger on startup
+    initialize_logger();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_fs::init())
         .manage(DiscordClient::new())
         .invoke_handler(tauri::generate_handler![
             cmd_authenticate_official_launcher,

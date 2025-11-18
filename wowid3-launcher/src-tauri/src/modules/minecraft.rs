@@ -134,6 +134,11 @@ pub async fn launch_game_with_metadata(
     // Capture stdout/stderr for log streaming
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
+    // Log the command for debugging
+    eprintln!("[Minecraft] Launching with Java: {:?}", java_path);
+    eprintln!("[Minecraft] Working directory: {:?}", game_dir);
+    eprintln!("[Minecraft] Main class: {}", version_meta.main_class);
+
     let child = cmd
         .spawn()
         .context("Failed to spawn Minecraft process")?;

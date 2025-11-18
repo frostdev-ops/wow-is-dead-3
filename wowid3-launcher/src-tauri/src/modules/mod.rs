@@ -10,3 +10,6 @@ pub mod game_installer;
 pub mod server;
 pub mod updater;
 pub mod audio;
+pub mod java_runtime;
+pub mod logger;
+pub mod encrypted_storage;

@@ -1,3 +1,4 @@
+import { motion, AnimatePresence } from 'framer-motion';
 import { useMinecraftInstaller } from '../hooks';
 import { Card } from './ui/Card';
 import { INSTALL_STEP_LABELS } from '../types/minecraft';
@@ -46,29 +47,35 @@ export function MinecraftSetup() {
         </div>
 
         {/* Error Display */}
-        {error && (
-          <div
-            className="mb-4 p-3"
-            style={{
-              backgroundColor: 'rgba(220, 38, 38, 0.2)',
-              border: '1px solid rgba(220, 38, 38, 0.8)',
-              borderRadius: '0',
-            }}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-red-300" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
-                {error}
-              </span>
-              <button
-                onClick={clearError}
-                className="text-red-400 hover:text-red-300"
-                style={{ fontFamily: "'Trebuchet MS', sans-serif" }}
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-        )}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.3 }}
+              className="mb-4 p-3"
+              style={{
+                backgroundColor: 'rgba(220, 38, 38, 0.2)',
+                border: '1px solid rgba(220, 38, 38, 0.8)',
+                borderRadius: '0',
+              }}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-red-300" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
+                  {error}
+                </span>
+                <button
+                  onClick={clearError}
+                  className="text-red-400 hover:text-red-300"
+                  style={{ fontFamily: "'Trebuchet MS', sans-serif" }}
+                >
+                  ✕
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Version Information (Read-Only) */}
         <div className="mb-6 p-4 text-center" style={{
@@ -85,106 +92,145 @@ export function MinecraftSetup() {
         </div>
 
         {/* Installation Status / Progress */}
-        {!isInstalling && selectedVersion && (
-          <div
-            className="mb-6 p-3"
-            style={{
-              backgroundColor: isInstalled ? 'rgba(34, 197, 94, 0.2)' : 'rgba(234, 179, 8, 0.2)',
-              border: `1px solid ${isInstalled ? 'rgba(34, 197, 94, 0.8)' : 'rgba(234, 179, 8, 0.8)'}`,
-              borderRadius: '0',
-            }}
-          >
-            <span
-              className="text-sm"
+        <AnimatePresence mode="wait">
+          {!isInstalling && selectedVersion && (
+            <motion.div
+              key={isInstalled ? "installed" : "not-installed"}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.3 }}
+              className="mb-6 p-3"
               style={{
-                color: isInstalled ? '#86efac' : '#fde047',
-                fontFamily: "'Trebuchet MS', sans-serif",
-              }}
-            >
-              {isInstalled
-                ? '✓ This version is installed and ready to play'
-                : '⚠ This version needs to be installed'}
-            </span>
-          </div>
-        )}
-
-        {/* Progress Bar (during installation) */}
-        {isInstalling && installProgress && (
-          <div className="mb-6">
-            <div className="mb-2 flex items-center justify-between">
-              <span
-                className="text-sm font-semibold"
-                style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}
-              >
-                {INSTALL_STEP_LABELS[installProgress.step as keyof typeof INSTALL_STEP_LABELS] ||
-                  installProgress.message}
-              </span>
-              <span
-                className="text-sm font-semibold"
-                style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}
-              >
-                {progressPercentage}%
-              </span>
-            </div>
-
-            {/* Progress Bar */}
-            <div
-              className="w-full h-4 overflow-hidden mb-2"
-              style={{
-                backgroundColor: 'rgba(0, 0, 0, 0.3)',
-                border: '1px solid rgba(255, 215, 0, 0.3)',
+                backgroundColor: isInstalled ? 'rgba(34, 197, 94, 0.2)' : 'rgba(234, 179, 8, 0.2)',
+                border: `1px solid ${isInstalled ? 'rgba(34, 197, 94, 0.8)' : 'rgba(234, 179, 8, 0.8)'}`,
                 borderRadius: '0',
               }}
             >
-              <div
-                className="h-full transition-all duration-300"
+              <motion.span
+                initial={{ x: -10 }}
+                animate={{ x: 0 }}
+                className="text-sm"
                 style={{
-                  width: `${progressPercentage}%`,
-                  backgroundColor: '#FFD700',
+                  color: isInstalled ? '#86efac' : '#fde047',
+                  fontFamily: "'Trebuchet MS', sans-serif",
                 }}
-              />
-            </div>
-
-            {/* Progress Details */}
-            <div className="flex items-center justify-between text-xs">
-              <span style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
-                {installProgress.current} / {installProgress.total} files
-              </span>
-              <span style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
-                {formatMB(installProgress.current_bytes)} MB / {formatMB(installProgress.total_bytes)} MB
-              </span>
-            </div>
-
-            {/* Special note for assets */}
-            {installProgress.step === 'assets' && (
-              <p
-                className="text-xs mt-2 text-center"
-                style={{ color: '#fde047', fontFamily: "'Trebuchet MS', sans-serif" }}
               >
-                ⏳ Downloading assets can take 2-5 minutes (4000+ files)
-              </p>
-            )}
-          </div>
-        )}
+                {isInstalled
+                  ? '✓ This version is installed and ready to play'
+                  : '⚠ This version needs to be installed'}
+              </motion.span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Progress Bar (during installation) */}
+        <AnimatePresence>
+          {isInstalling && installProgress && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.3 }}
+              className="mb-6"
+            >
+              <div className="mb-2 flex items-center justify-between">
+                <motion.span
+                  key={installProgress.step}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="text-sm font-semibold"
+                  style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}
+                >
+                  {INSTALL_STEP_LABELS[installProgress.step as keyof typeof INSTALL_STEP_LABELS] ||
+                    installProgress.message}
+                </motion.span>
+                <motion.span
+                  animate={{ scale: [1, 1.05, 1] }}
+                  transition={{ duration: 0.5, repeat: Infinity }}
+                  className="text-sm font-semibold"
+                  style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}
+                >
+                  {progressPercentage}%
+                </motion.span>
+              </div>
+
+              {/* Progress Bar */}
+              <div
+                className="w-full h-4 overflow-hidden mb-2"
+                style={{
+                  backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                  border: '1px solid rgba(255, 215, 0, 0.3)',
+                  borderRadius: '0',
+                }}
+              >
+                <motion.div
+                  className="h-full"
+                  style={{
+                    backgroundColor: '#FFD700',
+                  }}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progressPercentage}%` }}
+                  transition={{ duration: 0.5, ease: "easeOut" }}
+                />
+              </div>
+
+              {/* Progress Details */}
+              <div className="flex items-center justify-between text-xs">
+                <span style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
+                  {installProgress.current} / {installProgress.total} files
+                </span>
+                <span style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
+                  {formatMB(installProgress.current_bytes)} MB / {formatMB(installProgress.total_bytes)} MB
+                </span>
+              </div>
+
+              {/* Special note for assets */}
+              <AnimatePresence>
+                {installProgress.step === 'assets' && (
+                  <motion.p
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className="text-xs mt-2 text-center"
+                    style={{ color: '#fde047', fontFamily: "'Trebuchet MS', sans-serif" }}
+                  >
+                    ⏳ Downloading assets can take 2-5 minutes (4000+ files)
+                  </motion.p>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Install Button */}
-        {!isInstalling && !isInstalled && selectedVersion && (
-          <button
-            onClick={handleInstall}
-            disabled={!selectedVersion}
-            className="w-full py-4 text-xl font-bold transition-all"
-            style={{
-              backgroundColor: selectedVersion ? 'rgba(255, 215, 0, 0.9)' : 'rgba(128, 128, 128, 0.5)',
-              color: selectedVersion ? '#000' : '#666',
-              border: selectedVersion ? '2px solid rgba(255, 215, 0, 1)' : '2px solid rgba(128, 128, 128, 0.8)',
-              borderRadius: '0',
-              fontFamily: "'Trebuchet MS', sans-serif",
-              cursor: selectedVersion ? 'pointer' : 'not-allowed',
-            }}
-          >
-            Install Minecraft
-          </button>
-        )}
+        <AnimatePresence>
+          {!isInstalling && !isInstalled && selectedVersion && (
+            <motion.button
+              onClick={handleInstall}
+              disabled={!selectedVersion}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              transition={{ type: "spring", stiffness: 400, damping: 17 }}
+              className="w-full py-4 text-xl font-bold transition-all"
+              style={{
+                backgroundColor: selectedVersion ? 'rgba(255, 215, 0, 0.9)' : 'rgba(128, 128, 128, 0.5)',
+                color: selectedVersion ? '#000' : '#666',
+                border: selectedVersion ? '2px solid rgba(255, 215, 0, 1)' : '2px solid rgba(128, 128, 128, 0.8)',
+                borderRadius: '0',
+                fontFamily: "'Trebuchet MS', sans-serif",
+                cursor: selectedVersion ? 'pointer' : 'not-allowed',
+              }}
+            >
+              Install Minecraft
+            </motion.button>
+          )}
+        </AnimatePresence>
 
         {/* Advanced Options Link */}
         <div className="mt-4 text-center">

@@ -4,7 +4,6 @@ use sha1::{Digest, Sha1};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
 use super::download_manager::{DownloadManager, DownloadPriority, DownloadTask, HashType};
@@ -83,66 +82,6 @@ fn verify_sha1_string(content: &str, expected: &str) -> bool {
     hash == expected
 }
 
-/// Download a single asset
-async fn download_asset(
-    asset_object: &AssetObject,
-    assets_dir: &Path,
-) -> Result<()> {
-    let hash = &asset_object.hash;
-
-    // Assets are stored in subdirectories based on first 2 characters of hash
-    let subdir = &hash[0..2];
-    let object_dir = assets_dir.join("objects").join(subdir);
-    tokio::fs::create_dir_all(&object_dir).await?;
-
-    let dest = object_dir.join(hash);
-
-    // Skip if file exists and hash matches
-    if dest.exists() {
-        if let Ok(bytes) = tokio::fs::read(&dest).await {
-            if verify_sha1_bytes(&bytes, hash) {
-                return Ok(());
-            }
-        }
-    }
-
-    // Download asset
-    let url = format!("{}/{}/{}", ASSETS_BASE_URL, subdir, hash);
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .build()?;
-
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .context(format!("Failed to download asset {}", hash))?;
-
-    if !response.status().is_success() {
-        return Err(anyhow::anyhow!(
-            "Failed to download asset {}: HTTP {}",
-            hash,
-            response.status()
-        ));
-    }
-
-    let bytes = response.bytes().await?;
-
-    // Verify SHA1
-    if !verify_sha1_bytes(&bytes, hash) {
-        return Err(anyhow::anyhow!(
-            "Asset SHA1 mismatch: expected {}, got different hash",
-            hash
-        ));
-    }
-
-    // Write file
-    let mut file = tokio::fs::File::create(&dest).await?;
-    file.write_all(&bytes).await?;
-
-    Ok(())
-}
 
 /// Verify SHA1 hash of bytes
 fn verify_sha1_bytes(bytes: &[u8], expected: &str) -> bool {

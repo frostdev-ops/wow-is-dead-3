@@ -48,9 +48,11 @@ export function useMinecraftInstaller(): UseMinecraftInstallerReturn {
     fabricEnabled: settingsFabricEnabled,
     fabricVersion,
     preferStableFabric,
+    isMinecraftInstalled,
     setMinecraftVersion,
     setFabricEnabled: setSettingsFabricEnabled,
     setFabricVersion,
+    setIsMinecraftInstalled,
   } = useSettingsStore();
 
   // Version state
@@ -64,8 +66,7 @@ export function useMinecraftInstaller(): UseMinecraftInstallerReturn {
   const [selectedFabricLoader, setSelectedFabricLoaderState] = useState<string | null>(fabricVersion);
   const [isLoadingFabric, setIsLoadingFabric] = useState(false);
 
-  // Installation state
-  const [isInstalled, setIsInstalled] = useState(false);
+  // Installation state (isInstalled is now from store)
   const [isInstalling, setIsInstalling] = useState(false);
   const [installProgress, setInstallProgress] = useState<InstallProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -126,14 +127,14 @@ export function useMinecraftInstaller(): UseMinecraftInstallerReturn {
     async (verId: string) => {
       try {
         const installed = await isVersionInstalled(gameDirectory, verId);
-        setIsInstalled(installed);
+        setIsMinecraftInstalled(installed);
         return installed;
       } catch (err) {
         console.error('[MinecraftInstaller] Failed to check installation:', err);
         return false;
       }
     },
-    [gameDirectory]
+    [gameDirectory, setIsMinecraftInstalled]
   );
 
   // Install Minecraft
@@ -294,7 +295,7 @@ export function useMinecraftInstaller(): UseMinecraftInstallerReturn {
     isLoadingFabric,
 
     // Installation state
-    isInstalled,
+    isInstalled: isMinecraftInstalled,
     isInstalling,
     installProgress,
     error,

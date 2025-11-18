@@ -16,6 +16,7 @@ interface SettingsState {
   fabricVersion: string | null;          // Preferred Fabric loader version
   autoUpdate: boolean;                   // Auto-update when new version available
   preferStableFabric: boolean;           // Only show stable Fabric versions
+  isMinecraftInstalled: boolean;         // Whether Minecraft is installed
 
   // Launcher settings
   theme: 'christmas' | 'dark' | 'light';
@@ -31,6 +32,7 @@ interface SettingsState {
   setFabricVersion: (version: string | null) => void;
   setAutoUpdate: (enabled: boolean) => void;
   setPreferStableFabric: (enabled: boolean) => void;
+  setIsMinecraftInstalled: (installed: boolean) => void;
   setTheme: (theme: 'christmas' | 'dark' | 'light') => void;
   setManifestUrl: (url: string) => void;
 }
@@ -48,6 +50,7 @@ export const useSettingsStore = create<SettingsState>()(
       fabricVersion: '0.17.3', // Default from modpack requirements
       autoUpdate: false,
       preferStableFabric: true,
+      isMinecraftInstalled: false, // Will be checked on startup
       theme: 'christmas',
       manifestUrl: 'https://wowid-launcher.frostdev.io/api/manifest/latest',
 
@@ -60,6 +63,7 @@ export const useSettingsStore = create<SettingsState>()(
       setFabricVersion: (version) => set({ fabricVersion: version }),
       setAutoUpdate: (enabled) => set({ autoUpdate: enabled }),
       setPreferStableFabric: (enabled) => set({ preferStableFabric: enabled }),
+      setIsMinecraftInstalled: (installed) => set({ isMinecraftInstalled: installed }),
       setTheme: (theme) => set({ theme }),
       setManifestUrl: (url) => set({ manifestUrl: url }),
     }),

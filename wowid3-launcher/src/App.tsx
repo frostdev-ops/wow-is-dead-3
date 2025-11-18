@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { readFile } from '@tauri-apps/plugin-fs';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { useModpack, useServer, useTheme } from './hooks';
 import LauncherHome from './components/LauncherHome';
 import SettingsScreen from './components/SettingsScreen';
@@ -22,7 +22,6 @@ function AppContent() {
   const [mainAudioReady, setMainAudioReady] = useState(false);
   const fallbackRef = useRef<HTMLAudioElement>(null);
   const mainRef = useRef<HTMLAudioElement>(null);
-  const mainBlobUrlRef = useRef<string | null>(null);
   const retryIntervalRef = useRef<number | null>(null);
   const { checkUpdates, latestManifest } = useModpack();
   const { startPolling } = useServer();
@@ -38,64 +37,92 @@ function AppContent() {
     const fallback = fallbackRef.current;
     const main = mainRef.current;
 
-    // Fade out fallback (0.3 → 0 over 2 seconds)
-    const fadeOutSteps = 20;
-    const fadeOutInterval = 2000 / fadeOutSteps;
-    const volumeDecrement = 0.3 / fadeOutSteps;
-    let currentStep = 0;
+    // Ensure main audio is loaded and ready before starting crossfade
+    const startFadeWhenReady = () => {
+      // Set volume to 0 before loading
+      main.volume = 0;
 
-    const fadeOutTimer = setInterval(() => {
-      if (!fallback) {
-        clearInterval(fadeOutTimer);
-        return;
-      }
+      // Force load the audio
+      console.log('[Audio] Loading main audio before crossfade...');
+      main.load();
 
-      currentStep++;
-      const newVolume = Math.max(0, 0.3 - (volumeDecrement * currentStep));
-      fallback.volume = newVolume;
+      // Wait for audio to be ready to play
+      const onCanPlayThrough = () => {
+        console.log('[Audio] Main audio ready, starting crossfade');
+        main.removeEventListener('canplaythrough', onCanPlayThrough);
 
-      if (currentStep >= fadeOutSteps) {
-        clearInterval(fadeOutTimer);
-        fallback.pause();
-        console.log('[Audio] Fallback faded out and paused');
+        // Fade out fallback (0.3 → 0 over 2 seconds)
+        const fadeOutSteps = 20;
+        const fadeOutInterval = 2000 / fadeOutSteps;
+        const volumeDecrement = 0.3 / fadeOutSteps;
+        let currentStep = 0;
 
-        // Start main audio with fade in
-        main.volume = 0;
-        main.play()
-          .then(() => {
-            console.log('[Audio] Main audio started, fading in');
+        const fadeOutTimer = setInterval(() => {
+          if (!fallback) {
+            clearInterval(fadeOutTimer);
+            return;
+          }
 
-            // Fade in main (0 → 0.3 over 2 seconds)
-            let fadeInStep = 0;
-            const fadeInInterval = 2000 / fadeOutSteps;
-            const volumeIncrement = 0.3 / fadeOutSteps;
+          currentStep++;
+          const newVolume = Math.max(0, 0.3 - (volumeDecrement * currentStep));
+          fallback.volume = newVolume;
 
-            const fadeInTimer = setInterval(() => {
-              if (!main) {
-                clearInterval(fadeInTimer);
-                return;
-              }
+          if (currentStep >= fadeOutSteps) {
+            clearInterval(fadeOutTimer);
+            fallback.pause();
+            console.log('[Audio] Fallback faded out and paused');
 
-              fadeInStep++;
-              const newVolume = Math.min(0.3, volumeIncrement * fadeInStep);
-              main.volume = newVolume;
+            // Start main audio (already buffered)
+            main.play()
+              .then(() => {
+                console.log('[Audio] Main audio started, fading in');
 
-              if (fadeInStep >= fadeOutSteps) {
-                clearInterval(fadeInTimer);
-                setAudioState('main');
-                console.log('[Audio] Crossfade complete, main audio playing');
-              }
-            }, fadeInInterval);
-          })
-          .catch(err => {
-            console.log('[Audio] Failed to play main audio:', err);
-            // Resume fallback if main fails
-            fallback.volume = 0.3;
-            fallback.play().catch(console.error);
-            setAudioState('fallback');
-          });
-      }
-    }, fadeOutInterval);
+                // Fade in main (0 → 0.3 over 2 seconds)
+                let fadeInStep = 0;
+                const fadeInInterval = 2000 / fadeOutSteps;
+                const volumeIncrement = 0.3 / fadeOutSteps;
+
+                const fadeInTimer = setInterval(() => {
+                  if (!main) {
+                    clearInterval(fadeInTimer);
+                    return;
+                  }
+
+                  fadeInStep++;
+                  const newVolume = Math.min(0.3, volumeIncrement * fadeInStep);
+                  main.volume = newVolume;
+
+                  if (fadeInStep >= fadeOutSteps) {
+                    clearInterval(fadeInTimer);
+                    setAudioState('main');
+                    console.log('[Audio] Crossfade complete, main audio playing');
+                  }
+                }, fadeInInterval);
+              })
+              .catch(err => {
+                console.log('[Audio] Failed to play main audio:', err);
+                // Resume fallback if main fails
+                fallback.volume = 0.3;
+                fallback.play().catch(console.error);
+                setAudioState('fallback');
+              });
+          }
+        }, fadeOutInterval);
+      };
+
+      // Add error handler for load failure
+      const onError = () => {
+        console.log('[Audio] Failed to load main audio for crossfade');
+        main.removeEventListener('canplaythrough', onCanPlayThrough);
+        main.removeEventListener('error', onError);
+        setAudioState('fallback');
+      };
+
+      main.addEventListener('canplaythrough', onCanPlayThrough, { once: true });
+      main.addEventListener('error', onError, { once: true });
+    };
+
+    startFadeWhenReady();
   };
 
   // Load main audio asynchronously (non-blocking)
@@ -109,13 +136,12 @@ function AppContent() {
       if (cachedPath) {
         console.log('[Audio] Found cached audio:', cachedPath);
         try {
-          const fileData = await readFile(cachedPath);
-          const blob = new Blob([fileData], { type: 'audio/mpeg' });
-          const blobUrl = URL.createObjectURL(blob);
+          // Use convertFileSrc to get proper Tauri asset URL (no Blob overhead)
+          const assetUrl = convertFileSrc(cachedPath);
+          console.log('[Audio] Converted to asset URL:', assetUrl);
 
           if (mainRef.current) {
-            mainRef.current.src = blobUrl;
-            mainBlobUrlRef.current = blobUrl;
+            mainRef.current.src = assetUrl;
             setMainAudioReady(true);
             console.log('[Audio] Main audio ready from cache');
           }
@@ -132,13 +158,13 @@ function AppContent() {
       });
 
       console.log('[Audio] Download complete:', downloadedPath);
-      const fileData = await readFile(downloadedPath);
-      const blob = new Blob([fileData], { type: 'audio/mpeg' });
-      const blobUrl = URL.createObjectURL(blob);
+
+      // Use convertFileSrc to get proper Tauri asset URL
+      const assetUrl = convertFileSrc(downloadedPath);
+      console.log('[Audio] Converted to asset URL:', assetUrl);
 
       if (mainRef.current) {
-        mainRef.current.src = blobUrl;
-        mainBlobUrlRef.current = blobUrl;
+        mainRef.current.src = assetUrl;
         setMainAudioReady(true);
         console.log('[Audio] Main audio ready from download');
       }
@@ -187,9 +213,6 @@ function AppContent() {
       clearTimeout(fallbackTimer);
       if (retryIntervalRef.current) {
         clearInterval(retryIntervalRef.current);
-      }
-      if (mainBlobUrlRef.current) {
-        URL.revokeObjectURL(mainBlobUrlRef.current);
       }
     };
   }, []); // Only run once on component mount

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth, useModpack, useServer, useDiscord, useMinecraftInstaller } from '../hooks';
 import { launchGameWithMetadata } from '../hooks/useTauriCommands';
 import { useSettingsStore } from '../stores';
@@ -29,6 +30,7 @@ export default function LauncherHome() {
   const hasCheckedForModpack = useRef(false);
   const modpackCheckRetries = useRef(0);
   const lastCheckAttempt = useRef<number>(0);
+  const isInstallingRef = useRef(false);
 
   // Debug logging for auth state
   useEffect(() => {
@@ -116,6 +118,9 @@ export default function LauncherHome() {
   // Separate effect to handle installation after manifest is fetched
   useEffect(() => {
     const performInstall = async () => {
+      // Prevent concurrent installations
+      if (isInstallingRef.current) return;
+
       // Only run if we've checked and there's something to install
       if (!hasCheckedForModpack.current) return;
       if (isDownloading) return;
@@ -128,6 +133,7 @@ export default function LauncherHome() {
         console.error('[Modpack] ==== STARTING AUTO-INSTALL ====');
         console.error('[Modpack] Installed:', installedVersion, 'Latest:', latestManifest.version);
 
+        isInstallingRef.current = true;
         try {
           addToast(installedVersion ? 'Updating modpack...' : 'Installing modpack...', 'info');
           await install();
@@ -136,6 +142,8 @@ export default function LauncherHome() {
         } catch (err) {
           console.error('[Modpack] ==== INSTALL FAILED ====', err);
           addToast(`Installation failed: ${err}`, 'error');
+        } finally {
+          isInstallingRef.current = false;
         }
       } else {
         console.error('[Modpack] No install needed. Installed:', installedVersion, 'Latest:', latestManifest?.version);
@@ -143,7 +151,7 @@ export default function LauncherHome() {
     };
 
     performInstall();
-  }, [latestManifest, installedVersion, updateAvailable, isDownloading, install, addToast]);
+  }, [latestManifest, installedVersion, updateAvailable, isDownloading]);
 
   // Listen for Minecraft events
   useEffect(() => {
@@ -348,89 +356,123 @@ export default function LauncherHome() {
           </div>
         )}
 
-        {/* Minecraft Installation or Play Section */}
-        {!minecraftInstalled ? (
-          /* Show installation UI when Minecraft is not installed */
-          <div className="mt-6">
-            <MinecraftSetup />
-          </div>
-        ) : (
-          /* Show normal play flow when Minecraft is installed */
-          <>
-            {/* Update Badge or Download Progress */}
-            {isDownloading && downloadProgress ? (
-              <div className="p-4" style={{
-                backgroundColor: 'rgba(0, 0, 0, 0.4)',
-                backdropFilter: 'blur(12px)',
-                border: '1px solid rgba(255, 215, 0, 0.3)',
-                borderRadius: '0',
-              }}>
-                <p className="text-white font-semibold mb-3" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>Installing Update...</p>
-                <ProgressBar
-                  current={downloadProgress.current}
-                  total={downloadProgress.total}
-                  showLabel={true}
-                  showPercentage={true}
-                />
-              </div>
-            ) : updateAvailable ? (
-              <div className="bg-christmas-gold bg-opacity-20 border border-christmas-gold p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-christmas-gold font-semibold">
-                      🎁 Update Available!
-                    </p>
-                    <p className="text-sm text-gray-300 mt-1">
-                      Version {latestManifest?.version} is ready to install
-                    </p>
+        {/* Minecraft Installation or Play Section - Animated */}
+        <AnimatePresence mode="wait">
+          {!minecraftInstalled ? (
+            /* Show installation UI when Minecraft is not installed */
+            <motion.div
+              key="minecraft-setup"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.4, ease: "easeInOut" }}
+              className="mt-6"
+            >
+              <MinecraftSetup />
+            </motion.div>
+          ) : (
+            /* Show normal play flow when Minecraft is installed */
+            <motion.div
+              key="play-section"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.4, ease: "easeInOut" }}
+            >
+              {/* Update Badge or Download Progress */}
+              {isDownloading && downloadProgress ? (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.3 }}
+                  className="p-4"
+                  style={{
+                    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+                    backdropFilter: 'blur(12px)',
+                    border: '1px solid rgba(255, 215, 0, 0.3)',
+                    borderRadius: '0',
+                  }}
+                >
+                  <p className="text-white font-semibold mb-3" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>Installing Update...</p>
+                  <ProgressBar
+                    current={downloadProgress.current}
+                    total={downloadProgress.total}
+                    showLabel={true}
+                    showPercentage={true}
+                  />
+                </motion.div>
+              ) : updateAvailable ? (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.3 }}
+                  className="bg-christmas-gold bg-opacity-20 border border-christmas-gold p-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-christmas-gold font-semibold">
+                        🎁 Update Available!
+                      </p>
+                      <p className="text-sm text-gray-300 mt-1">
+                        Version {latestManifest?.version} is ready to install
+                      </p>
+                    </div>
+                    {latestManifest && (
+                      <button
+                        onClick={() => setShowChangelog(true)}
+                        className="px-3 py-2 text-sm bg-christmas-gold bg-opacity-30 hover:bg-opacity-50 text-christmas-gold rounded transition-colors whitespace-nowrap ml-4"
+                      >
+                        View Changes
+                      </button>
+                    )}
                   </div>
-                  {latestManifest && (
-                    <button
-                      onClick={() => setShowChangelog(true)}
-                      className="px-3 py-2 text-sm bg-christmas-gold bg-opacity-30 hover:bg-opacity-50 text-christmas-gold rounded transition-colors whitespace-nowrap ml-4"
-                    >
-                      View Changes
-                    </button>
-                  )}
-                </div>
-              </div>
-            ) : null}
+                </motion.div>
+              ) : null}
 
-            {/* Changelog Viewer Modal */}
-            {latestManifest && (
-              <ChangelogViewer
-                currentVersion={installedVersion || 'Unknown'}
-                manifest={latestManifest}
-                isOpen={showChangelog}
-                onClose={() => setShowChangelog(false)}
-              />
-            )}
+              {/* Changelog Viewer Modal */}
+              {latestManifest && (
+                <ChangelogViewer
+                  currentVersion={installedVersion || 'Unknown'}
+                  manifest={latestManifest}
+                  isOpen={showChangelog}
+                  onClose={() => setShowChangelog(false)}
+                />
+              )}
 
-            {/* Device Code Modal */}
-            {deviceCodeInfo && (
-              <DeviceCodeModal
-                deviceCodeInfo={deviceCodeInfo}
-                onCancel={() => setDeviceCodeInfo(null)}
-              />
-            )}
+              {/* Device Code Modal */}
+              {deviceCodeInfo && (
+                <DeviceCodeModal
+                  deviceCodeInfo={deviceCodeInfo}
+                  onCancel={() => setDeviceCodeInfo(null)}
+                />
+              )}
 
-            {/* Play Button */}
-            <div className="flex justify-center mt-6">
-              <button
-                onClick={handlePlayClick}
-                disabled={isLaunching || isDownloading || authLoading}
-                className="btn-primary text-2xl py-8 px-16 disabled:opacity-50 disabled:cursor-not-allowed btn-gradient-border"
+              {/* Play Button */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.4, delay: 0.1, ease: "easeOut" }}
+                className="flex justify-center mt-6"
               >
-              {authLoading && 'Authenticating...'}
-              {!authLoading && isLaunching && 'Launching...'}
-              {!authLoading && isDownloading && 'Updating...'}
-              {!authLoading && !isLaunching && !isDownloading && !isAuthenticated && 'Login'}
-              {!authLoading && !isLaunching && !isDownloading && isAuthenticated && updateAvailable && 'Update'}
-              {!authLoading && !isLaunching && !isDownloading && isAuthenticated && !updateAvailable && 'PLAY'}
-              </button>
-            </div>
-          </>
-        )}
+                <motion.button
+                  onClick={handlePlayClick}
+                  disabled={isLaunching || isDownloading || authLoading}
+                  className="btn-primary text-2xl py-8 px-16 disabled:opacity-50 disabled:cursor-not-allowed btn-gradient-border"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                >
+                  {authLoading && 'Authenticating...'}
+                  {!authLoading && isLaunching && 'Launching...'}
+                  {!authLoading && isDownloading && 'Updating...'}
+                  {!authLoading && !isLaunching && !isDownloading && !isAuthenticated && 'Login'}
+                  {!authLoading && !isLaunching && !isDownloading && isAuthenticated && updateAvailable && 'Update'}
+                  {!authLoading && !isLaunching && !isDownloading && isAuthenticated && !updateAvailable && 'PLAY'}
+                </motion.button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Server MOTD */}
         {status.online && status.motd && (

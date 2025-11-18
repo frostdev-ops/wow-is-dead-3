@@ -181,48 +181,6 @@ pub async fn verify_sha1(path: &Path, expected: &str) -> Result<bool> {
     Ok(hash == expected)
 }
 
-/// Download a library to the libraries directory
-pub async fn download_library(
-    library: &Library,
-    libraries_dir: &Path,
-    features: &HashMap<String, bool>,
-) -> Result<Vec<PathBuf>> {
-    if !should_download_library(library, features) {
-        return Ok(vec![]);
-    }
-
-    let mut downloaded_paths = Vec::new();
-
-    // Download main artifact
-    if let Some(downloads) = &library.downloads {
-        if let Some(artifact) = &downloads.artifact {
-            let dest = libraries_dir.join(&artifact.path);
-            download_file_verified(&artifact.url, &dest, Some(&artifact.sha1)).await?;
-            downloaded_paths.push(dest);
-        }
-
-        // Download native libraries
-        if let Some(natives) = &library.natives {
-            let os_name = get_os_name();
-            if let Some(native_key) = natives.get(os_name) {
-                if let Some(classifiers) = &downloads.classifiers {
-                    if let Some(native_artifact) = classifiers.get(native_key) {
-                        let dest = libraries_dir.join(&native_artifact.path);
-                        download_file_verified(
-                            &native_artifact.url,
-                            &dest,
-                            Some(&native_artifact.sha1),
-                        )
-                        .await?;
-                        downloaded_paths.push(dest);
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(downloaded_paths)
-}
 
 /// Download all libraries for a version using DownloadManager for parallel downloads
 pub async fn download_all_libraries(

@@ -160,6 +160,7 @@ pub async fn get_fabric_profile(
 pub fn merge_fabric_with_vanilla(
     vanilla_meta: &VersionMeta,
     fabric_profile: &FabricProfile,
+    loader_version: &str,
 ) -> VersionMeta {
     let mut merged = vanilla_meta.clone();
 
@@ -189,7 +190,9 @@ pub fn merge_fabric_with_vanilla(
     }
 
     // Update version ID to indicate Fabric
-    merged.id = format!("fabric-loader-{}-{}", fabric_profile.id.split('-').last().unwrap_or(&fabric_profile.id), vanilla_meta.id);
+    // Format: fabric-loader-{loader_version}-{minecraft_version}
+    // Example: fabric-loader-0.17.3-1.20.1
+    merged.id = format!("fabric-loader-{}-{}", loader_version, vanilla_meta.id);
 
     merged
 }

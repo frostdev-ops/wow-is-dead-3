@@ -43,13 +43,57 @@ where
     // Wrap callback in Arc<Mutex<>> for thread-safe sharing
     let progress_callback = Arc::new(Mutex::new(progress_callback));
 
+    // Step 0: Clean existing installation to force fresh install
+    {
+        let mut callback = progress_callback.lock().await;
+        callback(InstallProgress {
+            step: "clean".to_string(),
+            current: 0,
+            total: 6,
+            current_bytes: 0,
+            total_bytes: 0,
+            message: "Cleaning existing installation...".to_string(),
+        });
+    }
+
+    // Determine version ID for cleanup
+    let temp_version_id = if let Some(fabric_version) = &config.fabric_version {
+        format!("fabric-loader-{}-{}", fabric_version, config.game_version)
+    } else {
+        config.game_version.clone()
+    };
+
+    // Delete existing version directory, libraries, assets, and natives for fresh install
+    let version_dir = game_dir.join("versions").join(&temp_version_id);
+    if version_dir.exists() {
+        tokio::fs::remove_dir_all(&version_dir).await.ok();
+    }
+
+    // Delete libraries (they'll be re-downloaded)
+    let libraries_dir = game_dir.join("libraries");
+    if libraries_dir.exists() {
+        tokio::fs::remove_dir_all(&libraries_dir).await.ok();
+    }
+
+    // Delete assets (they'll be re-downloaded)
+    let assets_dir = game_dir.join("assets");
+    if assets_dir.exists() {
+        tokio::fs::remove_dir_all(&assets_dir).await.ok();
+    }
+
+    // Delete natives
+    let natives_dir = game_dir.join("natives");
+    if natives_dir.exists() {
+        tokio::fs::remove_dir_all(&natives_dir).await.ok();
+    }
+
     // Step 1: Fetch version metadata
     {
         let mut callback = progress_callback.lock().await;
         callback(InstallProgress {
             step: "version_meta".to_string(),
-            current: 0,
-            total: 5,
+            current: 1,
+            total: 6,
             current_bytes: 0,
             total_bytes: 0,
             message: format!("Fetching metadata for Minecraft {}", config.game_version),
@@ -64,8 +108,8 @@ where
             let mut callback = progress_callback.lock().await;
             callback(InstallProgress {
                 step: "fabric".to_string(),
-                current: 1,
-                total: 5,
+                current: 2,
+                total: 6,
                 current_bytes: 0,
                 total_bytes: 0,
                 message: format!("Installing Fabric loader {}", fabric_version),
@@ -80,7 +124,7 @@ where
         .await?;
 
         // Merge Fabric with vanilla
-        version_meta = fabric_installer::merge_fabric_with_vanilla(&version_meta, &fabric_profile);
+        version_meta = fabric_installer::merge_fabric_with_vanilla(&version_meta, &fabric_profile, fabric_version);
 
         // Download Fabric libraries
         let libraries_dir = game_dir.join("libraries");
@@ -93,8 +137,8 @@ where
         let mut callback = progress_callback.lock().await;
         callback(InstallProgress {
             step: "client".to_string(),
-            current: 2,
-            total: 5,
+            current: 3,
+            total: 6,
             current_bytes: 0,
             total_bytes: 0,
             message: "Downloading Minecraft client".to_string(),
@@ -117,8 +161,8 @@ where
         let mut callback = progress_callback.lock().await;
         callback(InstallProgress {
             step: "libraries".to_string(),
-            current: 3,
-            total: 5,
+            current: 4,
+            total: 6,
             current_bytes: 0,
             total_bytes: 0,
             message: format!("Downloading {} libraries", version_meta.libraries.len()),
@@ -145,8 +189,8 @@ where
         let mut callback = progress_callback.lock().await;
         callback(InstallProgress {
             step: "assets".to_string(),
-            current: 4,
-            total: 5,
+            current: 5,
+            total: 6,
             current_bytes: 0,
             total_bytes: 0,
             message: "Downloading assets".to_string(),
@@ -184,8 +228,8 @@ where
         let mut callback = progress_callback.lock().await;
         callback(InstallProgress {
             step: "complete".to_string(),
-            current: 5,
-            total: 5,
+            current: 6,
+            total: 6,
             current_bytes: 0,
             total_bytes: 0,
             message: "Installation complete".to_string(),

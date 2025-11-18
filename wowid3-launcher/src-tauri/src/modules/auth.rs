@@ -31,6 +31,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration as StdDuration;
 
+use super::logger::{log_auth, log_storage};
+use super::encrypted_storage::{save_encrypted_profile, load_encrypted_profile, delete_encrypted_profile};
+
 const KEYRING_SERVICE: &str = "wowid3-launcher";
 const KEYRING_USER: &str = "minecraft-auth";
 
@@ -548,30 +551,151 @@ pub async fn complete_device_code_auth(device_code: String, interval: u64) -> Re
 
 /// Get current authenticated user from keyring
 pub fn get_current_user() -> Result<Option<MinecraftProfile>> {
-    let entry = Entry::new(KEYRING_SERVICE, KEYRING_USER)?;
+    log_auth("USER_LOAD", "Attempting to load user from primary storage (keyring)");
 
+    // Try keyring first
+    let entry = Entry::new(KEYRING_SERVICE, KEYRING_USER)?;
     match entry.get_password() {
         Ok(json) => {
-            let profile: MinecraftProfile = serde_json::from_str(&json)?;
+            match serde_json::from_str::<MinecraftProfile>(&json) {
+                Ok(profile) => {
+                    log_storage("LOAD", "keyring", true, &format!("User loaded: {}", profile.username));
+                    return Ok(Some(profile));
+                }
+                Err(e) => {
+                    log_storage("LOAD", "keyring", false, &format!("Failed to parse: {}", e));
+                }
+            }
+        }
+        Err(keyring::Error::NoEntry) => {
+            log_storage("LOAD", "keyring", true, "No entry found (normal - user not logged in)");
+            // This is normal - user just isn't logged in yet
+        }
+        Err(e) => {
+            log_storage("LOAD", "keyring", false, &format!("Keyring error: {}", e));
+            // Keyring failed, try encrypted file as fallback
+        }
+    }
+
+    // Fallback to encrypted file if keyring failed or had no entry
+    log_auth("USER_LOAD", "Attempting fallback: loading from encrypted file");
+    match load_encrypted_profile()? {
+        Some(profile) => {
+            log_storage("LOAD", "encrypted_file", true, &format!("User loaded from fallback: {}", profile.username));
+
+            // Try to restore to keyring for next time
+            if let Err(e) = {
+                let entry = Entry::new(KEYRING_SERVICE, KEYRING_USER)?;
+                let json = serde_json::to_string(&profile)?;
+                entry.set_password(&json)
+            } {
+                log_storage("RESTORE", "keyring", false, &format!("Failed to restore: {}", e));
+                // This is not fatal - we got the profile from encrypted file
+            } else {
+                log_storage("RESTORE", "keyring", true, "Profile restored to keyring from encrypted file");
+            }
+
             Ok(Some(profile))
         }
-        Err(_) => Ok(None),
+        None => {
+            log_storage("LOAD", "encrypted_file", true, "No profile found (user not logged in)");
+            Ok(None)
+        }
     }
 }
 
-/// Save user profile to keyring
+/// Save user profile to both keyring (primary) and encrypted file (fallback)
 pub fn save_user_profile(profile: &MinecraftProfile) -> Result<()> {
-    let entry = Entry::new(KEYRING_SERVICE, KEYRING_USER)?;
-    let json = serde_json::to_string(profile)?;
-    entry.set_password(&json)?;
-    Ok(())
+    log_auth("PROFILE_SAVE", "Attempting to save profile to primary storage (keyring)");
+
+    // Try keyring first
+    let keyring_result = {
+        let entry = Entry::new(KEYRING_SERVICE, KEYRING_USER)?;
+        let json = serde_json::to_string(profile)?;
+        match entry.set_password(&json) {
+            Ok(_) => {
+                log_storage("SAVE", "keyring", true, "Profile saved successfully");
+                Ok(())
+            }
+            Err(e) => {
+                log_storage("SAVE", "keyring", false, &format!("Failed: {}", e));
+                Err(e)
+            }
+        }
+    };
+
+    // Always save to encrypted file as backup (or primary if keyring fails)
+    let encrypted_result = match save_encrypted_profile(profile) {
+        Ok(_) => {
+            log_storage("SAVE", "encrypted_file", true, "Profile saved as backup");
+            Ok(())
+        }
+        Err(e) => {
+            log_storage("SAVE", "encrypted_file", false, &format!("Failed: {}", e));
+            Err(e)
+        }
+    };
+
+    // Success if either storage method succeeds
+    match (keyring_result, encrypted_result) {
+        (Ok(_), _) | (_, Ok(_)) => {
+            log_auth("PROFILE_SAVE", "✓ Profile saved (at least one storage succeeded)");
+            Ok(())
+        }
+        (Err(k_err), Err(e_err)) => {
+            log_auth("PROFILE_SAVE", &format!("✗ All storage methods failed - keyring: {}, encrypted: {}", k_err, e_err));
+            Err(anyhow!("Failed to save profile to both storage backends: keyring={}, encrypted={}", k_err, e_err))
+        }
+    }
 }
 
-/// Logout and clear stored credentials
+/// Logout and clear stored credentials from both storage backends
 pub fn logout() -> Result<()> {
-    let entry = Entry::new(KEYRING_SERVICE, KEYRING_USER)?;
-    entry.delete_credential()?;
-    Ok(())
+    log_auth("LOGOUT", "Attempting to clear credentials from all storage backends");
+
+    // Clear keyring
+    let keyring_result = {
+        match Entry::new(KEYRING_SERVICE, KEYRING_USER) {
+            Ok(entry) => match entry.delete_credential() {
+                Ok(_) => {
+                    log_storage("DELETE", "keyring", true, "Credentials cleared from keyring");
+                    Ok(())
+                }
+                Err(e) => {
+                    log_storage("DELETE", "keyring", false, &format!("Failed: {}", e));
+                    Err(e)
+                }
+            },
+            Err(e) => {
+                log_storage("DELETE", "keyring", false, &format!("Failed to create entry: {}", e));
+                Err(e)
+            }
+        }
+    };
+
+    // Clear encrypted file
+    let encrypted_result = match delete_encrypted_profile() {
+        Ok(_) => {
+            log_storage("DELETE", "encrypted_file", true, "Credentials cleared from encrypted file");
+            Ok(())
+        }
+        Err(e) => {
+            log_storage("DELETE", "encrypted_file", false, &format!("Failed: {}", e));
+            Err(e)
+        }
+    };
+
+    // Success if either storage method succeeds
+    match (keyring_result, encrypted_result) {
+        (Ok(_), _) | (_, Ok(_)) => {
+            log_auth("LOGOUT", "✓ Credentials cleared (at least one storage succeeded)");
+            Ok(())
+        }
+        (Err(k_err), Err(e_err)) => {
+            log_auth("LOGOUT", &format!("✗ All logout operations failed - keyring: {}, encrypted: {}", k_err, e_err));
+            Err(anyhow!("Failed to logout from both storage backends: keyring={}, encrypted={}", k_err, e_err))
+        }
+    }
 }
 
 /// Check if token is expired or will expire soon

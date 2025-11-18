@@ -13,7 +13,6 @@ use tokio::sync::{mpsc, Semaphore};
 /// Download priority levels for task scheduling
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DownloadPriority {
-    Critical = 4, // Fabric loader, client JAR
     High = 3,     // Libraries
     Medium = 2,   // Assets
     Low = 1,      // Modpack files
@@ -24,7 +23,6 @@ pub enum DownloadPriority {
 pub enum HashType {
     Sha1(String),
     Sha256(String),
-    None,
 }
 
 /// Individual download task
@@ -72,9 +70,6 @@ impl DownloadManager {
     }
 
     /// Get the shared HTTP client
-    pub fn client(&self) -> &Client {
-        &self.client
-    }
 
     /// Download a single file with retry logic and progress tracking
     pub async fn download_file(
@@ -163,9 +158,7 @@ impl DownloadManager {
             let chunk = chunk.context("Failed to read chunk")?;
 
             // Update hash
-            if let Some(h) = &mut hasher {
-                h.update(&chunk);
-            }
+            hasher.update(&chunk);
 
             // Write to file
             file.write_all(&chunk)
@@ -190,10 +183,8 @@ impl DownloadManager {
         file.flush().await.context("Failed to flush file")?;
         drop(file);
 
-        // Verify hash if provided
-        if let Some(h) = hasher {
-            verify_hash(h, &task.expected_hash, &task.dest)?;
-        }
+        // Verify hash
+        verify_hash(hasher, &task.expected_hash, &task.dest)?;
 
         Ok(())
     }
@@ -232,11 +223,10 @@ impl DownloadManager {
 }
 
 /// Create appropriate hasher based on hash type
-fn create_hasher(hash_type: &HashType) -> Option<Box<dyn Hasher>> {
+fn create_hasher(hash_type: &HashType) -> Box<dyn Hasher> {
     match hash_type {
-        HashType::Sha1(_) => Some(Box::new(Sha1Hasher(Sha1::new()))),
-        HashType::Sha256(_) => Some(Box::new(Sha256Hasher(Sha256::new()))),
-        HashType::None => None,
+        HashType::Sha1(_) => Box::new(Sha1Hasher(Sha1::new())),
+        HashType::Sha256(_) => Box::new(Sha256Hasher(Sha256::new())),
     }
 }
 
@@ -246,7 +236,6 @@ fn verify_hash(hasher: Box<dyn Hasher>, expected: &HashType, path: &Path) -> Res
     let expected_str = match expected {
         HashType::Sha1(h) => h,
         HashType::Sha256(h) => h,
-        HashType::None => return Ok(()),
     };
 
     if actual.to_lowercase() != expected_str.to_lowercase() {
