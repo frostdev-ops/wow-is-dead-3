@@ -1,29 +1,29 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { useAdmin } from '../hooks/useAdmin';
+import { useFileUpload } from '../hooks/useFileUpload';
+import { useReleaseOperations } from '../hooks/useReleaseOperations';
 import { useDrafts } from '../hooks/useDrafts';
-import { Plus, Edit, Trash2, Package, Copy } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import DraftList from '../components/drafts/DraftList';
+import ReleaseList from '../components/releases/ReleaseList';
+import FileUploadZone from '../components/uploads/FileUploadZone';
+import UploadProgress from '../components/uploads/UploadProgress';
 import FileBrowser from '../components/FileBrowser';
 import './Dashboard.css';
 
-interface UploadSession {
-  uploadId: string;
-  files: File[];
-}
-
 export default function Dashboard() {
   const { clearToken } = useAuthStore();
-  const { loading, error, uploadFiles, createRelease, listReleases, deleteRelease, copyReleaseToDraft, getBlacklist, updateBlacklist } = useAdmin();
-  const { drafts, listDrafts, createDraft, getDraft, updateDraft: updateDraftAPI, deleteDraft: deleteDraftAPI, publishDraft, duplicateDraft, loading: draftLoading } = useDrafts();
+  const { getBlacklist, updateBlacklist, createRelease } = useAdmin();
+  const { releases } = useReleaseOperations();
+  const { getDraft, updateDraft: updateDraftAPI, publishDraft } = useDrafts();
+  const { uploadFiles, uploadProgress, uploading, uploadResults, getTotalProgress } = useFileUpload();
+
   const [activeTab, setActiveTab] = useState<'dashboard' | 'upload' | 'releases' | 'release-wizard' | 'edit-draft' | 'blacklist'>('dashboard');
-  const [draftFilter, setDraftFilter] = useState<'all' | 'drafts'>('all');
   const [editingDraft, setEditingDraft] = useState<any>(null);
   const [editingTab, setEditingTab] = useState<'files' | 'metadata' | 'changelog' | 'review'>('metadata');
-  const [uploadSession, setUploadSession] = useState<UploadSession | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
-  const [releases, setReleases] = useState<any[]>([]);
   const [blacklistPatterns, setBlacklistPatterns] = useState<string[]>([]);
   const [newPattern, setNewPattern] = useState('');
 
@@ -36,23 +36,10 @@ export default function Dashboard() {
   });
 
   useEffect(() => {
-    if (activeTab === 'releases') {
-      loadReleases();
-    } else if (activeTab === 'blacklist') {
+    if (activeTab === 'blacklist') {
       loadBlacklist();
-    } else if (activeTab === 'release-wizard') {
-      listDrafts();
     }
   }, [activeTab]);
-
-  const loadReleases = async () => {
-    try {
-      const data = await listReleases();
-      setReleases(data);
-    } catch {
-      // Error handled by hook
-    }
-  };
 
   const loadBlacklist = async () => {
     try {
@@ -63,42 +50,32 @@ export default function Dashboard() {
     }
   };
 
-  const handleFileSelect = (e: React.DragEvent | React.ChangeEvent<HTMLInputElement>) => {
-    e.preventDefault();
-    const files = e instanceof DragEvent ? (e as any).dataTransfer?.files : (e.target as HTMLInputElement).files;
-    if (files) {
-      setUploadSession({
-        uploadId: '',
-        files: Array.from(files),
-      });
-      setUploadError(null);
-      setUploadSuccess(null);
-    }
+  const handleFilesSelected = (files: File[]) => {
+    setSelectedFiles(files);
+    setUploadError(null);
+    setUploadSuccess(null);
   };
 
   const handleUpload = async () => {
-    if (!uploadSession?.files.length) return;
+    if (selectedFiles.length === 0) return;
 
-    try {
-      const responses = await uploadFiles(uploadSession.files);
-      if (responses.length > 0) {
-        setUploadSession({ uploadId: responses[0].upload_id, files: uploadSession.files });
-        setUploadSuccess(`Uploaded ${responses.length} files successfully`);
-      }
-    } catch (err: any) {
-      setUploadError(err.response?.data?.error || 'Upload failed');
+    const results = await uploadFiles(selectedFiles);
+    if (results && results.length > 0) {
+      setUploadSuccess(`Uploaded ${results.length} files successfully`);
+    } else {
+      setUploadError('Upload failed');
     }
   };
 
   const handleCreateRelease = async () => {
-    if (!uploadSession?.uploadId || !releaseForm.version) {
-      setUploadError('Please fill all required fields');
+    if (!uploadResults || uploadResults.length === 0 || !releaseForm.version) {
+      setUploadError('Please upload files and fill all required fields');
       return;
     }
 
     try {
       await createRelease(
-        uploadSession.uploadId,
+        uploadResults[0].upload_id,
         releaseForm.version,
         releaseForm.minecraftVersion,
         releaseForm.fabricLoader,
@@ -106,33 +83,9 @@ export default function Dashboard() {
       );
       setUploadSuccess('Release created successfully!');
       setReleaseForm({ version: '', minecraftVersion: '', fabricLoader: '', changelog: '' });
-      setUploadSession(null);
-      loadReleases();
+      setSelectedFiles([]);
     } catch (err: any) {
       setUploadError(err.response?.data?.error || 'Failed to create release');
-    }
-  };
-
-  const handleDeleteRelease = async (version: string) => {
-    if (confirm(`Are you sure you want to delete release ${version}?`)) {
-      try {
-        await deleteRelease(version);
-        setUploadSuccess(`Release ${version} deleted successfully`);
-        loadReleases();
-      } catch (err: any) {
-        setUploadError(err.response?.data?.error || 'Failed to delete release');
-      }
-    }
-  };
-
-  const handleCopyReleaseToDraft = async (version: string) => {
-    try {
-      const newDraft = await copyReleaseToDraft(version);
-      setUploadSuccess(`Release ${version} copied to draft: ${newDraft.version}`);
-      setActiveTab('release-wizard');
-      listDrafts();
-    } catch (err: any) {
-      setUploadError(err.response?.data?.error || 'Failed to copy release to draft');
     }
   };
 
@@ -156,30 +109,6 @@ export default function Dashboard() {
     }
   };
 
-  const handleCreateDraft = async () => {
-    const draft = await createDraft({});
-    if (draft) {
-      setUploadSuccess(`Draft created: ${draft.version || 'Untitled'}`);
-      listDrafts();
-    }
-  };
-
-  const handleDeleteDraft = async (id: string, version: string) => {
-    if (confirm(`Delete draft ${version || 'Untitled Draft'}?`)) {
-      await deleteDraftAPI(id);
-      setUploadSuccess('Draft deleted');
-      listDrafts();
-    }
-  };
-
-  const handleDuplicateDraft = async (id: string, version: string) => {
-    const newDraft = await duplicateDraft(id);
-    if (newDraft) {
-      setUploadSuccess(`Draft duplicated: ${newDraft.version}`);
-      listDrafts();
-    }
-  };
-
   const handleEditDraft = async (id: string) => {
     const draft = await getDraft(id);
     if (draft) {
@@ -197,86 +126,9 @@ export default function Dashboard() {
     setUploadSuccess('Draft saved');
   };
 
-  const handleFileUpload = async (files: FileList) => {
-    if (!editingDraft || files.length === 0) return;
-
-    setUploadError(null);
-    const formData = new FormData();
-
-    Array.from(files).forEach((file) => {
-      formData.append('files', file);
-    });
-
-    try {
-      // Step 1: Upload files to get upload_id
-      const uploadResponse = await fetch('/api/admin/upload', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-        },
-        body: formData
-      });
-
-      if (!uploadResponse.ok) {
-        throw new Error(`Upload failed: ${uploadResponse.statusText}`);
-      }
-
-      const uploadData = await uploadResponse.json();
-      if (!uploadData || uploadData.length === 0) {
-        throw new Error('No upload_id received from server');
-      }
-
-      const upload_id = uploadData[0].upload_id;
-
-      // Step 2: Add files to draft using upload_id
-      const addFilesResponse = await fetch(`/api/admin/drafts/${editingDraft.id}/files`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ upload_id })
-      });
-
-      if (!addFilesResponse.ok) {
-        throw new Error(`Failed to add files to draft: ${addFilesResponse.statusText}`);
-      }
-
-      const updatedDraft = await addFilesResponse.json();
-      setEditingDraft(updatedDraft);
-      setUploadSuccess(`${files.length} file(s) uploaded successfully`);
-    } catch (err: any) {
-      setUploadError(err.message || 'Failed to upload files');
-    }
-  };
-
-  const handleRemoveFile = async (filePath: string) => {
-    if (!editingDraft) return;
-
-    try {
-      const response = await fetch(`/api/admin/drafts/${editingDraft.id}/files/${encodeURIComponent(filePath)}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Remove failed: ${response.statusText}`);
-      }
-
-      const updatedDraft = await response.json();
-      setEditingDraft(updatedDraft);
-      setUploadSuccess('File removed successfully');
-    } catch (err: any) {
-      setUploadError(err.message || 'Failed to remove file');
-    }
-  };
-
   const handlePublishDraft = async () => {
     if (!editingDraft) return;
 
-    // Validate required fields
     if (!editingDraft.version || !editingDraft.minecraft_version || !editingDraft.fabric_loader) {
       setUploadError('Please fill in all required fields: Version, Minecraft Version, and Fabric Loader');
       return;
@@ -296,7 +148,6 @@ export default function Dashboard() {
       setUploadSuccess(`Release ${editingDraft.version} published successfully!`);
       setEditingDraft(null);
       setActiveTab('release-wizard');
-      listDrafts();
     }
   };
 
@@ -368,38 +219,39 @@ export default function Dashboard() {
               <p className="page-description">Upload modpack files for a new release</p>
             </div>
 
-            {error && <div className="alert alert-error">{error}</div>}
             {uploadError && <div className="alert alert-error">{uploadError}</div>}
             {uploadSuccess && <div className="alert alert-success">{uploadSuccess}</div>}
 
-            {!uploadSession ? (
-              <div className="card">
-                <div className="upload-area" onDrop={handleFileSelect} onDragOver={(e) => e.preventDefault()}>
-                  <input type="file" multiple hidden onChange={handleFileSelect} id="file-input" webkitdirectory="" />
-                  <label htmlFor="file-input" className="upload-label">
-                    <div className="upload-icon">📁</div>
-                    <div className="upload-text">Drag files here or click to select</div>
-                    <div className="upload-hint">Select a folder to upload all modpack files</div>
-                  </label>
-                </div>
-              </div>
+            {selectedFiles.length === 0 ? (
+              <FileUploadZone
+                onFilesSelected={handleFilesSelected}
+                multiple={true}
+                webkitdirectory={true}
+              />
             ) : (
               <div className="card">
-                <h3>Selected Files ({uploadSession.files.length})</h3>
+                <h3>Selected Files ({selectedFiles.length})</h3>
                 <div className="file-list">
-                  {uploadSession.files.slice(0, 10).map((file, idx) => (
+                  {selectedFiles.slice(0, 10).map((file, idx) => (
                     <div key={idx} className="file-item">
                       <span>{file.name}</span>
                       <span className="file-size">({(file.size / 1024 / 1024).toFixed(2)} MB)</span>
                     </div>
                   ))}
-                  {uploadSession.files.length > 10 && <div className="file-item">... and {uploadSession.files.length - 10} more</div>}
+                  {selectedFiles.length > 10 && (
+                    <div className="file-item">... and {selectedFiles.length - 10} more</div>
+                  )}
                 </div>
 
-                {!uploadSession.uploadId ? (
-                  <button className="btn-primary" onClick={handleUpload} disabled={loading}>
-                    {loading ? 'Uploading...' : 'Upload Files'}
-                  </button>
+                {!uploadResults || uploadResults.length === 0 ? (
+                  <>
+                    <button className="btn-primary" onClick={handleUpload} disabled={uploading}>
+                      {uploading ? 'Uploading...' : 'Upload Files'}
+                    </button>
+                    {uploadProgress.length > 0 && (
+                      <UploadProgress files={uploadProgress} totalProgress={getTotalProgress()} />
+                    )}
+                  </>
                 ) : (
                   <div>
                     <div className="alert alert-success">Upload completed! Now create the release.</div>
@@ -448,8 +300,8 @@ export default function Dashboard() {
                       />
                     </div>
 
-                    <button className="btn-primary" onClick={handleCreateRelease} disabled={loading}>
-                      {loading ? 'Creating...' : 'Create Release'}
+                    <button className="btn-primary" onClick={handleCreateRelease}>
+                      Create Release
                     </button>
                   </div>
                 )}
@@ -465,60 +317,9 @@ export default function Dashboard() {
               <p className="page-description">View and manage existing releases</p>
             </div>
 
-            {error && <div className="alert alert-error">{error}</div>}
             {uploadSuccess && <div className="alert alert-success">{uploadSuccess}</div>}
 
-            {releases.length === 0 ? (
-              <div className="card">
-                <p>No releases yet. Create one from the Upload Files section.</p>
-              </div>
-            ) : (
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Version</th>
-                    <th>Minecraft</th>
-                    <th>Files</th>
-                    <th>Size</th>
-                    <th>Created</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {releases.map((release) => (
-                    <tr key={release.version}>
-                      <td>
-                        <span className="badge badge-success">{release.version}</span>
-                      </td>
-                      <td>{release.minecraft_version}</td>
-                      <td>{release.file_count}</td>
-                      <td>{(release.size_bytes / 1024 / 1024).toFixed(2)} MB</td>
-                      <td>{new Date(release.created_at).toLocaleDateString()}</td>
-                      <td>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <button
-                            className="btn-secondary"
-                            style={{ padding: '6px 12px', fontSize: '12px', background: '#6366f1', color: '#fff' }}
-                            onClick={() => handleCopyReleaseToDraft(release.version)}
-                            disabled={loading}
-                          >
-                            <Copy style={{ width: '14px', height: '14px', marginRight: '4px', display: 'inline' }} />
-                            Copy to Draft
-                          </button>
-                          <button
-                            className="btn-danger"
-                            onClick={() => handleDeleteRelease(release.version)}
-                            disabled={loading}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+            <ReleaseList />
           </div>
         )}
 
@@ -529,68 +330,9 @@ export default function Dashboard() {
               <p className="page-description">Create and manage modpack releases with intelligent suggestions</p>
             </div>
 
-            {error && <div className="alert alert-error">{error}</div>}
-            {draftLoading && <div className="alert alert-info">Loading drafts...</div>}
             {uploadSuccess && <div className="alert alert-success">{uploadSuccess}</div>}
 
-            <div className="card">
-              <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h2 style={{ margin: 0 }}>Drafts ({drafts.length})</h2>
-                <button className="btn-primary" onClick={handleCreateDraft} disabled={draftLoading}>
-                  {draftLoading ? 'Creating...' : '+ Create New Draft'}
-                </button>
-              </div>
-
-              {drafts.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
-                  <Package style={{ width: '48px', height: '48px', margin: '0 auto 16px', opacity: 0.5 }} />
-                  <p style={{ fontSize: '16px', marginBottom: '16px' }}>No drafts yet</p>
-                  <button className="btn-primary" onClick={handleCreateDraft}>
-                    Create Your First Draft
-                  </button>
-                </div>
-              ) : (
-                <div>
-                  {drafts.map((draft) => (
-                    <div key={draft.id} style={{
-                      padding: '16px',
-                      borderBottom: '1px solid #eee',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center'
-                    }}>
-                      <div>
-                        <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: 600 }}>
-                          {draft.version || 'Untitled Draft'}
-                        </h3>
-                        <div style={{ fontSize: '12px', color: '#999', display: 'flex', gap: '16px' }}>
-                          {draft.minecraft_version && <span>Minecraft {draft.minecraft_version}</span>}
-                          {draft.fabric_loader && <span>Fabric {draft.fabric_loader}</span>}
-                          <span>{draft.files.length} files</span>
-                          <span>Updated {formatDistanceToNow(new Date(draft.updated_at), { addSuffix: true })}</span>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => handleEditDraft(draft.id)}>
-                          <Edit style={{ width: '16px', height: '16px', marginRight: '4px' }} /> Edit
-                        </button>
-                        <button
-                          className="btn-secondary"
-                          style={{ padding: '6px 12px', fontSize: '12px', background: '#6366f1', color: '#fff' }}
-                          onClick={() => handleDuplicateDraft(draft.id, draft.version)}
-                          disabled={draftLoading}
-                        >
-                          <Copy style={{ width: '16px', height: '16px', marginRight: '4px' }} /> Duplicate
-                        </button>
-                        <button className="btn-danger" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => handleDeleteDraft(draft.id, draft.version)}>
-                          <Trash2 style={{ width: '16px', height: '16px', marginRight: '4px' }} /> Delete
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <DraftList onEditDraft={handleEditDraft} />
           </div>
         )}
 
@@ -601,72 +343,30 @@ export default function Dashboard() {
               <p className="page-description">Edit your modpack release</p>
             </div>
 
-            {error && <div className="alert alert-error">{error}</div>}
             {uploadSuccess && <div className="alert alert-success">{uploadSuccess}</div>}
 
             <div className="card">
               {/* Tabs */}
               <div style={{ display: 'flex', borderBottom: '2px solid #007bff', marginBottom: '20px', marginLeft: '-16px', marginRight: '-16px', paddingLeft: '16px' }}>
-                <button
-                  onClick={() => setEditingTab('metadata')}
-                  style={{
-                    padding: '12px 24px',
-                    border: 'none',
-                    background: editingTab === 'metadata' ? '#007bff' : 'transparent',
-                    color: editingTab === 'metadata' ? '#fff' : '#a0a0a0',
-                    cursor: 'pointer',
-                    fontWeight: editingTab === 'metadata' ? 600 : 500,
-                    fontSize: '14px',
-                    transition: 'all 0.2s ease',
-                  }}
-                >
-                  Metadata
-                </button>
-                <button
-                  onClick={() => setEditingTab('files')}
-                  style={{
-                    padding: '12px 24px',
-                    border: 'none',
-                    background: editingTab === 'files' ? '#007bff' : 'transparent',
-                    color: editingTab === 'files' ? '#fff' : '#a0a0a0',
-                    cursor: 'pointer',
-                    fontWeight: editingTab === 'files' ? 600 : 500,
-                    fontSize: '14px',
-                    transition: 'all 0.2s ease',
-                  }}
-                >
-                  Files
-                </button>
-                <button
-                  onClick={() => setEditingTab('changelog')}
-                  style={{
-                    padding: '12px 24px',
-                    border: 'none',
-                    background: editingTab === 'changelog' ? '#007bff' : 'transparent',
-                    color: editingTab === 'changelog' ? '#fff' : '#a0a0a0',
-                    cursor: 'pointer',
-                    fontWeight: editingTab === 'changelog' ? 600 : 500,
-                    fontSize: '14px',
-                    transition: 'all 0.2s ease',
-                  }}
-                >
-                  Changelog
-                </button>
-                <button
-                  onClick={() => setEditingTab('review')}
-                  style={{
-                    padding: '12px 24px',
-                    border: 'none',
-                    background: editingTab === 'review' ? '#007bff' : 'transparent',
-                    color: editingTab === 'review' ? '#fff' : '#a0a0a0',
-                    cursor: 'pointer',
-                    fontWeight: editingTab === 'review' ? 600 : 500,
-                    fontSize: '14px',
-                    transition: 'all 0.2s ease',
-                  }}
-                >
-                  Review
-                </button>
+                {(['metadata', 'files', 'changelog', 'review'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setEditingTab(tab)}
+                    style={{
+                      padding: '12px 24px',
+                      border: 'none',
+                      background: editingTab === tab ? '#007bff' : 'transparent',
+                      color: editingTab === tab ? '#fff' : '#a0a0a0',
+                      cursor: 'pointer',
+                      fontWeight: editingTab === tab ? 600 : 500,
+                      fontSize: '14px',
+                      transition: 'all 0.2s ease',
+                      textTransform: 'capitalize',
+                    }}
+                  >
+                    {tab}
+                  </button>
+                ))}
               </div>
 
               {/* Tab Content */}
@@ -714,23 +414,12 @@ export default function Dashboard() {
                   <FileBrowser
                     draftId={editingDraft.id}
                     onFileChange={async () => {
-                      // Refresh draft to update file list
                       const draft = await getDraft(editingDraft.id);
                       if (draft) {
                         setEditingDraft(draft);
                       }
                     }}
                   />
-                  <div style={{ marginTop: '16px', padding: '12px', background: '#1a1a2e', borderRadius: '4px', fontSize: '13px', color: '#a0a0a0' }}>
-                    <strong style={{ color: '#007bff' }}>✨ New Features:</strong>
-                    <ul style={{ marginTop: '8px', marginBottom: 0, paddingLeft: '20px' }}>
-                      <li>Browse and navigate directory structure with breadcrumb navigation</li>
-                      <li>Edit text files directly in the browser (JSON, TOML, TXT, etc.)</li>
-                      <li>Create new files and folders with custom names</li>
-                      <li>Delete files and folders with confirmation</li>
-                      <li>View file sizes and modification dates</li>
-                    </ul>
-                  </div>
                 </div>
               )}
 
@@ -781,16 +470,15 @@ export default function Dashboard() {
                         padding: '12px 24px'
                       }}
                       onClick={handlePublishDraft}
-                      disabled={loading || draftLoading || !editingDraft.version || !editingDraft.minecraft_version || !editingDraft.fabric_loader || !editingDraft.files?.length}
+                      disabled={!editingDraft.version || !editingDraft.minecraft_version || !editingDraft.fabric_loader || !editingDraft.files?.length}
                     >
-                      {loading || draftLoading ? '🚀 Publishing...' : '🚀 Publish Release'}
+                      🚀 Publish Release
                     </button>
                     <button
                       className="btn-secondary"
                       onClick={() => {
                         setActiveTab('release-wizard');
                         setEditingDraft(null);
-                        listDrafts();
                       }}
                     >
                       Cancel
@@ -806,7 +494,6 @@ export default function Dashboard() {
                   onClick={() => {
                     setActiveTab('release-wizard');
                     setEditingDraft(null);
-                    listDrafts();
                   }}
                 >
                   Back to Drafts
@@ -823,7 +510,7 @@ export default function Dashboard() {
               <p className="page-description">Files matching these patterns won't be synced to clients</p>
             </div>
 
-            {error && <div className="alert alert-error">{error}</div>}
+            {uploadError && <div className="alert alert-error">{uploadError}</div>}
             {uploadSuccess && <div className="alert alert-success">{uploadSuccess}</div>}
 
             <div className="card">
@@ -862,8 +549,8 @@ export default function Dashboard() {
                 </div>
               )}
 
-              <button className="btn-primary" onClick={handleSaveBlacklist} disabled={loading}>
-                {loading ? 'Saving...' : 'Save Blacklist'}
+              <button className="btn-primary" onClick={handleSaveBlacklist}>
+                Save Blacklist
               </button>
             </div>
           </div>
