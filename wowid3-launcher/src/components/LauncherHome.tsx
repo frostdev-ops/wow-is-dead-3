@@ -336,6 +336,29 @@ export default function LauncherHome() {
         />
       </div>
 
+      {/* Server MOTD */}
+      {status.motd && (
+        <div className="max-w-2xl mx-auto w-full px-4 mb-6 text-center">
+          <style>{`
+            @keyframes motd-glow {
+              0%, 100% {
+                text-shadow: 0 0 5px #FFD700, 0 0 10px #FFD700;
+              }
+              50% {
+                text-shadow: 0 0 15px #FFD700, 0 0 25px #FFD700;
+              }
+            }
+            .motd-text {
+              color: #FFD700;
+              animation: motd-glow 2s ease-in-out infinite;
+            }
+          `}</style>
+          <p className="text-sm motd-text" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
+            MOTD: {status.motd}
+          </p>
+        </div>
+      )}
+
       {/* Main Layout Container */}
       <div className="w-full relative flex justify-center px-4">
         {/* Content Card */}
@@ -541,16 +564,6 @@ export default function LauncherHome() {
             </motion.div>
           )}
         </AnimatePresence>
-
-        {/* Server MOTD or Error Message */}
-        {status.motd && (
-          <div className={`p-4 border ${status.online ? 'bg-slate-700 bg-opacity-50 border-slate-600' : 'bg-red-900 bg-opacity-30 border-red-600'}`}>
-            <p className="text-xs mb-1" style={{ color: status.online ? '#94a3b8' : '#f87171' }}>
-              {status.online ? 'Server Message' : 'Server Error'}
-            </p>
-            <p className="text-white text-sm">{status.motd}</p>
-          </div>
-        )}
 
         {/* Player List */}
         <PlayerList status={status} />
