@@ -258,7 +258,7 @@ export default function LauncherHome() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center h-full p-0">
+    <div className="flex flex-col items-center justify-center h-full pt-90 p-0">
         {/* Logo Section */}
       <div className="text-center max-w-2xl mx-auto w-full pb-8 flex items-center justify-center">
         <img
@@ -349,12 +349,12 @@ export default function LauncherHome() {
           <div className="p-4 bg-black bg-opacity-20 rounded-lg flex justify-center border border-slate-600 border-opacity-30">
             <LoadingSpinner size="md" message="Authenticating with Microsoft..." />
           </div>
-        ) : (
+        ) : minecraftInstalled ? (
           <div className="p-4 rounded-lg text-center border border-opacity-50" style={{ backgroundColor: 'rgba(8, 91, 46, 0.8)', borderColor: '#cdf1e1ff' }}>
             <p className="font-semibold mb-1" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif", fontWeight: 'bold' }}>Login Required</p>
             <p className="text-sm" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif", fontWeight: 'bold' }}>Click "Login" to authenticate with your Microsoft account</p>
           </div>
-        )}
+        ) : null}
 
         {/* Minecraft Installation or Play Section - Animated */}
         <AnimatePresence mode="wait">
@@ -531,7 +531,9 @@ export default function LauncherHome() {
         <div className="grid grid-cols-3 gap-4 pt-4">
           <div className="text-center">
             <p className="text-2xl font-bold" style={{ color: installedVersion ? '#16a34a' : '#dc2626' }}>
-              {latestManifest?.files.filter((f: any) => f.path?.endsWith('.jar')).length || 0}
+              {installedVersion && latestManifest
+                ? (latestManifest.files.filter((f: any) => f.path?.endsWith('.jar')).length || 0)
+                : 0}
             </p>
             <p className="text-xs text-gray-400">Mods Installed</p>
           </div>

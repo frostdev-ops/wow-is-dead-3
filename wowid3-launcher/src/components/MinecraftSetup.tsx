@@ -29,20 +29,14 @@ export function MinecraftSetup() {
   const formatMB = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1);
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4">
-      <Card>
+    <div className="w-full max-w-2xl mx-auto">
+      <Card borderColor="rgba(22, 163, 74, 0.8)" glowColor="rgba(22, 163, 74, 0.3)">
         <div className="text-center mb-6">
-          <h2
-            className="text-3xl font-bold mb-2"
-            style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}
-          >
-            Welcome to WOWID3 Launcher
-          </h2>
           <p
             className="text-lg"
             style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}
           >
-            Get started by installing Minecraft
+            Get started with Directory Setup
           </p>
         </div>
 
@@ -58,7 +52,7 @@ export function MinecraftSetup() {
               style={{
                 backgroundColor: 'rgba(220, 38, 38, 0.2)',
                 border: '1px solid rgba(220, 38, 38, 0.8)',
-                borderRadius: '0',
+                borderRadius: '8px',
               }}
             >
               <div className="flex items-center justify-between">
@@ -73,53 +67,6 @@ export function MinecraftSetup() {
                   ✕
                 </button>
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Version Information (Read-Only) */}
-        <div className="mb-6 p-4 text-center" style={{
-          backgroundColor: 'rgba(0, 0, 0, 0.3)',
-          border: '1px solid rgba(255, 215, 0, 0.5)',
-          borderRadius: '0',
-        }}>
-          <p className="text-lg font-bold mb-1" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>
-            Minecraft {selectedVersion} with Fabric {selectedFabricLoader}
-          </p>
-          <p className="text-xs" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
-            Preset by modpack requirements
-          </p>
-        </div>
-
-        {/* Installation Status / Progress */}
-        <AnimatePresence mode="wait">
-          {!isInstalling && selectedVersion && (
-            <motion.div
-              key={isInstalled ? "installed" : "not-installed"}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.3 }}
-              className="mb-6 p-3"
-              style={{
-                backgroundColor: isInstalled ? 'rgba(34, 197, 94, 0.2)' : 'rgba(234, 179, 8, 0.2)',
-                border: `1px solid ${isInstalled ? 'rgba(34, 197, 94, 0.8)' : 'rgba(234, 179, 8, 0.8)'}`,
-                borderRadius: '0',
-              }}
-            >
-              <motion.span
-                initial={{ x: -10 }}
-                animate={{ x: 0 }}
-                className="text-sm"
-                style={{
-                  color: isInstalled ? '#86efac' : '#fde047',
-                  fontFamily: "'Trebuchet MS', sans-serif",
-                }}
-              >
-                {isInstalled
-                  ? '✓ This version is installed and ready to play'
-                  : '⚠ This version needs to be installed'}
-              </motion.span>
             </motion.div>
           )}
         </AnimatePresence>
@@ -162,7 +109,7 @@ export function MinecraftSetup() {
                 style={{
                   backgroundColor: 'rgba(0, 0, 0, 0.3)',
                   border: '1px solid rgba(255, 215, 0, 0.3)',
-                  borderRadius: '0',
+                  borderRadius: '8px',
                 }}
               >
                 <motion.div
@@ -208,39 +155,78 @@ export function MinecraftSetup() {
         {/* Install Button */}
         <AnimatePresence>
           {!isInstalling && !isInstalled && selectedVersion && (
-            <motion.button
-              onClick={handleInstall}
-              disabled={!selectedVersion}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              transition={{ type: "spring", stiffness: 400, damping: 17 }}
-              className="w-full py-4 text-xl font-bold transition-all"
-              style={{
-                backgroundColor: selectedVersion ? 'rgba(255, 215, 0, 0.9)' : 'rgba(128, 128, 128, 0.5)',
-                color: selectedVersion ? '#000' : '#666',
-                border: selectedVersion ? '2px solid rgba(255, 215, 0, 1)' : '2px solid rgba(128, 128, 128, 0.8)',
-                borderRadius: '0',
-                fontFamily: "'Trebuchet MS', sans-serif",
-                cursor: selectedVersion ? 'pointer' : 'not-allowed',
-              }}
-            >
-              Install Minecraft
-            </motion.button>
+            <div className="flex justify-center">
+              <motion.button
+                onClick={handleInstall}
+                disabled={!selectedVersion}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                className="py-4 px-12 text-xl font-bold transition-all"
+                style={{
+                  backgroundColor: selectedVersion ? 'rgba(255, 215, 0, 0.3)' : 'rgba(128, 128, 128, 0.5)',
+                  color: selectedVersion ? '#FFD700' : '#666',
+                  border: selectedVersion ? '2px solid rgba(255, 215, 0, 0.8)' : '2px solid rgba(128, 128, 128, 0.8)',
+                  borderRadius: '8px',
+                  boxShadow: selectedVersion ? '0 0 20px rgba(255, 215, 0, 0.3)' : 'none',
+                  fontFamily: "'Trebuchet MS', sans-serif",
+                  cursor: selectedVersion ? 'pointer' : 'not-allowed',
+                }}
+              >
+                Install
+              </motion.button>
+            </div>
           )}
         </AnimatePresence>
 
         {/* Advanced Options Link */}
         <div className="mt-4 text-center">
           <p className="text-sm" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
-            Need to configure RAM or Java settings?{' '}
-            <span className="text-yellow-400 hover:text-yellow-300 cursor-pointer">
+            Need to configure RAM or Install location?{' '}
+            <span style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }} className="hover:opacity-80 cursor-pointer transition-opacity">
               Go to Settings for advanced options
             </span>
           </p>
         </div>
+
+        {/* Installation Status / Progress */}
+        <AnimatePresence mode="wait">
+          {!isInstalling && selectedVersion && (
+            <motion.div
+              key={isInstalled ? "installed" : "not-installed"}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.3 }}
+              className="mt-6 p-3 text-center"
+              style={{
+                backgroundColor: isInstalled ? 'rgba(34, 197, 94, 0.2)' : 'rgba(220, 38, 38, 0.2)',
+                border: `1px solid ${isInstalled ? 'rgba(34, 197, 94, 0.8)' : 'rgba(220, 38, 38, 0.8)'}`,
+                borderRadius: '8px',
+                maxWidth: isInstalled ? '100%' : '400px',
+                marginLeft: 'auto',
+                marginRight: 'auto',
+              }}
+            >
+              <motion.span
+                initial={{ x: -10 }}
+                animate={{ x: 0 }}
+                className="text-sm"
+                style={{
+                  color: isInstalled ? '#86efac' : '#fca5a5',
+                  fontFamily: "'Trebuchet MS', sans-serif",
+                }}
+              >
+                {isInstalled
+                  ? '✓ This version is installed and ready to play'
+                  : '⚠ Default install location recommended'}
+              </motion.span>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </Card>
     </div>
   );

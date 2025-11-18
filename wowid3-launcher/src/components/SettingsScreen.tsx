@@ -38,6 +38,30 @@ export default function SettingsScreen() {
         {/* Game Settings */}
         <Card>
           <h2 className="text-xl font-bold mb-4" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>Game Settings</h2>
+
+          {/* Warning Box */}
+          <div
+            className="mb-4 p-3 text-center"
+            style={{
+              backgroundColor: 'rgba(220, 38, 38, 0.2)',
+              border: '1px solid rgba(220, 38, 38, 0.8)',
+              borderRadius: '8px',
+              maxWidth: '400px',
+              marginLeft: 'auto',
+              marginRight: 'auto',
+            }}
+          >
+            <span
+              className="text-sm"
+              style={{
+                color: '#fca5a5',
+                fontFamily: "'Trebuchet MS', sans-serif",
+              }}
+            >
+              ⚠ Default install location recommended
+            </span>
+          </div>
+
           <div className="space-y-4">
             <Input
               label="Game Directory"
