@@ -15,6 +15,7 @@ use super::download_manager::{
 
 const MAX_DOWNLOAD_RETRIES: u32 = 3;
 const MANIFEST_FETCH_TIMEOUT_SECS: u64 = 10;
+const MANIFEST_HASH_FILE: &str = ".wowid3-manifest-hash";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ManifestFile {
@@ -80,6 +81,54 @@ pub async fn check_for_updates(manifest_url: &str) -> Result<Manifest> {
     eprintln!("[Updater] Manifest parsed successfully: version {}", manifest.version);
 
     Ok(manifest)
+}
+
+/// Calculate manifest hash - combines all file hashes to detect manifest changes
+pub fn calculate_manifest_hash(manifest: &Manifest) -> String {
+    let mut hasher = Sha256::new();
+
+    // Hash version
+    hasher.update(manifest.version.as_bytes());
+    hasher.update(b"|");
+
+    // Hash all file checksums in order
+    for file in &manifest.files {
+        hasher.update(file.sha256.as_bytes());
+        hasher.update(b"|");
+    }
+
+    format!("{:x}", hasher.finalize())
+}
+
+/// Get the stored manifest hash
+async fn get_stored_manifest_hash(game_dir: &PathBuf) -> Result<Option<String>> {
+    let hash_file = game_dir.join(MANIFEST_HASH_FILE);
+
+    if hash_file.exists() {
+        let content = fs::read_to_string(&hash_file)
+            .await
+            .context("Failed to read manifest hash file")?;
+        Ok(Some(content.trim().to_string()))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Save the manifest hash
+async fn save_manifest_hash(game_dir: &PathBuf, hash: &str) -> Result<()> {
+    let hash_file = game_dir.join(MANIFEST_HASH_FILE);
+    fs::write(&hash_file, hash)
+        .await
+        .context("Failed to write manifest hash file")?;
+    Ok(())
+}
+
+/// Check if manifest has changed
+pub async fn has_manifest_changed(manifest: &Manifest, game_dir: &PathBuf) -> Result<bool> {
+    let current_hash = calculate_manifest_hash(manifest);
+    let stored_hash = get_stored_manifest_hash(game_dir).await?;
+
+    Ok(stored_hash.is_none() || stored_hash != Some(current_hash))
 }
 
 /// Verify SHA256 checksum of a file
@@ -489,6 +538,10 @@ pub async fn install_modpack(
 
     // Update version file
     update_version_file(game_dir, &manifest.version).await?;
+
+    // Save manifest hash to detect future changes
+    let manifest_hash = calculate_manifest_hash(manifest);
+    save_manifest_hash(game_dir, &manifest_hash).await?;
 
     println!("Modpack installation complete: version {}", manifest.version);
     Ok(())

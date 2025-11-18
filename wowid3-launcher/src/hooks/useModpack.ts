@@ -1,7 +1,7 @@
 import { useEffect, useCallback } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { useModpackStore, useSettingsStore } from '../stores';
-import { checkForUpdates, getInstalledVersion, installModpack, verifyAndRepairModpack } from './useTauriCommands';
+import { checkForUpdates, getInstalledVersion, installModpack, verifyAndRepairModpack, hasManifestChanged } from './useTauriCommands';
 
 export const useModpack = () => {
   const {
@@ -45,8 +45,24 @@ export const useModpack = () => {
         setLatestManifest(manifest);
 
         // Check if update is available
-        if (installedVersion && manifest.version !== installedVersion) {
-          console.log('[Modpack] Update available:', manifest.version);
+        const versionChanged = installedVersion && manifest.version !== installedVersion;
+
+        // Also check if manifest has changed (file hashes changed even if version same)
+        let manifestHasChanged = false;
+        if (installedVersion && !versionChanged) {
+          try {
+            manifestHasChanged = await hasManifestChanged(manifest, gameDirectory);
+          } catch (err) {
+            console.warn('[Modpack] Could not check manifest changes:', err);
+          }
+        }
+
+        if (versionChanged || manifestHasChanged) {
+          if (versionChanged) {
+            console.log('[Modpack] Update available:', manifest.version);
+          } else {
+            console.log('[Modpack] Manifest changed (files updated)');
+          }
           setUpdateAvailable(true);
         } else {
           setUpdateAvailable(false);
@@ -63,7 +79,7 @@ export const useModpack = () => {
     const interval = setInterval(pollForUpdates, 5 * 60 * 1000); // 5 minutes
 
     return () => clearInterval(interval);
-  }, [manifestUrl, installedVersion, setLatestManifest, setUpdateAvailable]);
+  }, [manifestUrl, installedVersion, gameDirectory, setLatestManifest, setUpdateAvailable]);
 
   const checkUpdates = useCallback(async () => {
     try {

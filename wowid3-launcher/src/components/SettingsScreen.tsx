@@ -172,23 +172,27 @@ export default function SettingsScreen() {
               Verify and repair your modpack installation. This will check all files against their checksums and re-download any corrupted or missing files.
             </p>
 
-            {isRepairingInProgress && downloadProgress && (
+            {isRepairingInProgress && (
               <div className="bg-blue-900 bg-opacity-30 border border-blue-500 rounded p-4 mb-4">
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2">
                   <div className="animate-spin h-4 w-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
                   <span style={{ color: '#c6ebdaff' }}>Verifying and repairing...</span>
                 </div>
-                <div className="w-full bg-gray-700 rounded h-2">
-                  <div
-                    className="bg-blue-500 h-2 rounded transition-all"
-                    style={{
-                      width: `${downloadProgress.total > 0 ? (downloadProgress.current / downloadProgress.total) * 100 : 0}%`,
-                    }}
-                  ></div>
-                </div>
-                <p className="text-xs mt-2" style={{ color: '#999' }}>
-                  {downloadProgress.current} / {downloadProgress.total} files
-                </p>
+                {downloadProgress && downloadProgress.total > 0 && (
+                  <>
+                    <div className="w-full bg-gray-700 rounded h-2 mt-3 mb-2">
+                      <div
+                        className="bg-blue-500 h-2 rounded transition-all"
+                        style={{
+                          width: `${(downloadProgress.current / downloadProgress.total) * 100}%`,
+                        }}
+                      ></div>
+                    </div>
+                    <p className="text-xs" style={{ color: '#999' }}>
+                      {downloadProgress.current} / {downloadProgress.total} files
+                    </p>
+                  </>
+                )}
               </div>
             )}
 
