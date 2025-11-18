@@ -215,6 +215,64 @@ pub async fn update_version_file(game_dir: &PathBuf, version: &str) -> Result<()
     Ok(())
 }
 
+/// Remove mods that aren't in the manifest
+/// This ensures only mods from the manifest exist in the mods folder
+async fn cleanup_extra_mods(manifest: &Manifest, game_dir: &PathBuf) -> Result<()> {
+    let mods_dir = game_dir.join("mods");
+
+    // If mods directory doesn't exist, nothing to clean up
+    if !mods_dir.exists() {
+        return Ok(());
+    }
+
+    // Get all manifest files in the mods folder
+    let manifest_mods: std::collections::HashSet<String> = manifest
+        .files
+        .iter()
+        .filter(|f| f.path.starts_with("mods/") && f.path.ends_with(".jar"))
+        .map(|f| f.path.clone())
+        .collect();
+
+    println!("[Cleanup] Checking for extra mods...");
+    let mut removed_count = 0;
+
+    // Recursively scan mods directory
+    if let Ok(entries) = fs::read_dir(&mods_dir).await {
+        let mut entries = entries;
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+
+            // Only check .jar files
+            if let Some(ext) = path.extension() {
+                if ext == "jar" {
+                    // Get relative path from game_dir
+                    if let Ok(relative_path) = path.strip_prefix(game_dir) {
+                        let relative_str = relative_path.to_string_lossy().replace('\\', "/");
+
+                        // If this mod isn't in the manifest, delete it
+                        if !manifest_mods.contains(&relative_str) {
+                            println!("[Cleanup] Removing extra mod: {}", relative_str);
+                            if let Err(e) = fs::remove_file(&path).await {
+                                eprintln!("[Cleanup] Warning: Failed to remove {}: {}", relative_str, e);
+                            } else {
+                                removed_count += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if removed_count > 0 {
+        println!("[Cleanup] Removed {} extra mod(s)", removed_count);
+    } else {
+        println!("[Cleanup] No extra mods found");
+    }
+
+    Ok(())
+}
+
 /// Check if there's enough disk space for the download
 pub fn check_disk_space(game_dir: &PathBuf, required_bytes: u64) -> Result<()> {
     let disks = Disks::new_with_refreshed_list();
@@ -425,6 +483,9 @@ pub async fn install_modpack(
 
     // Wait for progress tracking to complete
     progress_task.await?;
+
+    // Clean up extra mods not in the manifest
+    cleanup_extra_mods(manifest, game_dir).await?;
 
     // Update version file
     update_version_file(game_dir, &manifest.version).await?;
