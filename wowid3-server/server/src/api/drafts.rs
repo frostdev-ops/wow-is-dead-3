@@ -239,17 +239,16 @@ pub async fn publish_draft(
     copy_dir_all(&draft_files_dir, &release_dir).await?;
 
     // Convert DraftFile to ManifestFile
+    // Always generate release URLs when publishing (don't use draft URLs)
     let manifest_files: Vec<ManifestFile> = draft
         .files
         .iter()
         .map(|f| ManifestFile {
             path: f.path.clone(),
-            url: f.url.clone().unwrap_or_else(|| {
-                format!(
-                    "{}/files/{}/{}",
-                    state.config.base_url, draft.version, f.path
-                )
-            }),
+            url: format!(
+                "{}/files/{}/{}",
+                state.config.base_url, draft.version, f.path
+            ),
             sha256: f.sha256.clone(),
             size: f.size,
         })
