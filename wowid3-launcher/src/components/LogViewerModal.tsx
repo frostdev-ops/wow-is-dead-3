@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { invoke } from '@tauri-apps/api/core';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useToast } from './ui/ToastContainer';
-import { ChevronDown, X, Square, Zap, AlertCircle } from 'lucide-react';
+import { ChevronDown, X, Square, Zap, AlertCircle, Filter } from 'lucide-react';
 
 interface LogLine {
   raw: string;
@@ -25,11 +25,68 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [isStoppingGame, setIsStoppingGame] = useState(false);
   const [isKillingGame, setIsKillingGame] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedLevels, setSelectedLevels] = useState<Set<string>>(new Set(['INFO', 'WARN', 'ERROR', 'DEBUG', 'FATAL']));
+  const [showFilters, setShowFilters] = useState(false);
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const logPollingRef = useRef<number | null>(null);
   const logsRef = useRef<LogLine[]>([]);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const gameDir = useSettingsStore((state) => state.gameDirectory);
   const { addToast } = useToast();
+
+  // Available log levels
+  const LOG_LEVELS = ['INFO', 'WARN', 'WARNING', 'ERROR', 'FATAL', 'DEBUG'];
+
+  // Toggle log level filter
+  const toggleLevel = (level: string) => {
+    setSelectedLevels((prev) => {
+      const newLevels = new Set(prev);
+      if (newLevels.has(level)) {
+        newLevels.delete(level);
+      } else {
+        newLevels.add(level);
+      }
+      return newLevels;
+    });
+  };
+
+  // Clear all filters
+  const clearFilters = () => {
+    setSearchTerm('');
+    setSelectedLevels(new Set(LOG_LEVELS));
+  };
+
+  // Toggle all log levels
+  const toggleAllLevels = () => {
+    if (selectedLevels.size === LOG_LEVELS.length) {
+      setSelectedLevels(new Set());
+    } else {
+      setSelectedLevels(new Set(LOG_LEVELS));
+    }
+  };
+
+  // Filter logs based on search and level filters
+  const filteredLogs = useMemo(() => {
+    return logs.filter((log) => {
+      // Filter by log level
+      if (log.level && !selectedLevels.has(log.level)) {
+        return false;
+      }
+
+      // Filter by search term
+      if (searchTerm.trim()) {
+        const searchLower = searchTerm.toLowerCase();
+        return (
+          log.raw.toLowerCase().includes(searchLower) ||
+          log.message?.toLowerCase().includes(searchLower) ||
+          log.source?.toLowerCase().includes(searchLower)
+        );
+      }
+
+      return true;
+    });
+  }, [logs, searchTerm, selectedLevels]);
 
   // Parse log line with syntax highlighting info
   const parseLogLine = (line: string): LogLine => {
@@ -220,6 +277,10 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
       // Clear logs when modal closes
       logsRef.current = [];
       setLogs([]);
+      // Reset filters
+      setSearchTerm('');
+      setSelectedLevels(new Set(LOG_LEVELS));
+      setShowFilters(false);
       if (logPollingRef.current) {
         clearInterval(logPollingRef.current);
         logPollingRef.current = null;
@@ -258,6 +319,29 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
       logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
     }
   }, [logs, isScrolledToBottom]);
+
+  // Keyboard shortcut for search (Ctrl+F / Cmd+F)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+      // Escape to close modal
+      if (e.key === 'Escape' && !searchTerm) {
+        onClose();
+      }
+      // Escape to clear search if there's a search term
+      if (e.key === 'Escape' && searchTerm) {
+        setSearchTerm('');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, searchTerm, onClose]);
 
   // Detect scroll position
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -348,12 +432,98 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
               </button>
             </div>
 
+            {/* Search and Filters */}
+            <div className="px-4 py-3 bg-slate-900 border-b border-slate-700 space-y-2">
+              {/* Search Bar */}
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Search logs... (Ctrl+F)"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-400 focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+                </div>
+                <button
+                  onClick={() => setShowFilters(!showFilters)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    showFilters ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  <Filter size={16} />
+                  Filters
+                </button>
+                {(searchTerm || selectedLevels.size < LOG_LEVELS.length) && (
+                  <button
+                    onClick={clearFilters}
+                    className="px-3 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-sm font-medium transition-colors"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              {/* Filter Pills */}
+              <AnimatePresence>
+                {showFilters && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-400 font-medium">Log Levels</span>
+                      <button
+                        onClick={toggleAllLevels}
+                        className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors"
+                      >
+                        {selectedLevels.size === LOG_LEVELS.length ? 'Deselect All' : 'Select All'}
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {LOG_LEVELS.map((level) => {
+                        const isSelected = selectedLevels.has(level);
+                        const colorClass = getLevelColor(level).replace('text-', 'bg-').replace('400', '500/20');
+                        const textColorClass = getLevelColor(level);
+
+                        return (
+                          <button
+                            key={level}
+                            onClick={() => toggleLevel(level)}
+                            className={`px-3 py-1 rounded-full text-xs font-semibold transition-all flex items-center gap-1 ${
+                              isSelected
+                                ? `${colorClass} ${textColorClass} border-2 border-current opacity-100`
+                                : 'bg-transparent text-slate-600 border-2 border-dashed border-slate-700 opacity-50 hover:opacity-75'
+                            }`}
+                          >
+                            {isSelected && <span className="text-[10px]">✓</span>}
+                            {level}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Filter Stats */}
+              {(searchTerm || selectedLevels.size < LOG_LEVELS.length) && (
+                <div className="text-xs text-slate-400">
+                  Showing {filteredLogs.length} of {logs.length} lines
+                  {searchTerm && <span className="ml-1">matching "{searchTerm}"</span>}
+                </div>
+              )}
+            </div>
+
             {/* Content */}
             <div
               ref={logsContainerRef}
               onScroll={handleScroll}
-              className="bg-slate-950 overflow-y-auto px-4 py-3 space-y-0 rounded-b-2xl"
-              style={{ maxHeight: 'calc(80vh - 120px)' }}
+              className="bg-slate-950 overflow-y-auto px-4 py-3 space-y-0"
+              style={{ maxHeight: 'calc(80vh - 240px)' }}
             >
               {loading && logs.length === 0 ? (
                 <div className="flex items-center justify-center h-32 text-slate-400">
@@ -365,13 +535,18 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
                   <AlertCircle size={20} className="mr-2" />
                   <span>No logs found</span>
                 </div>
+              ) : filteredLogs.length === 0 ? (
+                <div className="flex items-center justify-center h-32 text-slate-400">
+                  <AlertCircle size={20} className="mr-2" />
+                  <span>No logs match your filters</span>
+                </div>
               ) : (
-                logs.map((log, index) => renderLogLine(log, index))
+                filteredLogs.map((log, index) => renderLogLine(log, index))
               )}
             </div>
 
             {/* Scroll Indicator */}
-            {!isScrolledToBottom && logs.length > 0 && (
+            {!isScrolledToBottom && filteredLogs.length > 0 && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -397,7 +572,15 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
             {/* Footer with Controls */}
             <div className="flex items-center justify-between px-6 py-3 bg-slate-900 border-t border-slate-700 rounded-b-2xl">
               <div className="text-xs text-slate-500">
-                {logs.length} lines • {isGameRunning ? 'Game running' : 'Game stopped'}
+                {filteredLogs.length !== logs.length ? (
+                  <>
+                    {filteredLogs.length} / {logs.length} lines • {isGameRunning ? 'Game running' : 'Game stopped'}
+                  </>
+                ) : (
+                  <>
+                    {logs.length} lines • {isGameRunning ? 'Game running' : 'Game stopped'}
+                  </>
+                )}
               </div>
 
               <div className="flex gap-2">
