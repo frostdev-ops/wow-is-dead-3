@@ -20,16 +20,27 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<'home' | 'settings'>('home');
   const [showChangelog, setShowChangelog] = useState(false);
   const [showChangelogModal, setShowChangelogModal] = useState(false);
-  const [audioState, setAudioState] = useState<'loading' | 'fallback' | 'transitioning' | 'main'>('loading');
-  const [mainAudioReady, setMainAudioReady] = useState(false);
   const fallbackRef = useRef<HTMLAudioElement>(null);
   const mainRef = useRef<HTMLAudioElement>(null);
   const retryIntervalRef = useRef<number | null>(null);
-  const retryCountRef = useRef(0); // Track retry attempts across renders
   const { checkUpdates, latestManifest } = useModpack();
   const { startPolling } = useServer();
   const { initializeGameDirectory } = useSettingsStore();
-  const { isMuted, setMuted } = useAudioStore();
+  const {
+    isMuted,
+    setMuted,
+    audioState,
+    setAudioState,
+    mainAudioReady,
+    setMainAudioReady,
+    retryCount,
+    incrementRetryCount,
+    resetRetryCount,
+    canRetry,
+    setAudioSource,
+    markDownloadSuccess,
+    markDownloadFailure,
+  } = useAudioStore();
   const { showLogViewer, setShowLogViewer } = useUIStore();
   useTheme(); // Apply theme on mount
 
@@ -176,6 +187,8 @@ function AppContent() {
                 if (loadTimeout !== null) clearTimeout(loadTimeout);
                 console.log('[Audio] Main audio successfully loaded from cached Blob');
                 setMainAudioReady(true);
+                setAudioSource('cached');
+                resetRetryCount();
               };
               mainRef.current.onerror = () => {
                 if (loadTimeout !== null) clearTimeout(loadTimeout);
@@ -241,6 +254,7 @@ function AppContent() {
               if (loadTimeout !== null) clearTimeout(loadTimeout);
               console.log('[Audio] Downloaded audio successfully loaded from Blob');
               setMainAudioReady(true);
+              markDownloadSuccess();
             };
             mainRef.current.onerror = () => {
               if (loadTimeout !== null) clearTimeout(loadTimeout);
@@ -259,7 +273,9 @@ function AppContent() {
           mainRef.current.src = blobUrl;
         }
       } catch (downloadErr) {
-        console.log('[Audio] Download failed, will use fallback audio:', downloadErr);
+        const errorMsg = downloadErr instanceof Error ? downloadErr.message : String(downloadErr);
+        console.log('[Audio] Download failed, will use fallback audio:', errorMsg);
+        markDownloadFailure(errorMsg);
       }
     } catch (err) {
       console.log('[Audio] Unexpected error in audio setup:', err);
@@ -320,7 +336,6 @@ function AppContent() {
 
   // Retry mechanism: if stuck in fallback for too long, attempt to reload main audio
   useEffect(() => {
-    const maxRetries = 3;
     const stuckTimeout = 15000; // 15 seconds - if still in fallback after this, retry
     let retryTimeoutRef: number | null = null;
 
@@ -328,18 +343,18 @@ function AppContent() {
       console.log('[Audio] In fallback state, monitoring for stuck condition...');
 
       retryTimeoutRef = window.setTimeout(() => {
-        if (audioState === 'fallback' && !mainAudioReady && retryCountRef.current < maxRetries) {
-          retryCountRef.current++;
-          console.log(`[Audio] Stuck in fallback (attempt ${retryCountRef.current}/${maxRetries}), retrying...`);
+        if (audioState === 'fallback' && !mainAudioReady && canRetry()) {
+          incrementRetryCount();
+          console.log(`[Audio] Stuck in fallback (attempt ${retryCount + 1}/3), retrying...`);
           // Retry loading main audio
           loadMainAudio();
-        } else if (retryCountRef.current >= maxRetries) {
+        } else if (!canRetry()) {
           console.log('[Audio] Max retries reached, will continue with fallback');
         }
       }, stuckTimeout);
     } else if (mainAudioReady || audioState === 'main') {
-      // Reset retry counter when we successfully transition or when muted is toggled
-      retryCountRef.current = 0;
+      // Reset retry counter when we successfully transition
+      resetRetryCount();
     }
 
     return () => {
@@ -347,7 +362,7 @@ function AppContent() {
         clearTimeout(retryTimeoutRef);
       }
     };
-  }, [audioState, mainAudioReady]);
+  }, [audioState, mainAudioReady, retryCount, canRetry, incrementRetryCount, resetRetryCount]);
 
   // Handle mute/unmute for both audio elements
   useEffect(() => {
