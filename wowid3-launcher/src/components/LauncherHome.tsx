@@ -569,8 +569,8 @@ export default function LauncherHome() {
         <PlayerList status={status} />
         </div>
 
-        {/* Cat Model - Center of screen */}
-        <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+        {/* Cat Model - Left and up from center */}
+        <div className="fixed left-[30%] top-1/4 -translate-x-1/2 -translate-y-1/2">
           <CatModel />
         </div>
 
