@@ -142,9 +142,20 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
+      - name: Set release version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "version=v1.0.0-build.${{ github.run_number }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: WOWID3 Launcher ${{ steps.version.outputs.version }}
           files: |
             windows-release/**
             macos-release-x86_64/**
