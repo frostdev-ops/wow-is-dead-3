@@ -19,7 +19,7 @@ use api::drafts::{
     publish_draft, read_file_content, remove_file, rename_file, update_draft, update_file,
     write_file_content,
 };
-use api::public::{get_latest_manifest, get_manifest_by_version, serve_file, serve_java_runtime, PublicState};
+use api::public::{get_latest_manifest, get_manifest_by_version, serve_audio_file, serve_file, serve_java_runtime, PublicState};
 use axum::{
     extract::DefaultBodyLimit,
     middleware as axum_middleware,
@@ -68,6 +68,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::fs::create_dir_all(config.releases_path()).await?;
     tokio::fs::create_dir_all(config.uploads_path()).await?;
     tokio::fs::create_dir_all(config.storage_path().join("drafts")).await?;
+    tokio::fs::create_dir_all(config.storage_path().join("assets")).await?;
     info!("Storage directories initialized");
 
     let config_arc = Arc::new(config.clone());
@@ -102,6 +103,7 @@ async fn main() -> anyhow::Result<()> {
     let public_routes = Router::new()
         .route("/api/manifest/latest", get(get_latest_manifest))
         .route("/api/manifest/:version", get(get_manifest_by_version))
+        .route("/api/assets/:filename", get(serve_audio_file))
         .route("/api/java/:filename", get(serve_java_runtime))
         .route("/files/:version/*path", get(serve_file))
         .with_state(public_state);

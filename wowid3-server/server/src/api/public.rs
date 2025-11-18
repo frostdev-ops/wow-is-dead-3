@@ -59,6 +59,51 @@ pub async fn get_manifest_by_version(
     Ok(Json(manifest))
 }
 
+/// GET /api/assets/:filename
+pub async fn serve_audio_file(
+    State(state): State<PublicState>,
+    Path(filename): Path<String>,
+) -> Result<Response, AppError> {
+    // Security: Only allow specific audio filenames
+    let allowed_files = [
+        "wid3menu.mp3",
+        "wid3menu-fallback.mp3",
+    ];
+
+    if !allowed_files.contains(&filename.as_str()) {
+        return Err(AppError::NotFound(format!("Audio file {} not found", filename)));
+    }
+
+    // Construct full file path
+    let assets_path = state.config.storage_path().join("assets");
+    let full_path = assets_path.join(&filename);
+
+    // Check if file exists
+    if !full_path.exists() {
+        return Err(AppError::NotFound(format!("Audio file {} not found", filename)));
+    }
+
+    // Open and stream the file
+    let file = fs::File::open(&full_path).await.map_err(|_| {
+        AppError::NotFound(format!("Could not open file: {}", filename))
+    })?;
+
+    // Determine content type
+    let content_type = "audio/mpeg";
+
+    // Create streaming body
+    let stream = ReaderStream::new(file);
+    let body = Body::from_stream(stream);
+
+    // Build response with proper headers
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CACHE_CONTROL, "public, max-age=86400") // Cache for 24 hours
+        .body(body)
+        .unwrap())
+}
+
 /// GET /api/java/:filename
 pub async fn serve_java_runtime(
     State(state): State<PublicState>,
