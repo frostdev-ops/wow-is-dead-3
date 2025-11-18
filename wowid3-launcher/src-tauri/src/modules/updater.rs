@@ -238,7 +238,23 @@ pub fn check_disk_space(game_dir: &PathBuf, required_bytes: u64) -> Result<()> {
         }
     };
 
-    let game_dir_str = canonical_path.to_string_lossy();
+    // On Windows, canonicalize adds the \\?\ prefix for extended-length paths
+    // Strip it for mount point comparison
+    let game_dir_str = {
+        let path_str = canonical_path.to_string_lossy().to_string();
+        #[cfg(target_os = "windows")]
+        {
+            if path_str.starts_with("\\\\?\\") {
+                path_str[4..].to_string()
+            } else {
+                path_str
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            path_str
+        }
+    };
 
     // Find the disk that contains our game directory
     for disk in &disks {
