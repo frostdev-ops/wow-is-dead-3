@@ -570,7 +570,7 @@ export default function LauncherHome() {
         </div>
 
         {/* Cat Model - Left side of cards */}
-        <div className="absolute right-[calc(50%+330px)] top-[-600px]">
+        <div className="absolute left-[-150px] top-[150px]">
           <CatModel />
         </div>
 

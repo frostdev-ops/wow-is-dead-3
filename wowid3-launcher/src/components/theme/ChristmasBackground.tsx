@@ -15,10 +15,22 @@ interface Cookie {
   animationDuration: string;
 }
 
+interface TrailSnowflake {
+  id: number;
+  x: number;
+  y: number;
+  size: number;
+  opacity: number;
+  createdAt: number;
+}
+
 export default function ChristmasBackground() {
   const [cookies, setCookies] = useState<Cookie[]>([]);
   const [cookieClickCount, setCookieClickCount] = useState(0);
+  const [trailSnowflakes, setTrailSnowflakes] = useState<TrailSnowflake[]>([]);
   const cookieIdRef = useRef(0);
+  const trailIdRef = useRef(0);
+  const lastTrailTimeRef = useRef(0);
 
   // Handle cookie click
   const handleCookieClick = (cookieId: number, event: React.MouseEvent) => {
@@ -52,7 +64,49 @@ export default function ChristmasBackground() {
     return flakes;
   }, []);
 
-  // Generate falling cookies at random intervals
+  // Mouse trail snowflakes
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const now = Date.now();
+      // Spawn trail snowflake every 20ms to avoid too many particles
+      if (now - lastTrailTimeRef.current < 20) return;
+      lastTrailTimeRef.current = now;
+
+      // Create 1-2 snowflakes at mouse position with slight randomness
+      const trailCount = Math.random() > 0.5 ? 2 : 1;
+      const newTrailFlakes: TrailSnowflake[] = [];
+
+      for (let i = 0; i < trailCount; i++) {
+        newTrailFlakes.push({
+          id: trailIdRef.current++,
+          x: e.clientX + (Math.random() - 0.5) * 30,
+          y: e.clientY + (Math.random() - 0.5) * 30,
+          size: Math.random() * 4 + 3, // 3-7px
+          opacity: Math.random() * 0.6 + 0.4, // 0.4-1.0
+          createdAt: now,
+        });
+      }
+
+      setTrailSnowflakes(prev => [...prev, ...newTrailFlakes]);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
+
+  // Clean up old trail snowflakes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setTrailSnowflakes(prev =>
+        prev.filter(flake => now - flake.createdAt < 1000) // Remove after 1 second
+      );
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Generate falling cookies at random intervals - spawn rate increases with clicks
   useEffect(() => {
     const spawnCookie = () => {
       // Spawn on left or right side, avoiding center where play button is
@@ -75,17 +129,32 @@ export default function ChristmasBackground() {
       }, 7000);
     };
 
-    // Spawn a cookie every 30-60 seconds (ensures at least 2 per 2 minutes)
+    let timeoutId: NodeJS.Timeout | null = null;
+
+    // Spawn delay decreases as cookie count increases
     const scheduleNext = () => {
-      const delay = Math.random() * 30000 + 30000; // 30-60 seconds
-      setTimeout(() => {
+      const baseMinDelay = 30000; // 30 seconds base minimum
+      const baseMaxDelay = 50000; // 50 seconds base maximum (ensures ~2.4 cookies per 2 minutes minimum)
+      const reductionPerClick = 1000; // Each click reduces delay by 1 second
+
+      // Minimum delay gets faster as you click, bottoming out at 1-2 seconds
+      const minDelay = Math.max(1000, baseMinDelay - (cookieClickCount * reductionPerClick));
+      const maxDelay = Math.max(2000, baseMaxDelay - (cookieClickCount * reductionPerClick));
+
+      const delay = Math.random() * (maxDelay - minDelay) + minDelay;
+
+      timeoutId = setTimeout(() => {
         spawnCookie();
         scheduleNext();
       }, delay);
     };
 
     scheduleNext();
-  }, []);
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [cookieClickCount]);
 
   return (
     <>
@@ -127,6 +196,35 @@ export default function ChristmasBackground() {
             }}
           />
         ))}
+      </div>
+
+      {/* Mouse trail snowflakes */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 10000 }}>
+        {trailSnowflakes.map((flake) => {
+          const age = Date.now() - flake.createdAt;
+          const progress = age / 1000; // 0 to 1 over 1 second
+          const fadeOpacity = Math.max(0, 1 - progress); // Fade from 1 to 0
+          const finalOpacity = flake.opacity * fadeOpacity;
+
+          return (
+            <div
+              key={flake.id}
+              style={{
+                position: 'fixed',
+                left: `${flake.x}px`,
+                top: `${flake.y}px`,
+                width: `${flake.size}px`,
+                height: `${flake.size}px`,
+                backgroundColor: 'white',
+                borderRadius: '50%',
+                opacity: finalOpacity,
+                boxShadow: `0 0 ${flake.size * 2}px rgba(255, 255, 255, ${0.8 * fadeOpacity})`,
+                transform: 'translate(-50%, -50%)',
+                pointerEvents: 'none',
+              }}
+            />
+          );
+        })}
       </div>
 
       {/* Falling Minecraft Cookies */}
