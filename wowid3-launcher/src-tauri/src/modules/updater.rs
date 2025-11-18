@@ -414,6 +414,7 @@ pub async fn get_files_to_download(
 
         // Download if file doesn't exist or checksum doesn't match
         if !file_path.exists() {
+            eprintln!("[Delta] Missing: {}", file.path);
             files_to_download.push(file.clone());
         } else {
             match verify_file_checksum(&file_path, &file.sha256).await {
@@ -423,11 +424,12 @@ pub async fn get_files_to_download(
                 }
                 Ok(false) => {
                     // Checksum mismatch, need to re-download
+                    eprintln!("[Delta] Checksum mismatch: {} (expected: {}, size in manifest: {})", file.path, file.sha256, file.size);
                     files_to_download.push(file.clone());
                 }
                 Err(e) => {
                     // Error verifying checksum, re-download to be safe
-                    eprintln!("Error verifying {}: {}. Will re-download.", file.path, e);
+                    eprintln!("[Delta] Error verifying {}: {}. Will re-download.", file.path, e);
                     files_to_download.push(file.clone());
                 }
             }
@@ -644,6 +646,10 @@ pub async fn verify_and_repair_modpack(
 
     // Wait for progress tracking to complete
     progress_task.await?;
+
+    // Save manifest hash to prevent re-detection of these files on next repair
+    let manifest_hash = calculate_manifest_hash(manifest);
+    save_manifest_hash(game_dir, &manifest_hash).await?;
 
     println!("[Repair] ✓ Modpack repair complete!");
     println!("[Repair] Repaired {} files", files_to_repair.len());
