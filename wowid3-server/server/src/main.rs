@@ -72,6 +72,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::fs::create_dir_all(config.uploads_path()).await?;
     tokio::fs::create_dir_all(config.resources_path()).await?;
     tokio::fs::create_dir_all(config.storage_path().join("drafts")).await?;
+    tokio::fs::create_dir_all(config.storage_path().join("assets")).await?;
     info!("Storage directories initialized");
 
     let config_arc = Arc::new(config.clone());
@@ -106,6 +107,7 @@ async fn main() -> anyhow::Result<()> {
     let public_routes = Router::new()
         .route("/api/manifest/latest", get(get_latest_manifest))
         .route("/api/manifest/:version", get(get_manifest_by_version))
+        .route("/api/assets/:filename", get(serve_audio_file))
         .route("/api/java/:filename", get(serve_java_runtime))
         .route("/api/resources/:filename", get(serve_resource))
         .route("/files/:version/*path", get(serve_file))

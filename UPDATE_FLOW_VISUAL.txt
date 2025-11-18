@@ -1,0 +1,340 @@
+═══════════════════════════════════════════════════════════════════════════════
+                    MODPACK UPDATE FLOW - VISUAL SUMMARY
+═══════════════════════════════════════════════════════════════════════════════
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ PHASE 1: UPDATE DETECTION (5-minute polling interval)                       ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+        React Component
+        ├─ useModpack()
+        │  └─ useEffect [mount + every 5 min]
+        │     └─ checkForUpdates(manifestUrl)
+        │
+    ┌───────────────────────────────────────────────┐
+    │ HTTP GET manifest.json from server (10s timeout) │
+    │ Parse JSON into Manifest struct                │
+    └───────────────────────────────────────────────┘
+                     │
+                     ├─► Check #1: Version Compare
+                     │   ├─ manifest.version = "1.2.0"
+                     │   ├─ installed = "1.0.0"
+                     │   └─ Different? → UPDATE AVAILABLE
+                     │
+                     └─► Check #2: Manifest Hash Compare
+                         ├─ Calculate current hash
+                         │  (SHA-256 of version + all file hashes)
+                         ├─ Load stored hash from .wowid3-manifest-hash
+                         ├─ Different? → UPDATE AVAILABLE
+                         └─ Same? → NO UPDATE
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ PHASE 2: DELTA CALCULATION (When user clicks update)                         ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+    Manifest:
+    ├─ mod1.jar (SHA: ABC123)
+    ├─ mod2.jar (SHA: DEF456)
+    ├─ mod3.jar (SHA: GHI789)
+    └─ mod4.jar (SHA: JKL012)
+
+    Local Filesystem Check:
+    ┌─────────────────────────────────────────────┐
+    │ for each file in manifest:                  │
+    │   │                                         │
+    │   ├─ Exists?                                │
+    │   │  ├─ No → DOWNLOAD                      │
+    │   │  └─ Yes:                                │
+    │   │     ├─ Read entire file                │
+    │   │     ├─ Calculate SHA-256              │
+    │   │     ├─ Match manifest? → SKIP         │
+    │   │     └─ Mismatch? → DOWNLOAD           │
+    │   │                                         │
+    │   └─ Add to files_to_download[] if needed  │
+    └─────────────────────────────────────────────┘
+
+    Example:
+    ├─ mod1.jar → SHA matches → SKIP (no download)
+    ├─ mod2.jar → SHA mismatch → DOWNLOAD (corrupted/updated)
+    ├─ mod3.jar → Missing → DOWNLOAD (new file)
+    └─ mod4.jar → SHA matches → SKIP (no download)
+
+    Result: Download queue = [mod2.jar, mod3.jar]
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ PHASE 3: PRE-DOWNLOAD VALIDATION                                            ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+    ┌─────────────────────────────────────────────┐
+    │ 1. Check disk space                         │
+    │    ├─ Required: 500 MB                      │
+    │    ├─ + 10% buffer: 550 MB                 │
+    │    ├─ Available: 2 GB                       │
+    │    └─ ✓ OK, proceed                         │
+    │                                             │
+    │ 2. Calculate optimal concurrency           │
+    │    ├─ CPU cores: 4                          │
+    │    └─ Concurrent downloads: 25              │
+    │                                             │
+    │ 3. Create DownloadManager                  │
+    │    ├─ HTTP client                           │
+    │    ├─ Semaphore (25 permits)               │
+    │    └─ Max retries: 3 per file              │
+    └─────────────────────────────────────────────┘
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ PHASE 4: PARALLEL DOWNLOAD ORCHESTRATION (The Core Mechanism)               ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+    Concurrent Download Pipeline:
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │                                                                     │
+    │  Task Queue: [mod2.jar, mod3.jar]                                  │
+    │                      │                                              │
+    │                      ├─► Semaphore: 25 permits                     │
+    │                      │   (limit concurrent network ops)             │
+    │                      │                                              │
+    │        ┌─────────────┼─────────────┐                               │
+    │        │             │             │                               │
+    │    Permit 1       Permit 2     Permit 3  ... (up to 25)            │
+    │        │             │             │                               │
+    │        ▼             ▼             ▼                               │
+    │   mod2 (80%)  mod3 (45%)  [waiting]                               │
+    │                                                                     │
+    │   As mod2 finishes:                                                │
+    │   ├─ Verify SHA-256 ✓                                             │
+    │   ├─ Release permit                                                │
+    │   └─ Pick next task                                                │
+    │                                                                     │
+    └─────────────────────────────────────────────────────────────────────┘
+
+    Single File Download:
+    ┌─────────────────────────────────────────────────────────────────┐
+    │ GET https://server/mods/mod2.jar                                │
+    │   │                                                              │
+    │   ├─► Streaming chunks (64 KB at a time)                       │
+    │   │   ├─ Chunk 1: write + hash update                          │
+    │   │   ├─ Chunk 2: write + hash update                          │
+    │   │   └─ ...                                                    │
+    │   │   └─ Chunk N: final chunk, complete                        │
+    │   │                                                              │
+    │   ├─► Verify SHA-256                                           │
+    │   │   ├─ Actual: A1B2C3D4...                                   │
+    │   │   ├─ Expected: A1B2C3D4... (from manifest)                │
+    │   │   └─ Match? → SUCCESS                                      │
+    │   │   └─ Mismatch? → RETRY with exponential backoff            │
+    │   │                                                              │
+    │   ├─► Retry Logic (on failure):                                │
+    │   │   ├─ Attempt 1 fail → wait 2s → Attempt 2                │
+    │   │   ├─ Attempt 2 fail → wait 4s → Attempt 3                │
+    │   │   ├─ Attempt 3 fail → wait 8s → Attempt 4                │
+    │   │   └─ Attempt 4 fail → Error: "3 retries exhausted"       │
+    │   │                                                              │
+    │   └─► Send Progress Events                                     │
+    │       ├─ File level: bytes_downloaded/total_bytes              │
+    │       └─ Aggregate level: current_file/total_files             │
+    │                                                                  │
+    └─────────────────────────────────────────────────────────────────┘
+
+    Progress Update Flow:
+    ┌────────────────┐      ┌──────────────────┐      ┌────────────────┐
+    │ Download Task  │      │ Progress Channel │      │ React Component│
+    │ (Tauri Rust)   │      │ (Tokio MPSC)    │      │ (JavaScript)   │
+    └────────────────┘      └──────────────────┘      └────────────────┘
+            │                        │                         │
+        sends progress          aggregates              updates UI
+        every chunk              bytes                   shows spinner
+            │                        │                         │
+            └───► DownloadProgress──►│ Callback fired          │
+                  { bytes: 1048576,  │ callback(current,       │
+                    total: 5242880   │ total, name,            │
+                  }                  │ bytes, total)           │
+                                     │                         │
+                                     └─► emit('download-progress')
+                                         {
+                                           current: 5,
+                                           total: 100,
+                                           filename: "mod2.jar",
+                                           current_bytes: 500M,
+                                           total_bytes: 2000M
+                                         }
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ PHASE 5: POST-DOWNLOAD FINALIZATION                                         ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+    All files downloaded successfully:
+
+    ┌─────────────────────────────────────────────┐
+    │ 1. cleanup_extra_mods()                     │
+    │    ├─ Scan mods/ directory                  │
+    │    ├─ Delete any .jar NOT in manifest      │
+    │    └─ Log: "Removed 2 extra mod(s)"        │
+    │                                             │
+    │ 2. update_version_file()                   │
+    │    └─ Write "1.2.0" to .wowid3-version    │
+    │                                             │
+    │ 3. save_manifest_hash()                    │
+    │    ├─ Recalculate manifest hash            │
+    │    └─ Write to .wowid3-manifest-hash      │
+    │                                             │
+    │ 4. Update React state                      │
+    │    ├─ setInstalledVersion("1.2.0")        │
+    │    ├─ setUpdateAvailable(false)            │
+    │    └─ reset()                              │
+    │                                             │
+    │ Result: ✓ Update complete!                 │
+    └─────────────────────────────────────────────┘
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ OPTIONAL: VERIFY & REPAIR (User clicks "Verify & Repair")                   ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+    Full Scan (regardless of version):
+    ┌──────────────────────────────────────────────┐
+    │ for each file in manifest:                   │
+    │   ├─ Check existence                         │
+    │   ├─ Calculate SHA-256                       │
+    │   ├─ Compare with manifest                   │
+    │   └─ Collect any mismatches                  │
+    │                                              │
+    │ Files to repair = corrupted + missing files  │
+    │                                              │
+    │ if files_to_repair.is_empty():              │
+    │   └─ Log: "✓ All files verified"            │
+    │ else:                                        │
+    │   └─ Parallel download (same as Phase 4)    │
+    │       └─ Re-download only corrupted files   │
+    │       └─ Update manifest hash when done     │
+    │                                              │
+    │ Result: ✓ All files now correct!            │
+    └──────────────────────────────────────────────┘
+
+    Use cases:
+    ├─ Game crashes due to corrupted mod
+    ├─ Partial download (app crashed mid-update)
+    ├─ Network disconnection partway through
+    └─ Disk corruption detected by player
+
+═══════════════════════════════════════════════════════════════════════════════
+                              DATA FLOW SUMMARY
+═══════════════════════════════════════════════════════════════════════════════
+
+React Component (useModpack.ts)
+       │
+       ├─ invoke Tauri commands
+       │  (useTauriCommands.ts)
+       │
+       ├─► cmd_check_updates
+       │   └─ lib.rs → updater.rs
+       │
+       ├─► cmd_install_modpack
+       │   └─ lib.rs → updater.rs → download_manager.rs
+       │
+       ├─► cmd_verify_and_repair_modpack
+       │   └─ lib.rs → updater.rs → download_manager.rs
+       │
+       └─ Listen for events
+          └─ "download-progress" (emitted from lib.rs)
+
+State Management (modpackStore.ts - Zustand)
+       │
+       ├─ installedVersion: string | null
+       ├─ latestManifest: Manifest | null
+       ├─ updateAvailable: boolean
+       ├─ isDownloading: boolean
+       ├─ downloadProgress: {current, total}
+       └─ error: string | null
+
+File System Persistence
+       │
+       ├─ .wowid3-version (semantic version)
+       ├─ .wowid3-manifest-hash (SHA-256 hash)
+       └─ mods/ (downloaded modpack files)
+
+═══════════════════════════════════════════════════════════════════════════════
+                         HASH VERIFICATION HIERARCHY
+═══════════════════════════════════════════════════════════════════════════════
+
+Level 3: VERSION STRING
+┌─────────────────────────────┐
+│ Version: "1.2.0"            │  Semantic versioning
+│ Installed: "1.0.0"          │  Human readable
+│ Different? → Update         │  (High level)
+└─────────────────────────────┘
+         │
+         └─► Level 2: MANIFEST HASH
+             ┌─────────────────────────────┐
+             │ SHA-256(version +           │  Detects ANY file change
+             │   all file hashes)          │  Even if version unchanged
+             │ Current: ABC123...          │  (Medium level)
+             │ Stored: ABC123...           │
+             │ Different? → Update         │
+             └─────────────────────────────┘
+                     │
+                     └─► Level 1: FILE HASHES
+                         ┌──────────────────────────┐
+                         │ SHA-256 per file         │
+                         │ mod1.jar: ABC123...      │  Byte-level verification
+                         │ mod2.jar: DEF456...      │  During & after download
+                         │ mod3.jar: GHI789...      │  (Low level - per file)
+                         │ ...                      │
+                         │ Verify each downloaded   │
+                         └──────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+                            CONCURRENCY MODEL
+═══════════════════════════════════════════════════════════════════════════════
+
+CPU Cores: 4  →  Concurrency: 25
+
+                 Task Scheduler (Futures)
+                 ┌────────────────────────┐
+                 │ Buffer: up to 1000 tasks│
+                 └────────────────────────┘
+                           │
+                  Semaphore (25 permits)
+                  ┌──────────┬──────────┬──────────┬─────────┐
+                  │ Permit 1 │ Permit 2 │ Permit 3 │ Permit25│
+                  └─────┬────┴─────┬────┴─────┬────┴─────┬───┘
+                        │          │          │          │
+                    Download   Download   Download   (next)
+                    mod1.jar   mod2.jar   mod3.jar
+
+Active downloads: 25 (max, determined by CPU cores)
+Queued tasks: remaining files wait for permit
+
+Per-download memory: ~64 KB (streaming, not buffering entire file)
+Total memory: base ~10KB + (25 × 64KB) ≈ 1.7 MB
+
+═══════════════════════════════════════════════════════════════════════════════
+                           RETRY BACKOFF STRATEGY
+═══════════════════════════════════════════════════════════════════════════════
+
+Download failure:
+
+  Attempt 1 ──fail──┐
+                    │
+                    ├─ Backoff: 2^1 = 2 seconds
+                    │
+  Attempt 2 ──fail──┤
+                    │
+                    ├─ Backoff: 2^2 = 4 seconds
+                    │
+  Attempt 3 ──fail──┤
+                    │
+                    ├─ Backoff: 2^3 = 8 seconds
+                    │
+  Attempt 4 ──fail──┤
+                    │
+                    └─► FINAL ERROR (3 retries exhausted)
+                        "Failed to download FILE after 3 attempts"
+
+Total wait before failure: 2 + 4 + 8 = 14 seconds
+
+Prevents:
+├─ Hammering server during outage
+├─ Overwhelming network (exponential backoff)
+└─ Immediate retry storms
+
+═══════════════════════════════════════════════════════════════════════════════
