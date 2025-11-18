@@ -356,10 +356,15 @@ async fn extract_native_jar(
 }
 
 /// Build classpath string from libraries
+///
+/// * `libraries_dir` - Relative path to libraries directory (e.g., "libraries")
+/// * `client_jar` - Relative path to client JAR (e.g., "versions/...")
+/// * `game_dir` - Absolute path to game directory for existence checks
 pub fn build_classpath(
     libraries: &[Library],
     libraries_dir: &Path,
     client_jar: &Path,
+    game_dir: &Path,
     features: &HashMap<String, bool>,
 ) -> Result<String> {
     let mut classpath_entries = Vec::new();
@@ -370,7 +375,8 @@ pub fn build_classpath(
             continue;
         }
 
-        let lib_path = if let Some(downloads) = &library.downloads {
+        // Build relative path for classpath
+        let lib_relative_path = if let Some(downloads) = &library.downloads {
             // Use downloads path if available
             if let Some(artifact) = &downloads.artifact {
                 libraries_dir.join(&artifact.path)
@@ -383,16 +389,22 @@ pub fn build_classpath(
             libraries_dir.join(maven_to_path(&library.name))
         };
 
-        if lib_path.exists() {
-            classpath_entries.push(lib_path.to_string_lossy().to_string());
+        // Check existence using absolute path
+        let lib_absolute_path = game_dir.join(&lib_relative_path);
+
+        if lib_absolute_path.exists() {
+            classpath_entries.push(lib_relative_path.to_string_lossy().to_string());
         } else {
-            eprintln!("[Library] WARNING: Library not found: {:?} (from {})", lib_path, library.name);
+            eprintln!("[Library] WARNING: Library not found: {:?} (from {})", lib_absolute_path, library.name);
         }
     }
 
-    // Add client JAR
-    if client_jar.exists() {
+    // Add client JAR - check absolute path but add relative path to classpath
+    let client_absolute_path = game_dir.join(client_jar);
+    if client_absolute_path.exists() {
         classpath_entries.push(client_jar.to_string_lossy().to_string());
+    } else {
+        eprintln!("[Library] WARNING: Client JAR not found: {:?}", client_absolute_path);
     }
 
     // Get platform-specific separator
