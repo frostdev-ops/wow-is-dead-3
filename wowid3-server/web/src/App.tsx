@@ -1,6 +1,9 @@
 import { useEffect, useState, lazy, Suspense } from 'react';
 import { useAuthStore } from './store/authStore';
-import './App.css';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { Toaster } from '@/components/ui/toaster';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 // Performance: Lazy load heavy components for code splitting
 const LoginPage = lazy(() => import('./pages/LoginPage'));
@@ -8,9 +11,8 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 
 // Performance: Loading fallback component
 const LoadingFallback = () => (
-  <div className="loading-screen">
-    <div className="spinner"></div>
-    <p>Loading...</p>
+  <div className="flex items-center justify-center min-h-screen">
+    <LoadingSpinner message="Loading..." />
   </div>
 );
 
@@ -24,19 +26,19 @@ function App() {
   }, [loadTokenFromStorage]);
 
   if (isLoading) {
-    return (
-      <div className="loading-screen">
-        <div className="spinner"></div>
-        <p>Loading...</p>
-      </div>
-    );
+    return <LoadingFallback />;
   }
 
-  // Performance: Wrap lazy-loaded components in Suspense
+  // Performance: Wrap lazy-loaded components in Suspense and ErrorBoundary
   return (
-    <Suspense fallback={<LoadingFallback />}>
-      {isAuthenticated ? <Dashboard /> : <LoginPage />}
-    </Suspense>
+    <ErrorBoundary>
+      <TooltipProvider>
+        <Suspense fallback={<LoadingFallback />}>
+          {isAuthenticated ? <Dashboard /> : <LoginPage />}
+        </Suspense>
+        <Toaster />
+      </TooltipProvider>
+    </ErrorBoundary>
   );
 }
 
