@@ -1,0 +1,10 @@
+[build]
+# Disable incremental compilation which can cause file lock issues on Windows
+incremental = false
+# Use only 2 parallel jobs to reduce resource contention
+jobs = 2
+
+[profile.release]
+# Disable LTO which can cause linking issues
+lto = false
+codegen-units = 1
