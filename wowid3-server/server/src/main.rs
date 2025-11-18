@@ -9,7 +9,7 @@ use api::admin::{
     create_release, delete_release, get_blacklist, list_releases, login, update_blacklist,
     upload_files, AdminState as AdminApiState,
 };
-use api::public::{get_latest_manifest, get_manifest_by_version, serve_file, PublicState};
+use api::public::{get_latest_manifest, get_manifest_by_version, serve_file, serve_java_runtime, PublicState};
 use axum::{
     middleware as axum_middleware,
     response::Json,
@@ -71,6 +71,7 @@ async fn main() -> anyhow::Result<()> {
     let public_routes = Router::new()
         .route("/api/manifest/latest", get(get_latest_manifest))
         .route("/api/manifest/:version", get(get_manifest_by_version))
+        .route("/api/java/:filename", get(serve_java_runtime))
         .route("/files/:version/*path", get(serve_file))
         .with_state(public_state);
 

@@ -22,23 +22,19 @@ fn get_java_runtime_info(base_url: &str) -> Result<JavaRuntimeInfo> {
     let (filename, exe_path) = match (std::env::consts::OS, std::env::consts::ARCH) {
         ("windows", "x86_64") => (
             "zulu21-windows-x64.zip",
-            "zulu21-windows-x64/bin/java.exe"
+            "zulu21.46.19-ca-jdk21.0.9-win_x64/bin/java.exe"
         ),
         ("macos", "x86_64") => (
             "zulu21-macos-x64.tar.gz",
-            "zulu21-macos-x64/zulu-21.jdk/Contents/Home/bin/java"
+            "zulu21.46.19-ca-jdk21.0.9-macosx_x64/zulu-21.jdk/Contents/Home/bin/java"
         ),
         ("macos", "aarch64") => (
             "zulu21-macos-aarch64.tar.gz",
-            "zulu21-macos-aarch64/zulu-21.jdk/Contents/Home/bin/java"
+            "zulu21.46.19-ca-jdk21.0.9-macosx_aarch64/zulu-21.jdk/Contents/Home/bin/java"
         ),
         ("linux", "x86_64") => (
             "zulu21-linux-x64.tar.gz",
-            "zulu21-linux-x64/bin/java"
-        ),
-        ("linux", "aarch64") => (
-            "zulu21-linux-aarch64.tar.gz",
-            "zulu21-linux-aarch64/bin/java"
+            "zulu21.46.19-ca-jdk21.0.9-linux_x64/bin/java"
         ),
         (os, arch) => {
             anyhow::bail!("Unsupported platform: {} {}", os, arch);
@@ -84,7 +80,7 @@ pub async fn get_cached_java(app_handle: &tauri::AppHandle) -> Result<Option<Pat
 
             if permissions.mode() & 0o111 == 0 {
                 eprintln!("[Java] Java executable lacks execute permissions, setting them...");
-                let mut new_permissions = permissions;
+                let mut new_permissions = permissions.clone();
                 new_permissions.set_mode(permissions.mode() | 0o111);
                 fs::set_permissions(&java_exe, new_permissions)
                     .await

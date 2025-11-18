@@ -36,6 +36,57 @@ pub async fn get_manifest_by_version(
     Ok(Json(manifest))
 }
 
+/// GET /api/java/:filename
+pub async fn serve_java_runtime(
+    State(state): State<PublicState>,
+    Path(filename): Path<String>,
+) -> Result<Response, AppError> {
+    // Security: Only allow specific Java runtime filenames
+    let allowed_files = [
+        "zulu21-windows-x64.zip",
+        "zulu21-macos-x64.tar.gz",
+        "zulu21-macos-aarch64.tar.gz",
+        "zulu21-linux-x64.tar.gz",
+    ];
+
+    if !allowed_files.contains(&filename.as_str()) {
+        return Err(AppError::NotFound(format!("Java runtime {} not found", filename)));
+    }
+
+    // Construct full file path
+    let java_path = state.config.storage_path().join("java");
+    let full_path = java_path.join(&filename);
+
+    // Check if file exists
+    if !full_path.exists() {
+        return Err(AppError::NotFound(format!("Java runtime {} not found", filename)));
+    }
+
+    // Open and stream the file
+    let file = fs::File::open(&full_path).await.map_err(|_| {
+        AppError::NotFound(format!("Could not open file: {}", filename))
+    })?;
+
+    // Determine content type
+    let content_type = if filename.ends_with(".zip") {
+        "application/zip"
+    } else {
+        "application/gzip"
+    };
+
+    // Create streaming body
+    let stream = ReaderStream::new(file);
+    let body = Body::from_stream(stream);
+
+    // Build response with proper headers
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", filename))
+        .body(body)
+        .unwrap())
+}
+
 /// GET /files/:version/*path
 pub async fn serve_file(
     State(state): State<PublicState>,
