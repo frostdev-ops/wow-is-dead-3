@@ -10,8 +10,8 @@ use tauri::Manager;
 pub fn get_default_game_directory(app: &tauri::AppHandle) -> Result<PathBuf> {
     let app_data_dir = app
         .path()
-        .app_data_dir()
-        .context("Failed to get app data directory")?;
+        .app_local_data_dir()
+        .context("Failed to get app local data directory")?;
 
     let game_dir = app_data_dir.join("game");
 
@@ -21,16 +21,16 @@ pub fn get_default_game_directory(app: &tauri::AppHandle) -> Result<PathBuf> {
 /// Resolve a game directory path to an absolute path
 ///
 /// If the path is already absolute, return it as-is.
-/// If it's relative, resolve it relative to the app data directory.
+/// If it's relative, resolve it relative to the app local data directory.
 pub fn resolve_game_directory(app: &tauri::AppHandle, path: &PathBuf) -> Result<PathBuf> {
     if path.is_absolute() {
         Ok(path.clone())
     } else {
-        // Relative paths are resolved relative to app data dir
+        // Relative paths are resolved relative to app local data dir
         let app_data_dir = app
             .path()
-            .app_data_dir()
-            .context("Failed to get app data directory")?;
+            .app_local_data_dir()
+            .context("Failed to get app local data directory")?;
 
         Ok(app_data_dir.join(path))
     }
