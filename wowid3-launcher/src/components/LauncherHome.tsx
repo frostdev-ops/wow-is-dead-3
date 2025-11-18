@@ -497,21 +497,33 @@ export default function LauncherHome() {
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ duration: 0.3 }}
-                  className="bg-christmas-gold bg-opacity-20 border border-christmas-gold p-4"
+                  style={{
+                    backgroundColor: 'rgba(79, 195, 247, 0.15)',
+                    border: '1px solid rgba(79, 195, 247, 0.5)',
+                  }}
+                  className="p-4 rounded-lg"
                 >
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-christmas-gold font-semibold">
-                        🎁 Update Available!
+                      <p className="font-semibold" style={{ color: '#4FC3F7', fontFamily: "'Trebuchet MS', sans-serif" }}>
+                        ❄️ Update Available!
                       </p>
-                      <p className="text-sm text-gray-300 mt-1">
+                      <p className="text-sm text-gray-300 mt-1" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
                         Version {latestManifest?.version} is ready to install
                       </p>
                     </div>
                     {latestManifest && (
                       <button
                         onClick={() => setShowChangelog(true)}
-                        className="px-3 py-2 text-sm bg-christmas-gold bg-opacity-30 hover:bg-opacity-50 text-christmas-gold rounded transition-colors whitespace-nowrap ml-4"
+                        style={{
+                          backgroundColor: 'rgba(79, 195, 247, 0.2)',
+                          color: '#4FC3F7',
+                          border: '1px solid rgba(79, 195, 247, 0.4)',
+                          fontFamily: "'Trebuchet MS', sans-serif",
+                        }}
+                        className="px-3 py-2 text-sm rounded transition-colors whitespace-nowrap ml-4 hover:bg-opacity-50"
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(79, 195, 247, 0.3)'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(79, 195, 247, 0.2)'}
                       >
                         View Changes
                       </button>
