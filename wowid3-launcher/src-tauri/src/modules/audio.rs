@@ -167,6 +167,40 @@ async fn download_audio_file(url: &str, output_path: &PathBuf) -> Result<u64> {
     Ok(file_size)
 }
 
+/// Read cached audio file as bytes for Blob URL creation
+pub async fn read_cached_audio_bytes(app_handle: &tauri::AppHandle) -> Result<Option<Vec<u8>>> {
+    let cache_dir = get_cache_dir(app_handle)?;
+    let audio_file = cache_dir.join("wid3menu.mp3");
+
+    if audio_file.exists() {
+        eprintln!("[Audio] Reading cached audio bytes from: {}", audio_file.display());
+
+        // Verify file size is reasonable (between 1 MB and 50 MB)
+        let metadata = fs::metadata(&audio_file)
+            .await
+            .context("Failed to read audio file metadata")?;
+
+        if metadata.len() > 1024 * 1024 && metadata.len() < MAX_AUDIO_SIZE_BYTES {
+            let bytes = fs::read(&audio_file)
+                .await
+                .context("Failed to read audio file bytes")?;
+
+            eprintln!("[Audio] Successfully read {} bytes", bytes.len());
+            return Ok(Some(bytes));
+        } else {
+            eprintln!(
+                "[Audio] Cached audio has invalid size: {} bytes",
+                metadata.len()
+            );
+            // Delete corrupted cache
+            let _ = fs::remove_file(&audio_file).await;
+        }
+    }
+
+    eprintln!("[Audio] No cached audio bytes available");
+    Ok(None)
+}
+
 /// Clear audio cache (for testing/troubleshooting)
 pub async fn clear_audio_cache(app_handle: &tauri::AppHandle) -> Result<()> {
     let cache_dir = get_cache_dir(app_handle)?;

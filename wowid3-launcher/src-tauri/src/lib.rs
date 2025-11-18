@@ -8,7 +8,7 @@ use modules::fabric_installer::{get_fabric_loaders, get_latest_fabric_loader, Fa
 use modules::game_installer::{install_minecraft, is_version_installed, InstallConfig};
 use modules::server::{ping_server, ServerStatus};
 use modules::updater::{check_for_updates, get_installed_version, install_modpack, Manifest};
-use modules::audio::{get_cached_audio, download_and_cache_audio, clear_audio_cache};
+use modules::audio::{get_cached_audio, download_and_cache_audio, read_cached_audio_bytes, clear_audio_cache};
 use modules::java_runtime::{get_cached_java, download_and_cache_java};
 use modules::logger::initialize_logger;
 use modules::log_reader::{read_latest_log, get_log_path, get_new_log_lines};
@@ -509,6 +509,13 @@ async fn cmd_download_and_cache_audio(app: AppHandle, url: String) -> Result<Str
 }
 
 #[tauri::command]
+async fn cmd_read_cached_audio_bytes(app: AppHandle) -> Result<Option<Vec<u8>>, String> {
+    read_cached_audio_bytes(&app)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn cmd_clear_audio_cache(app: AppHandle) -> Result<(), String> {
     clear_audio_cache(&app)
         .await
@@ -617,6 +624,7 @@ pub fn run() {
             cmd_discord_is_connected,
             cmd_get_cached_audio,
             cmd_download_and_cache_audio,
+            cmd_read_cached_audio_bytes,
             cmd_clear_audio_cache,
             cmd_stop_game,
             cmd_kill_game,

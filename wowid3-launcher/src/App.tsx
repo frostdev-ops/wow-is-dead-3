@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { convertFileSrc } from '@tauri-apps/api/core';
 import { useModpack, useServer, useTheme } from './hooks';
 import { useSettingsStore } from './stores/settingsStore';
 import { useAudioStore } from './stores/audioStore';
@@ -26,6 +25,7 @@ function AppContent() {
   const fallbackRef = useRef<HTMLAudioElement>(null);
   const mainRef = useRef<HTMLAudioElement>(null);
   const retryIntervalRef = useRef<number | null>(null);
+  const retryCountRef = useRef(0); // Track retry attempts across renders
   const { checkUpdates, latestManifest } = useModpack();
   const { startPolling } = useServer();
   const { initializeGameDirectory } = useSettingsStore();
@@ -141,69 +141,122 @@ function AppContent() {
     try {
       console.log('[Audio] Starting main audio load (non-blocking)');
 
-      // Check for cached audio
-      const cachedPath = await invoke<string | null>('cmd_get_cached_audio');
+      // Try to read cached audio bytes first
+      const cachedBytes = await invoke<number[] | null>('cmd_read_cached_audio_bytes');
 
-      if (cachedPath) {
-        console.log('[Audio] Found cached audio, attempting to load');
+      if (cachedBytes) {
+        console.log('[Audio] Found cached audio bytes:', cachedBytes.length, 'bytes');
         try {
-          // Use convertFileSrc to get proper Tauri asset URL (no Blob overhead)
-          const assetUrl = convertFileSrc(cachedPath);
+          // Convert number array to Uint8Array, then create Blob
+          const byteArray = new Uint8Array(cachedBytes);
+          const blob = new Blob([byteArray], { type: 'audio/mpeg' });
+          const blobUrl = URL.createObjectURL(blob);
+
+          console.log('[Audio] Created Blob URL for cached audio');
 
           if (mainRef.current) {
-            mainRef.current.src = assetUrl;
-            // Set timeout for load attempt - if not loaded in 10 seconds, give up
-            const loadTimeout = setTimeout(() => {
-              console.log('[Audio] Main audio load timeout, using fallback');
-              mainRef.current!.src = ''; // Clear the failing source
-            }, 10000);
+            // CRITICAL: Attach event handlers BEFORE setting src to avoid race condition
+            let loadTimeout: number | null = null;
+            let handlersAttached = false;
 
-            mainRef.current.onloadeddata = () => {
-              clearTimeout(loadTimeout);
-              console.log('[Audio] Main audio successfully loaded');
-              setMainAudioReady(true);
+            const setupHandlers = () => {
+              if (handlersAttached || !mainRef.current) return;
+              handlersAttached = true;
+
+              // Set timeout for load attempt
+              loadTimeout = window.setTimeout(() => {
+                console.log('[Audio] Main audio load timeout, using fallback');
+                if (mainRef.current) {
+                  mainRef.current.src = '';
+                  URL.revokeObjectURL(blobUrl); // Clean up blob URL
+                }
+              }, 10000);
+
+              mainRef.current.onloadeddata = () => {
+                if (loadTimeout !== null) clearTimeout(loadTimeout);
+                console.log('[Audio] Main audio successfully loaded from cached Blob');
+                setMainAudioReady(true);
+              };
+              mainRef.current.onerror = () => {
+                if (loadTimeout !== null) clearTimeout(loadTimeout);
+                const errorCode = mainRef.current?.error?.code;
+                const errorMsg = mainRef.current?.error?.message;
+                console.log('[Audio] Cached Blob audio failed to load. Code:', errorCode, 'Message:', errorMsg);
+                if (mainRef.current) mainRef.current.src = '';
+                URL.revokeObjectURL(blobUrl); // Clean up blob URL
+              };
             };
-            mainRef.current.onerror = () => {
-              clearTimeout(loadTimeout);
-              console.log('[Audio] Main audio failed to load, using fallback');
-              mainRef.current!.src = ''; // Clear the failing source
-            };
+
+            // Attach handlers immediately, BEFORE setting src
+            console.log('[Audio] Attempting to load cached audio from Blob URL');
+            setupHandlers();
+            // Now set the src with Blob URL
+            mainRef.current.src = blobUrl;
           }
           return;
         } catch (err) {
-          console.log('[Audio] Error setting up cached audio:', err);
+          console.log('[Audio] Error creating Blob URL from cached audio:', err);
         }
       }
 
       // If we get here, download audio
-      console.log('[Audio] Downloading audio from server...');
+      console.log('[Audio] No cached bytes, downloading audio from server...');
       try {
         const downloadedPath = await invoke<string>('cmd_download_and_cache_audio', {
           url: AUDIO_SERVER_URL,
         });
 
-        console.log('[Audio] Download complete, setting up main audio');
+        console.log('[Audio] Download complete at:', downloadedPath);
 
-        // Use convertFileSrc to get proper Tauri asset URL
-        const assetUrl = convertFileSrc(downloadedPath);
+        // Now read the downloaded file as bytes
+        const downloadedBytes = await invoke<number[] | null>('cmd_read_cached_audio_bytes');
 
-        if (mainRef.current) {
-          mainRef.current.src = assetUrl;
-          const loadTimeout = setTimeout(() => {
-            console.log('[Audio] Downloaded audio load timeout, using fallback');
-            mainRef.current!.src = '';
-          }, 10000);
+        if (downloadedBytes && mainRef.current) {
+          console.log('[Audio] Read downloaded audio bytes:', downloadedBytes.length, 'bytes');
 
-          mainRef.current.onloadeddata = () => {
-            clearTimeout(loadTimeout);
-            console.log('[Audio] Downloaded audio successfully loaded');
-            setMainAudioReady(true);
+          // Convert to Blob URL
+          const byteArray = new Uint8Array(downloadedBytes);
+          const blob = new Blob([byteArray], { type: 'audio/mpeg' });
+          const blobUrl = URL.createObjectURL(blob);
+
+          console.log('[Audio] Created Blob URL for downloaded audio');
+
+          // CRITICAL: Attach event handlers BEFORE setting src
+          let loadTimeout: number | null = null;
+          let handlersAttached = false;
+
+          const setupHandlers = () => {
+            if (handlersAttached || !mainRef.current) return;
+            handlersAttached = true;
+
+            loadTimeout = window.setTimeout(() => {
+              console.log('[Audio] Downloaded audio load timeout, using fallback');
+              if (mainRef.current) {
+                mainRef.current.src = '';
+                URL.revokeObjectURL(blobUrl);
+              }
+            }, 10000);
+
+            mainRef.current.onloadeddata = () => {
+              if (loadTimeout !== null) clearTimeout(loadTimeout);
+              console.log('[Audio] Downloaded audio successfully loaded from Blob');
+              setMainAudioReady(true);
+            };
+            mainRef.current.onerror = () => {
+              if (loadTimeout !== null) clearTimeout(loadTimeout);
+              const errorCode = mainRef.current?.error?.code;
+              const errorMsg = mainRef.current?.error?.message;
+              console.log('[Audio] Downloaded Blob audio failed to load. Code:', errorCode, 'Message:', errorMsg);
+              if (mainRef.current) mainRef.current.src = '';
+              URL.revokeObjectURL(blobUrl);
+            };
           };
-          mainRef.current.onerror = () => {
-            clearTimeout(loadTimeout);
-            console.log('[Audio] Downloaded audio failed to load, using fallback');
-            mainRef.current!.src = '';
-          };
+
+          // Attach handlers immediately, BEFORE setting src
+          console.log('[Audio] Attempting to load downloaded audio from Blob URL');
+          setupHandlers();
+          // Now set the src with Blob URL
+          mainRef.current.src = blobUrl;
         }
       } catch (downloadErr) {
         console.log('[Audio] Download failed, will use fallback audio:', downloadErr);
@@ -264,6 +317,37 @@ function AppContent() {
       startCrossfade();
     }
   }, [mainAudioReady, audioState]);
+
+  // Retry mechanism: if stuck in fallback for too long, attempt to reload main audio
+  useEffect(() => {
+    const maxRetries = 3;
+    const stuckTimeout = 15000; // 15 seconds - if still in fallback after this, retry
+    let retryTimeoutRef: number | null = null;
+
+    if (audioState === 'fallback' && !mainAudioReady) {
+      console.log('[Audio] In fallback state, monitoring for stuck condition...');
+
+      retryTimeoutRef = window.setTimeout(() => {
+        if (audioState === 'fallback' && !mainAudioReady && retryCountRef.current < maxRetries) {
+          retryCountRef.current++;
+          console.log(`[Audio] Stuck in fallback (attempt ${retryCountRef.current}/${maxRetries}), retrying...`);
+          // Retry loading main audio
+          loadMainAudio();
+        } else if (retryCountRef.current >= maxRetries) {
+          console.log('[Audio] Max retries reached, will continue with fallback');
+        }
+      }, stuckTimeout);
+    } else if (mainAudioReady || audioState === 'main') {
+      // Reset retry counter when we successfully transition or when muted is toggled
+      retryCountRef.current = 0;
+    }
+
+    return () => {
+      if (retryTimeoutRef) {
+        clearTimeout(retryTimeoutRef);
+      }
+    };
+  }, [audioState, mainAudioReady]);
 
   // Handle mute/unmute for both audio elements
   useEffect(() => {
