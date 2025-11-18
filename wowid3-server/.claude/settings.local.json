@@ -13,7 +13,9 @@
       "Bash(journalctl:*)",
       "Bash(cat:*)",
       "Bash(./start.sh:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "WebFetch(domain:github.com)",
+      "mcp__perplexity-ask__perplexity_ask"
     ],
     "deny": [],
     "ask": []

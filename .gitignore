@@ -52,3 +52,5 @@ wowid3-launcher/src-tauri/game/config/everycomp-common.json
 
 wowid3-client-data/*
 wowid3-client-data.7z
+wowid3-server/eggs/
+wowid3-server/eggs/*

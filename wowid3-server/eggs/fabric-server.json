@@ -14,8 +14,12 @@
     "pid_limit"
   ],
   "docker_images": {
-    "Java 21": "ghcr.io/pterodactyl/yolks:java_21",
-    "Java 17": "ghcr.io/pterodactyl/yolks:java_17"
+    "Java 8": "ghcr.io/pterodactyl/yolks:java_8",
+    "Java 11": "ghcr.io/pterodactyl/yolks:java_11",
+    "Java 16": "ghcr.io/pterodactyl/yolks:java_16",
+    "Java 17": "ghcr.io/pterodactyl/yolks:java_17",
+    "Java 18": "ghcr.io/pterodactyl/yolks:java_18",
+    "Java 21": "ghcr.io/pterodactyl/yolks:java_21"
   },
   "file_denylist": [],
   "startup": "java -Xms128M -XX:MaxRAMPercentage={{MAX_RAM_PERCENT}} {{JVM_ARGS}} -jar {{SERVER_JARFILE}} nogui",
@@ -27,9 +31,9 @@
   },
   "scripts": {
     "installation": {
-      "script": "#!/bin/bash\n# Fabric Server Installation Script\n#\n# Server Files: /mnt/server\n\napt update\napt install -y curl\n\ncd /mnt/server\n\necho \"==========================================\"\necho \"Fabric Server Installation\"\necho \"==========================================\"\necho \"\"\necho \"Minecraft Version: ${MC_VERSION}\"\necho \"Fabric Loader: ${FABRIC_VERSION}\"\necho \"Installer Version: ${INSTALLER_VERSION}\"\necho \"\"\n\n# Remove spaces from version numbers\nMC_VERSION=\"$(echo \"${MC_VERSION}\" | tr -d ' ')\"\nFABRIC_VERSION=\"$(echo \"${FABRIC_VERSION}\" | tr -d ' ')\"\nINSTALLER_VERSION=\"$(echo \"${INSTALLER_VERSION}\" | tr -d ' ')\"\n\n# Build download URL\nif [[ -z \"${MC_VERSION}\" ]] || [[ -z \"${FABRIC_VERSION}\" ]]; then\n    echo \"ERROR: MC_VERSION and FABRIC_VERSION are required\"\n    exit 1\nfi\n\n# Use installer version if provided, otherwise use latest\nif [[ -z \"${INSTALLER_VERSION}\" ]]; then\n    INSTALLER_VERSION=\"1.1.0\"\nfi\n\nDOWNLOAD_URL=\"https://meta.fabricmc.net/v2/versions/loader/${MC_VERSION}/${FABRIC_VERSION}/${INSTALLER_VERSION}/server/jar\"\n\necho \"Download URL: ${DOWNLOAD_URL}\"\necho \"\"\n\n# Download Fabric server JAR\necho \"Downloading Fabric server JAR...\"\ncurl -o \"${SERVER_JARFILE}\" -L \"${DOWNLOAD_URL}\"\n\nif [[ $? -ne 0 ]]; then\n    echo \"ERROR: Failed to download Fabric server JAR\"\n    echo \"URL: ${DOWNLOAD_URL}\"\n    exit 1\nfi\n\nif [[ ! -f \"${SERVER_JARFILE}\" ]]; then\n    echo \"ERROR: Server JAR was not downloaded\"\n    exit 1\nfi\n\necho \"✓ Fabric server JAR downloaded successfully\"\necho \"  File: ${SERVER_JARFILE}\"\necho \"  Size: $(du -h ${SERVER_JARFILE} | cut -f1)\"\necho \"\"\n\n# Create necessary directories\necho \"Creating server directories...\"\nmkdir -p mods config world logs\nmkdir -p kubejs/server_scripts kubejs/startup_scripts 2>/dev/null || true\n# Pre-create .fabric directory for Fabric server launcher\nmkdir -p .fabric/server .fabric/libraries\necho \"✓ Directories created\"\n\n# Set up EULA\necho \"\"\necho \"Creating eula.txt...\"\ncat > eula.txt << 'EOF'\n#By changing the setting below to TRUE you are indicating your agreement to our EULA (https://account.mojang.com/documents/minecraft_eula).\neula=true\nEOF\necho \"✓ EULA accepted\"\n\n# Create default server.properties\necho \"\"\necho \"Creating default server.properties...\"\ncat > server.properties << 'EOF'\n#Minecraft server properties\nmotd=A Minecraft Server\nserver-port=25565\nmax-players=20\nonline-mode=true\nwhite-list=false\npvp=true\ndifficulty=easy\nhardcore=false\nview-distance=10\nsimulation-distance=10\nspawn-protection=16\nmax-tick-time=60000\nenable-command-block=false\nEOF\necho \"✓ Default server.properties created\"\n\n# Set permissions - ensure container user can write\necho \"\"\necho \"Setting file permissions...\"\nchmod 777 . 2>/dev/null || true\nchmod -R 777 mods config world logs kubejs .fabric 2>/dev/null || true\nchmod 666 eula.txt server.properties \"${SERVER_JARFILE}\" 2>/dev/null || true\necho \"✓ Permissions set (full write access for container user)\"\n\necho \"\"\necho \"==========================================\"\necho \"Installation Summary\"\necho \"==========================================\"\necho \"Minecraft: ${MC_VERSION}\"\necho \"Fabric Loader: ${FABRIC_VERSION}\"\necho \"Installer: ${INSTALLER_VERSION}\"\necho \"Server JAR: ${SERVER_JARFILE}\"\necho \"Working Directory: $(pwd)\"\necho \"EULA: Accepted\"\necho \"\"\necho \"Installation complete!\"\necho \"You can now upload mods to the mods/ directory.\"\necho \"==========================================\"\n",
-      "container": "ghcr.io/pterodactyl/installers:alpine",
-      "entrypoint": "ash"
+      "script": "#!/bin/bash\n# Fabric Server Installation Script\n#\n# Server Files: /mnt/server\n\napt update\napt install -y curl jq\n\ncd /mnt/server\n\necho \"==========================================\"\necho \"Fabric Server Installation\"\necho \"==========================================\"\necho \"\"\n\n# Resolve Minecraft version\nif [ -z \"$MC_VERSION\" ] || [ \"$MC_VERSION\" == \"latest\" ]; then\n    echo \"Resolving latest stable Minecraft version...\"\n    MC_VERSION=$(curl -sSL https://meta.fabricmc.net/v2/versions/game | jq -r '.[] | select(.stable==true) | .version' | head -n1)\n    echo \"Resolved to: ${MC_VERSION}\"\nelif [ \"$MC_VERSION\" == \"snapshot\" ]; then\n    echo \"Resolving latest snapshot Minecraft version...\"\n    MC_VERSION=$(curl -sSL https://meta.fabricmc.net/v2/versions/game | jq -r '.[] | select(.stable==false) | .version' | head -n1)\n    echo \"Resolved to: ${MC_VERSION}\"\nelse\n    echo \"Using Minecraft version: ${MC_VERSION}\"\nfi\n\n# Resolve Fabric installer version\nif [ -z \"$FABRIC_VERSION\" ] || [ \"$FABRIC_VERSION\" == \"latest\" ]; then\n    echo \"Resolving latest Fabric installer version...\"\n    FABRIC_VERSION=$(curl -sSL https://meta.fabricmc.net/v2/versions/installer | jq -r '.[0].version')\n    echo \"Resolved to: ${FABRIC_VERSION}\"\nelse\n    echo \"Using Fabric installer version: ${FABRIC_VERSION}\"\nfi\n\n# Resolve Fabric loader version\nif [ -z \"$LOADER_VERSION\" ] || [ \"$LOADER_VERSION\" == \"latest\" ]; then\n    echo \"Resolving latest stable Fabric loader version...\"\n    LOADER_VERSION=$(curl -sSL https://meta.fabricmc.net/v2/versions/loader | jq -r '.[] | select(.stable==true) | .version' | head -n1)\n    echo \"Resolved to: ${LOADER_VERSION}\"\nelif [ \"$LOADER_VERSION\" == \"snapshot\" ]; then\n    echo \"Resolving latest snapshot Fabric loader version...\"\n    LOADER_VERSION=$(curl -sSL https://meta.fabricmc.net/v2/versions/loader | jq -r '.[] | select(.stable==false) | .version' | head -n1)\n    echo \"Resolved to: ${LOADER_VERSION}\"\nelse\n    echo \"Using Fabric loader version: ${LOADER_VERSION}\"\nfi\n\necho \"\"\necho \"Configuration:\"\necho \"  Minecraft: ${MC_VERSION}\"\necho \"  Fabric Installer: ${FABRIC_VERSION}\"\necho \"  Fabric Loader: ${LOADER_VERSION}\"\necho \"\"\n\n# Remove spaces from version numbers\nMC_VERSION=\"$(echo \"${MC_VERSION}\" | tr -d ' ')\"\nFABRIC_VERSION=\"$(echo \"${FABRIC_VERSION}\" | tr -d ' ')\"\nLOADER_VERSION=\"$(echo \"${LOADER_VERSION}\" | tr -d ' ')\"\n\n# Validate required variables\nif [[ -z \"${MC_VERSION}\" ]] || [[ -z \"${FABRIC_VERSION}\" ]] || [[ -z \"${LOADER_VERSION}\" ]]; then\n    echo \"ERROR: Failed to resolve required versions\"\n    exit 1\nfi\n\n# Build download URL for direct Fabric server JAR\nDOWNLOAD_URL=\"https://meta.fabricmc.net/v2/versions/loader/${MC_VERSION}/${LOADER_VERSION}/${FABRIC_VERSION}/server/jar\"\n\necho \"Download URL: ${DOWNLOAD_URL}\"\necho \"\"\n\n# Download Fabric server JAR\necho \"Downloading Fabric server JAR...\"\ncurl -o \"${SERVER_JARFILE}\" -L \"${DOWNLOAD_URL}\"\n\nif [[ $? -ne 0 ]]; then\n    echo \"ERROR: Failed to download Fabric server JAR\"\n    echo \"URL: ${DOWNLOAD_URL}\"\n    exit 1\nfi\n\nif [[ ! -f \"${SERVER_JARFILE}\" ]]; then\n    echo \"ERROR: Server JAR was not downloaded\"\n    exit 1\nfi\n\necho \"✓ Fabric server JAR downloaded successfully\"\necho \"  File: ${SERVER_JARFILE}\"\necho \"  Size: $(du -h ${SERVER_JARFILE} | cut -f1)\"\necho \"\"\n\n# Create necessary directories\necho \"Creating server directories...\"\nmkdir -p mods config world logs\nmkdir -p kubejs/server_scripts kubejs/startup_scripts 2>/dev/null || true\n# Pre-create .fabric directory for Fabric server launcher\nmkdir -p .fabric/server .fabric/libraries 2>/dev/null || true\necho \"✓ Directories created\"\n\n# Set up EULA\necho \"\"\necho \"Creating eula.txt...\"\ncat > eula.txt << 'EOF'\n#By changing the setting below to TRUE you are indicating your agreement to our EULA (https://account.mojang.com/documents/minecraft_eula).\neula=true\nEOF\necho \"✓ EULA accepted\"\n\n# Create default server.properties\necho \"\"\necho \"Creating default server.properties...\"\ncat > server.properties << 'EOF'\n#Minecraft server properties\nmotd=A Minecraft Server\nserver-port=25565\nmax-players=20\nonline-mode=true\nwhite-list=false\npvp=true\ndifficulty=easy\nhardcore=false\nview-distance=10\nsimulation-distance=10\nspawn-protection=16\nmax-tick-time=60000\nenable-command-block=false\nEOF\necho \"✓ Default server.properties created\"\n\necho \"\"\necho \"==========================================\"\necho \"Installation Summary\"\necho \"==========================================\"\necho \"Minecraft: ${MC_VERSION}\"\necho \"Fabric Installer: ${FABRIC_VERSION}\"\necho \"Fabric Loader: ${LOADER_VERSION}\"\necho \"Server JAR: ${SERVER_JARFILE}\"\necho \"Working Directory: $(pwd)\"\necho \"EULA: Accepted\"\necho \"\"\necho \"Installation complete!\"\necho \"You can now upload mods to the mods/ directory.\"\necho \"==========================================\"\n",
+      "container": "ghcr.io/pterodactyl/installers:debian",
+      "entrypoint": "bash"
     }
   },
   "variables": [
@@ -54,22 +58,22 @@
       "field_type": "text"
     },
     {
-      "name": "Fabric Loader Version",
-      "description": "The Fabric loader version (e.g., 0.17.3). Check https://fabricmc.net/versions.html",
+      "name": "Fabric Version",
+      "description": "The Fabric installer version. Use 'latest' or specific version (e.g., 1.1.0). Check https://fabricmc.net/use/installer",
       "env_variable": "FABRIC_VERSION",
-      "default_value": "0.17.3",
+      "default_value": "latest",
       "user_viewable": true,
       "user_editable": true,
       "rules": "required|string|max:20",
       "field_type": "text"
     },
     {
-      "name": "Installer Version",
-      "description": "The Fabric installer version (usually 1.1.0)",
-      "env_variable": "INSTALLER_VERSION",
-      "default_value": "1.1.0",
+      "name": "Fabric Loader Version",
+      "description": "The Fabric loader version. Use 'latest' or specific version (e.g., 0.17.3). Check https://fabricmc.net/versions.html",
+      "env_variable": "LOADER_VERSION",
+      "default_value": "latest",
       "user_viewable": true,
-      "user_editable": false,
+      "user_editable": true,
       "rules": "required|string|max:20",
       "field_type": "text"
     },
