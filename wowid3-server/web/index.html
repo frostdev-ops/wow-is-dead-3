@@ -5,6 +5,22 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>WOWID3 Modpack Admin</title>
+
+    <!-- Initialize theme before render to prevent FOUC -->
+    <script>
+      (function() {
+        const THEME_STORAGE_KEY = 'wid3-admin-theme';
+        const stored = localStorage.getItem(THEME_STORAGE_KEY);
+        const theme = stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
+
+        const getSystemTheme = () => window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        const effectiveTheme = theme === 'system' ? getSystemTheme() : theme;
+
+        if (effectiveTheme === 'dark') {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

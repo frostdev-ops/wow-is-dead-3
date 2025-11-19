@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Trash2, Download, Copy, Clock } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -104,7 +105,14 @@ export default function ResourcePackList({
             </thead>
             <tbody>
               {resourcePacks.map((pack) => (
-                <tr key={pack.file_name} className="border-b hover:bg-muted/30 transition-colors">
+                <motion.tr
+                  key={pack.file_name}
+                  className="border-b hover:bg-muted/30 transition-colors"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  whileHover={{ x: 4 }}
+                  transition={{ duration: 0.15 }}
+                >
                   <td className="px-6 py-4">
                     <div className="space-y-1">
                       <p className="font-medium truncate">{pack.file_name}</p>
@@ -149,7 +157,7 @@ export default function ResourcePackList({
                       </Button>
                     </div>
                   </td>
-                </tr>
+                </motion.tr>
               ))}
             </tbody>
           </table>

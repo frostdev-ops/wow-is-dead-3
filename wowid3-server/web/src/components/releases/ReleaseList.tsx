@@ -8,6 +8,7 @@ import ReleaseCard from './ReleaseCard';
 import ReleaseRowSkeleton from './ReleaseRowSkeleton';
 import { Card, CardContent } from '@/components/ui/card';
 import type { ReleaseListProps } from '../../types/release';
+import { containerVariants, itemVariants } from '@/components/PageTransition';
 
 export default function ReleaseList({ showActions = true }: ReleaseListProps) {
   const releasesQuery = useReleasesQuery();
@@ -102,14 +103,13 @@ export default function ReleaseList({ showActions = true }: ReleaseListProps) {
                 {showActions && <th className="text-left py-3 px-4 font-semibold text-sm">Action</th>}
               </tr>
             </thead>
-            <tbody>
-              {releases.map((release, index) => (
-                <motion.tr
-                  key={release.version}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.2, delay: index * 0.05 }}
-                >
+            <motion.tbody
+              variants={containerVariants}
+              initial="hidden"
+              animate="show"
+            >
+              {releases.map((release) => (
+                <motion.tr key={release.version} variants={itemVariants}>
                   <ReleaseCard
                     release={release}
                     onDelete={handleDeleteRelease}
@@ -118,7 +118,7 @@ export default function ReleaseList({ showActions = true }: ReleaseListProps) {
                   />
                 </motion.tr>
               ))}
-            </tbody>
+            </motion.tbody>
           </table>
         </div>
       </CardContent>

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { useAdmin } from '@/hooks/useAdmin';
 import { useToast } from '@/hooks/useToast';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { PageTransition } from '@/components/PageTransition';
 
 const ResourcePackUploadZone = lazy(
   () => import('@/components/resources/ResourcePackUploadZone')
@@ -84,9 +85,10 @@ export default function ResourcePacksPage() {
   };
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-center gap-3">
+    <PageTransition>
+      <div className="space-y-8">
+        {/* Header */}
+        <div className="flex items-center gap-3">
         <div className="bg-primary/10 rounded-lg p-3">
           <Package className="w-6 h-6 text-primary" />
         </div>
@@ -120,11 +122,11 @@ export default function ResourcePacksPage() {
 
         {/* Upload Success */}
         {uploadSuccess && (
-          <div className="p-4 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-md flex gap-3">
-            <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+          <div className="p-4 bg-success/10 border border-success/30 rounded-md flex gap-3">
+            <CheckCircle className="w-5 h-5 text-success flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="font-semibold text-green-900 dark:text-green-100">Success</p>
-              <p className="text-sm text-green-800 dark:text-green-200">{uploadSuccess}</p>
+              <p className="font-semibold text-success">Success</p>
+              <p className="text-sm text-success/80">{uploadSuccess}</p>
             </div>
           </div>
         )}
@@ -155,18 +157,19 @@ export default function ResourcePacksPage() {
       </Card>
 
       {/* Info Section */}
-      <Card className="p-6 bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
-        <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">Download URL Format</h3>
-        <p className="text-sm text-blue-800 dark:text-blue-200 mb-4">
+      <Card className="p-6 bg-muted/30 border-border">
+        <h3 className="font-semibold mb-2">Download URL Format</h3>
+        <p className="text-sm text-muted-foreground mb-4">
           Resource packs can be downloaded from your server using the following URL pattern:
         </p>
-        <code className="text-xs bg-blue-100 dark:bg-blue-900 px-3 py-2 rounded block font-mono text-blue-900 dark:text-blue-100">
+        <code className="text-xs bg-accent px-3 py-2 rounded block font-mono">
           https://wowid-launcher.frostdev.io/api/resources/filename.zip
         </code>
-        <p className="text-xs text-blue-700 dark:text-blue-300 mt-2">
+        <p className="text-xs text-muted-foreground mt-2">
           Copy the download URL for each resource pack using the copy button in the list above.
         </p>
       </Card>
-    </div>
+      </div>
+    </PageTransition>
   );
 }
