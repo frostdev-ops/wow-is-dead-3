@@ -333,6 +333,7 @@ pub async fn create_release(
         fabric_loader: request.fabric_loader,
         files,
         changelog: request.changelog,
+        ignore_patterns: blacklist_patterns,
     };
 
     // Write manifest
@@ -584,6 +585,11 @@ async fn scan_directory_files(dir: &PathBuf) -> Result<Vec<DraftFile>, AppError>
             .to_str()
             .ok_or_else(|| AppError::Internal(anyhow::anyhow!("Invalid path encoding")))?;
 
+        // Skip manifest.json - it's generated, not part of the modpack files
+        if relative_str == "manifest.json" {
+            continue;
+        }
+
         // Calculate fresh checksum
         let data = fs::read(path).await
             .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read file: {}", e)))?;
@@ -621,13 +627,52 @@ pub async fn get_blacklist(
             .collect()
     } else {
         // Return default blacklist
+        // These patterns protect user data and system files from deletion during updates
         vec![
-            "optifine.txt".to_string(),
+            // System directories
+            "natives/".to_string(),
+            ".mixin.out/".to_string(),
+            "logs/".to_string(),
+            "screenshots/".to_string(),
+            "server-resource-packs/".to_string(),
+            "assets/".to_string(),
+            "libraries/".to_string(),
+            "versions/".to_string(),
+            "modernfix/".to_string(),
+            "saves/".to_string(),
+            "data/".to_string(),
+            "ModTranslations/".to_string(),
+            "moddata/".to_string(),
+            "pfm/".to_string(),
+            "patchouli_books/".to_string(),
+            "local/".to_string(),
+            "emotes/".to_string(),
+            "schematics/".to_string(),
+            "defaultconfigs/".to_string(),
+            ".fabric/".to_string(),
+            ".cache/".to_string(),
+            
+            // Xaero's Minimap and World Map
+            "Xaero*".to_string(),
+            "xaero/".to_string(),
+            
+            // Cache directories (pattern matching)
+            "*cache/".to_string(),
+            
+            // User configuration files
             "options.txt".to_string(),
-            "optionsof.txt".to_string(),
-            "journeymap/**".to_string(),
-            "xaerominimap/**".to_string(),
-            "xyzmaps/**".to_string(),
+            "emi.json".to_string(),
+            "server.dat".to_string(),
+            
+            // Wildcard patterns for mod-specific user data
+            "iris*".to_string(),
+            "user*".to_string(),
+            "patchouli*".to_string(),
+            "rhino*".to_string(),
+            
+            // Launcher internal files
+            ".wowid3-manifest-hash".to_string(),
+            ".wowid3-version".to_string(),
         ]
     };
 

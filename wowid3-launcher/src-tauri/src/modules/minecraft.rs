@@ -86,7 +86,7 @@ pub async fn launch_game_with_metadata(
     // Build JVM arguments with optimized GC settings
     let mut jvm_args = vec![
         format!("-Xmx{}M", config.ram_mb),
-        format!("-Xms{}M", config.ram_mb / 2),
+        format!("-Xms{}M", config.ram_mb),
         // G1GC optimizations
         "-XX:+UseG1GC".to_string(),
         "-XX:+ParallelRefProcEnabled".to_string(),

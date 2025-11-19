@@ -9,6 +9,8 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
+use walkdir::WalkDir;
+
 use super::download_manager::{
     calculate_optimal_concurrency, DownloadManager, DownloadPriority, DownloadTask, HashType,
 };
@@ -268,62 +270,110 @@ pub async fn update_version_file(game_dir: &PathBuf, version: &str) -> Result<()
     Ok(())
 }
 
-/// Remove mods that aren't in the manifest
-/// This ensures only mods from the manifest exist in the mods folder
-async fn cleanup_extra_mods(manifest: &Manifest, game_dir: &PathBuf) -> Result<()> {
-    let mods_dir = game_dir.join("mods");
-
-    // If mods directory doesn't exist, nothing to clean up
-    if !mods_dir.exists() {
-        return Ok(());
-    }
-
-    // Get all manifest files in the mods folder
-    let manifest_mods: std::collections::HashSet<String> = manifest
+/// Clean up extra files not in the manifest, respecting ignore patterns from server
+async fn cleanup_extra_files(manifest: &Manifest, game_dir: &PathBuf) -> Result<()> {
+    let game_dir = game_dir.clone();
+    let manifest_files: std::collections::HashSet<String> = manifest
         .files
         .iter()
-        .filter(|f| f.path.starts_with("mods/") && f.path.ends_with(".jar"))
-        .map(|f| f.path.clone())
+        .map(|f| f.path.replace('\\', "/"))
         .collect();
+    
+    let ignore_patterns = manifest.ignore_patterns.clone();
 
-    println!("[Cleanup] Checking for extra mods...");
-    let mut removed_count = 0;
+    println!("[Cleanup] Starting cleanup of extra files...");
+    println!("[Cleanup] Using {} ignore patterns from server", ignore_patterns.len());
 
-    // Recursively scan mods directory
-    if let Ok(entries) = fs::read_dir(&mods_dir).await {
-        let mut entries = entries;
-        while let Ok(Some(entry)) = entries.next_entry().await {
+    tokio::task::spawn_blocking(move || {
+        let mut removed_count = 0;
+        let mut kept_count = 0;
+
+        let walker = WalkDir::new(&game_dir).follow_links(false);
+
+        for entry in walker.into_iter().filter_map(|e| e.ok()) {
             let path = entry.path();
+            
+            // Skip the game_dir itself
+            if path == game_dir {
+                continue;
+            }
 
-            // Only check .jar files
-            if let Some(ext) = path.extension() {
-                if ext == "jar" {
-                    // Get relative path from game_dir
-                    if let Ok(relative_path) = path.strip_prefix(game_dir) {
-                        let relative_str = relative_path.to_string_lossy().replace('\\', "/");
+            // We only delete files, not directories
+            if !path.is_file() {
+                continue;
+            }
 
-                        // If this mod isn't in the manifest, delete it
-                        if !manifest_mods.contains(&relative_str) {
-                            println!("[Cleanup] Removing extra mod: {}", relative_str);
-                            if let Err(e) = fs::remove_file(&path).await {
-                                eprintln!("[Cleanup] Warning: Failed to remove {}: {}", relative_str, e);
-                            } else {
-                                removed_count += 1;
-                            }
+            let relative_path = match path.strip_prefix(&game_dir) {
+                Ok(p) => p.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            };
+
+            // Check if in manifest
+            if manifest_files.contains(&relative_path) {
+                continue;
+            }
+
+            // Check against server-provided ignore patterns
+            let mut should_ignore = false;
+            
+            for pattern in &ignore_patterns {
+                // Exact match
+                if &relative_path == pattern {
+                    should_ignore = true;
+                    break;
+                }
+                
+                // Prefix match (e.g., "logs/" matches "logs/debug.log")
+                if pattern.ends_with('/') && relative_path.starts_with(pattern) {
+                    should_ignore = true;
+                    break;
+                }
+                
+                // Wildcard at start (e.g., "*cache/" matches "resourcecache/", "any/path/webcache/")
+                if pattern.starts_with('*') && pattern.ends_with('/') {
+                    let suffix = &pattern[1..]; // Remove leading *
+                    // Check if any path component matches the pattern
+                    if relative_path.split('/').any(|part| part.ends_with(&suffix[..suffix.len()-1])) {
+                        should_ignore = true;
+                        break;
+                    }
+                }
+                
+                // Wildcard at end (e.g., "user*" matches "user.dat", "userconfig.json")
+                if pattern.ends_with('*') {
+                    let prefix = &pattern[..pattern.len()-1]; // Remove trailing *
+                    // Get just the filename for comparison
+                    if let Some(filename) = relative_path.split('/').last() {
+                        if filename.starts_with(prefix) {
+                            should_ignore = true;
+                            break;
                         }
                     }
                 }
             }
+
+            if should_ignore {
+                kept_count += 1;
+                continue;
+            }
+
+            // If we got here, delete it
+            println!("[Cleanup] Deleting extra file: {}", relative_path);
+            if let Err(e) = std::fs::remove_file(path) {
+                eprintln!("[Cleanup] Failed to delete {}: {}", relative_path, e);
+            } else {
+                removed_count += 1;
+            }
         }
-    }
 
-    if removed_count > 0 {
-        println!("[Cleanup] Removed {} extra mod(s)", removed_count);
-    } else {
-        println!("[Cleanup] No extra mods found");
-    }
-
-    Ok(())
+        println!(
+            "[Cleanup] Finished. Removed {} files, kept {} ignored files.",
+            removed_count, kept_count
+        );
+        Ok(())
+    })
+    .await
+    .context("Cleanup task panicked")?
 }
 
 /// Check if there's enough disk space for the download
@@ -464,83 +514,81 @@ pub async fn install_modpack(
     // Determine which files need downloading (delta update)
     let files_to_download = get_files_to_download(manifest, game_dir).await?;
 
-    if files_to_download.is_empty() {
+    if !files_to_download.is_empty() {
+        // Check disk space
+        let total_bytes = calculate_total_size(&files_to_download);
+        check_disk_space(game_dir, total_bytes)?;
+
+        println!(
+            "Downloading {} files ({} MB)",
+            files_to_download.len(),
+            total_bytes / 1024 / 1024
+        );
+
+        // Create download manager with optimal concurrency
+        let concurrency = calculate_optimal_concurrency();
+        let download_manager = DownloadManager::new(concurrency, MAX_DOWNLOAD_RETRIES)
+            .context("Failed to create download manager")?;
+
+        // Convert manifest files to download tasks
+        let tasks: Vec<DownloadTask> = files_to_download
+            .iter()
+            .map(|file| DownloadTask {
+                url: file.url.clone(),
+                dest: game_dir.join(&file.path),
+                expected_hash: HashType::Sha256(file.sha256.clone()),
+                priority: DownloadPriority::Low, // Modpack files are lower priority than game files
+                size: file.size,
+            })
+            .collect();
+
+        // Track progress across all parallel downloads
+        let (progress_tx, mut progress_rx) =
+            tokio::sync::mpsc::channel::<super::download_manager::DownloadProgress>(100);
+        let total_files = files_to_download.len();
+        let bytes_downloaded = Arc::new(Mutex::new(0u64));
+        let files_completed = Arc::new(Mutex::new(0usize));
+
+        // Spawn progress tracking task
+        let bytes_downloaded_clone = bytes_downloaded.clone();
+        let files_completed_clone = files_completed.clone();
+        let progress_task = tokio::spawn(async move {
+            while let Some(progress) = progress_rx.recv().await {
+                if progress.completed {
+                    let mut completed = files_completed_clone.lock().await;
+                    *completed += 1;
+                    let mut bytes = bytes_downloaded_clone.lock().await;
+                    *bytes += progress.total_bytes;
+                    let current_completed = *completed;
+                    let current_bytes = *bytes;
+                    drop(completed);
+                    drop(bytes);
+
+                    progress_callback(
+                        current_completed,
+                        total_files,
+                        progress.url.clone(),
+                        current_bytes,
+                        total_bytes,
+                    );
+                }
+            }
+        });
+
+        // Download all files in parallel
+        download_manager
+            .download_files(tasks, Some(progress_tx))
+            .await
+            .context("Failed to download modpack files")?;
+
+        // Wait for progress tracking to complete
+        progress_task.await?;
+    } else {
         println!("All files up to date, no downloads needed");
-        update_version_file(game_dir, &manifest.version).await?;
-        return Ok(());
     }
 
-    // Check disk space
-    let total_bytes = calculate_total_size(&files_to_download);
-    check_disk_space(game_dir, total_bytes)?;
-
-    println!(
-        "Downloading {} files ({} MB)",
-        files_to_download.len(),
-        total_bytes / 1024 / 1024
-    );
-
-    // Create download manager with optimal concurrency
-    let concurrency = calculate_optimal_concurrency();
-    let download_manager = DownloadManager::new(concurrency, MAX_DOWNLOAD_RETRIES)
-        .context("Failed to create download manager")?;
-
-    // Convert manifest files to download tasks
-    let tasks: Vec<DownloadTask> = files_to_download
-        .iter()
-        .map(|file| DownloadTask {
-            url: file.url.clone(),
-            dest: game_dir.join(&file.path),
-            expected_hash: HashType::Sha256(file.sha256.clone()),
-            priority: DownloadPriority::Low, // Modpack files are lower priority than game files
-            size: file.size,
-        })
-        .collect();
-
-    // Track progress across all parallel downloads
-    let (progress_tx, mut progress_rx) =
-        tokio::sync::mpsc::channel::<super::download_manager::DownloadProgress>(100);
-    let total_files = files_to_download.len();
-    let bytes_downloaded = Arc::new(Mutex::new(0u64));
-    let files_completed = Arc::new(Mutex::new(0usize));
-
-    // Spawn progress tracking task
-    let bytes_downloaded_clone = bytes_downloaded.clone();
-    let files_completed_clone = files_completed.clone();
-    let progress_task = tokio::spawn(async move {
-        while let Some(progress) = progress_rx.recv().await {
-            if progress.completed {
-                let mut completed = files_completed_clone.lock().await;
-                *completed += 1;
-                let mut bytes = bytes_downloaded_clone.lock().await;
-                *bytes += progress.total_bytes;
-                let current_completed = *completed;
-                let current_bytes = *bytes;
-                drop(completed);
-                drop(bytes);
-
-                progress_callback(
-                    current_completed,
-                    total_files,
-                    progress.url.clone(),
-                    current_bytes,
-                    total_bytes,
-                );
-            }
-        }
-    });
-
-    // Download all files in parallel
-    download_manager
-        .download_files(tasks, Some(progress_tx))
-        .await
-        .context("Failed to download modpack files")?;
-
-    // Wait for progress tracking to complete
-    progress_task.await?;
-
-    // Clean up extra mods not in the manifest
-    cleanup_extra_mods(manifest, game_dir).await?;
+    // Clean up extra files not in the manifest
+    cleanup_extra_files(manifest, game_dir).await?;
 
     // Update version file
     update_version_file(game_dir, &manifest.version).await?;

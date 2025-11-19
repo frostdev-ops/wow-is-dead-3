@@ -91,6 +91,7 @@ pub struct UpdateDraftRequest {
 #[derive(Debug, Clone, Deserialize)]
 pub struct AddFilesRequest {
     pub upload_id: String,
+    pub target_path: Option<String>,
 }
 
 /// Request to update file metadata

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
-import { motion, useMotionValue, useTransform } from 'framer-motion';
+import { motion, useMotionValue } from 'framer-motion';
 import { Volume2, VolumeX } from 'lucide-react';
 import api from '@/api/client';
 
@@ -217,7 +217,6 @@ export default function DownloadPage() {
         logoRotate.set(currentRotate + (targetRotate - currentRotate) * 0.1);
         
         // Update Snow Count - Map 0-255 to 50-300 flakes
-        // Throttle this update slightly to every 5 frames or just check difference
         const normalizedTotal = Math.max(0, totalAverage / 128); // 0 to ~2
         const targetSnow = 50 + Math.floor(normalizedTotal * 250);
         
@@ -394,6 +393,11 @@ export default function DownloadPage() {
       }}
       onClick={handleInteraction}
     >
+      {/* Hidden Loo Easter Egg */}
+      <div className="absolute top-1/4 left-10 pointer-events-none z-0 opacity-20 blur-[2px] mix-blend-overlay animate-pulse">
+        <img src="/Christmas-Loo.png" alt="" className="w-64 h-auto rotate-12 transform" />
+      </div>
+
       {/* Music Player Widget */}
       <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 bg-[#003366]/90 backdrop-blur-md p-3 rounded-2xl border-2 border-white shadow-xl group transition-all hover:scale-105">
         <button 
@@ -589,22 +593,22 @@ export default function DownloadPage() {
             </a>
           </div>
 
-          {/* Features Grid - Club Penguin Style Modals */}
+          {/* Guild Secrets Grid */}
           <div className="grid md:grid-cols-3 gap-8 w-full max-w-5xl px-4">
             <FeatureModal 
               imgSrc="/buttons/spbutton.png"
-              title="Auto-Updates"
-              description="Keeps your game fresh so you don't have to touch grass."
+              title="Shadow Company"
+              description="Duskwood's #1 (and only) guild. We left because the Auction House prices were a crime against humanity."
             />
             <FeatureModal 
               imgSrc="/buttons/optionbutton.png"
-              title="Verified Integrity"
-              description="We check the files so you don't get rat-ed (unless its part of the lore)."
+              title="State of WoW"
+              description="Dragonflight? More like Dragon-mid. We made our own fun with 200+ mods and zero microtransactions."
             />
             <FeatureModal 
               imgSrc="/buttons/mpbutton.png"
-              title="Server Synced"
-              description="Connects directly to the hivemind. Resistance is futile."
+              title="Powered by Loo"
+              description="Our AI overlord Loothing watches from the shadows. He knows what you did in Goldshire Inn."
             />
           </div>
 

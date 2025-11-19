@@ -67,13 +67,12 @@ pub async fn resolve_player_name(uuid: &str) -> Result<String> {
     }
 }
 
-/// Write a VarInt to the stream
-/// VarInt is a variable-length integer used in Minecraft protocol
-fn write_varint(stream: &mut TcpStream, mut value: i32) -> Result<()> {
+/// Encode an i32 as a VarInt into a vector of bytes
+fn encode_varint(mut value: i32) -> Vec<u8> {
     let mut bytes = Vec::new();
     loop {
         let mut temp = (value & 0x7F) as u8;
-        value >>= 7;
+        value = (value as u32 >> 7) as i32;
         if value != 0 {
             temp |= 0x80;
         }
@@ -82,6 +81,13 @@ fn write_varint(stream: &mut TcpStream, mut value: i32) -> Result<()> {
             break;
         }
     }
+    bytes
+}
+
+/// Write a VarInt to the stream
+/// VarInt is a variable-length integer used in Minecraft protocol
+fn write_varint(stream: &mut TcpStream, value: i32) -> Result<()> {
+    let bytes = encode_varint(value);
     stream.write_all(&bytes)?;
     Ok(())
 }
@@ -137,29 +143,31 @@ fn extract_motd_text(description: &serde_json::Value) -> String {
     match description {
         serde_json::Value::String(s) => s.clone(),
         serde_json::Value::Object(obj) => {
+            let mut result = String::new();
             if let Some(serde_json::Value::String(text)) = obj.get("text") {
-                text.clone()
-            } else if let Some(extra) = obj.get("extra") {
+                result.push_str(text);
+            }
+            
+            if let Some(extra) = obj.get("extra") {
                 if let serde_json::Value::Array(arr) = extra {
-                    arr.iter()
+                    let extra_text = arr.iter()
                         .filter_map(|v| {
                             if let serde_json::Value::String(s) = v {
-                                Some(s.as_str())
+                                Some(s.clone())
                             } else if let serde_json::Value::Object(o) = v {
                                 o.get("text")
                                     .and_then(|t| t.as_str())
+                                    .map(|s| s.to_string())
                             } else {
                                 None
                             }
                         })
                         .collect::<Vec<_>>()
-                        .join("")
-                } else {
-                    String::new()
+                        .join("");
+                    result.push_str(&extra_text);
                 }
-            } else {
-                String::new()
             }
+            result
         }
         _ => String::new(),
     }
@@ -238,8 +246,11 @@ pub async fn ping_server(address: &str) -> Result<ServerStatus> {
         stream.set_write_timeout(Some(Duration::from_secs(5)))
             .context("Failed to set write timeout")?;
 
-        eprintln!("[Server Ping] Sending Minecraft protocol handshake");
-        ping_server_sync(stream, &host, port)
+        // TEMPORARY: Using legacy ping only due to PacketFixer mod compatibility issues
+        // Modern ping (ping_server_sync) is disabled until we find a solution for
+        // the IndexOutOfBoundsException caused by PacketFixer's Varint21FrameDecoder modifications
+        eprintln!("[Server Ping] Using legacy ping protocol (modern ping disabled)");
+        ping_server_legacy(stream)
     })
     .await;
 
@@ -277,71 +288,141 @@ pub async fn ping_server(address: &str) -> Result<ServerStatus> {
     }
 }
 
+/// Send a packet with VarInt length prefix
+fn send_packet(stream: &mut TcpStream, packet_id: i32, data: &[u8]) -> Result<()> {
+    let mut packet = Vec::new();
+    
+    // Packet ID (VarInt)
+    packet.extend(encode_varint(packet_id));
+    
+    // Packet Data
+    packet.extend_from_slice(data);
+    
+    // Prepend Packet Length (VarInt)
+    let mut final_packet = Vec::new();
+    final_packet.extend(encode_varint(packet.len() as i32));
+    final_packet.extend(packet);
+    
+    // Write all at once to avoid fragmentation
+    stream.write_all(&final_packet)?;
+    stream.flush()?;
+    
+    Ok(())
+}
+
+/// Legacy server ping implementation (1.6+)
+fn ping_server_legacy(mut stream: TcpStream) -> Result<ServerStatus> {
+    // Send Legacy Ping (FE 01)
+    // FE = Packet ID
+    // 01 = Payload (always 1 for 1.6+)
+    stream.write_all(&[0xFE, 0x01])?;
+    stream.flush()?;
+
+    // Read response
+    // Response is a Disconnect Packet (0xFF)
+    // Format: [FF] [Length: Short] [String: UTF-16BE]
+    
+    let mut packet_id_buf = [0u8; 1];
+    stream.read_exact(&mut packet_id_buf)?;
+    if packet_id_buf[0] != 0xFF {
+        return Err(anyhow!("Invalid legacy response ID: {}", packet_id_buf[0]));
+    }
+
+    // Read Length (Short = 2 bytes)
+    let mut len_buf = [0u8; 2];
+    stream.read_exact(&mut len_buf)?;
+    let len = u16::from_be_bytes(len_buf) as usize;
+
+    if len == 0 || len > 32767 {
+        return Err(anyhow!("Invalid legacy response length: {}", len));
+    }
+
+    // Read String (UTF-16BE)
+    // Length is in CHARACTERS, so bytes = len * 2
+    let mut bytes = vec![0u8; len * 2];
+    stream.read_exact(&mut bytes)?;
+
+    // Convert UTF-16BE bytes to String
+    let u16_vec: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+        .collect();
+    
+    let response_str = String::from_utf16(&u16_vec)
+        .context("Failed to decode UTF-16BE string")?;
+    
+    eprintln!("[Server Ping] Legacy response: {}", response_str);
+
+    // Parse legacy response string
+    // Format: §1\0<ProtocolVersion>\0<ServerVersion>\0<MOTD>\0<CurrentPlayers>\0<MaxPlayers>
+    
+    if !response_str.starts_with("§1\0") {
+        return Err(anyhow!("Invalid legacy header"));
+    }
+
+    let parts: Vec<&str> = response_str.split('\0').collect();
+    // parts[0] = "§1"
+    // parts[1] = Protocol Version (e.g. "127")
+    // parts[2] = Server Version (e.g. "1.20.1")
+    // parts[3] = MOTD
+    // parts[4] = Current Players
+    // parts[5] = Max Players
+
+    if parts.len() < 6 {
+        return Err(anyhow!("Incomplete legacy response"));
+    }
+
+    let version = Some(parts[2].to_string());
+    let motd = Some(parts[3].to_string());
+    let player_count = parts[4].parse::<u32>().ok();
+    let max_players = parts[5].parse::<u32>().ok();
+
+    Ok(ServerStatus {
+        online: true,
+        player_count,
+        max_players,
+        players: vec![], // Legacy ping doesn't support player list
+        version,
+        motd,
+    })
+}
+
 /// Synchronous server ping implementation
+/// TEMPORARILY DISABLED: This function is not currently used due to PacketFixer mod compatibility issues.
+/// The launcher now uses legacy ping (ping_server_legacy) instead until a solution is found.
+#[allow(dead_code)]
 fn ping_server_sync(mut stream: TcpStream, host: &str, port: u16) -> Result<ServerStatus> {
     // Step 1: Send handshake packet
-    let mut handshake_data = Vec::new();
+    let mut handshake_body = Vec::new();
 
-    // Packet ID
-    handshake_data.push(0x00);
-
-    // Protocol version (-1 for any version)
-    // Note: -1 as i32 is 0xFFFFFFFF in two's complement
-    // When encoding as VarInt, we need to handle the right-shift correctly.
-    // Arithmetic right shift on negative numbers would keep the sign bit,
-    // creating an infinite loop, so we cast to u32 for logical shift.
-    let mut protocol_bytes = Vec::new();
-    let mut value: i32 = -1;
-    for _ in 0..5 {
-        let mut temp = (value & 0x7F) as u8;
-        value = (value as u32 >> 7) as i32; // Use logical shift (unsigned cast)
-        if value != 0 {
-            temp |= 0x80;
-        }
-        protocol_bytes.push(temp);
-        if value == 0 {
-            break;
-        }
-    }
-    handshake_data.extend(protocol_bytes);
+    // Protocol version (763 for 1.20.1)
+    handshake_body.extend(encode_varint(763));
 
     // Server address (string)
     let host_bytes = host.as_bytes();
-    let mut len_bytes = Vec::new();
-    let mut len_value = host_bytes.len() as i32;
-    loop {
-        let mut temp = (len_value & 0x7F) as u8;
-        len_value >>= 7;
-        if len_value != 0 {
-            temp |= 0x80;
-        }
-        len_bytes.push(temp);
-        if len_value == 0 {
-            break;
-        }
-    }
-    handshake_data.extend(len_bytes);
-    handshake_data.extend(host_bytes);
+    handshake_body.extend(encode_varint(host_bytes.len() as i32));
+    handshake_body.extend(host_bytes);
 
     // Server port (unsigned short, big-endian)
-    handshake_data.push((port >> 8) as u8);
-    handshake_data.push((port & 0xFF) as u8);
+    handshake_body.push((port >> 8) as u8);
+    handshake_body.push((port & 0xFF) as u8);
 
     // Next state (1 for status)
-    handshake_data.push(0x01);
+    handshake_body.extend(encode_varint(1));
 
-    eprintln!("[Server Ping] Handshake packet built - size: {}", handshake_data.len());
-
-    // Write packet length + packet data
-    write_varint(&mut stream, handshake_data.len() as i32).context("Failed to write handshake length")?;
-    stream.write_all(&handshake_data).context("Failed to write handshake data")?;
-    eprintln!("[Server Ping] Handshake sent");
+    eprintln!("[Server Ping] Sending handshake (size: {})", handshake_body.len());
+    send_packet(&mut stream, 0x00, &handshake_body).context("Failed to send handshake")?;
+    
+    // CRITICAL: PacketFixer mod modifies Varint21FrameDecoder which can cause packet boundary issues
+    // We need to wait for the server to fully process the handshake and transition state
+    // before sending the status request. 1000ms (1 second) delay ensures packets are in separate
+    // TCP segments and gives PacketFixer's modified frame decoder ample time to process them correctly.
+    std::thread::sleep(Duration::from_millis(1000));
 
     // Step 2: Send status request packet
     eprintln!("[Server Ping] Sending status request");
-    write_varint(&mut stream, 1).context("Failed to write status request length")?; // Packet length
-    stream.write_all(&[0x00]).context("Failed to write status request ID")?; // Packet ID
-    eprintln!("[Server Ping] Status request sent");
+    // Status Request has ID 0x00 and no body
+    send_packet(&mut stream, 0x00, &[]).context("Failed to send status request")?;
 
     // Step 3: Read status response
     eprintln!("[Server Ping] Reading response length...");
@@ -438,25 +519,49 @@ fn ping_server_sync(mut stream: TcpStream, host: &str, port: u16) -> Result<Serv
 mod tests {
     use super::*;
     use std::io::{Read, Write};
-    use std::net::{TcpListener, TcpStream};
+    use std::net::TcpListener;
     use std::thread;
 
     /// Helper function to write a VarInt for testing
-    fn write_test_varint(value: i32) -> Vec<u8> {
+    fn write_test_varint(mut value: i32) -> Vec<u8> {
         let mut bytes = Vec::new();
-        let mut val = value;
         loop {
-            let mut temp = (val & 0x7F) as u8;
-            val >>= 7;
-            if val != 0 {
+            let mut temp = (value & 0x7F) as u8;
+            value = (value as u32 >> 7) as i32;
+            if value != 0 {
                 temp |= 0x80;
             }
             bytes.push(temp);
-            if val == 0 {
+            if value == 0 {
                 break;
             }
         }
         bytes
+    }
+
+    /// Helper to read a VarInt from a TcpStream for testing
+    fn read_test_varint(stream: &mut std::net::TcpStream) -> std::io::Result<i32> {
+        let mut num_read = 0;
+        let mut result = 0;
+        let mut buffer = [0u8; 1];
+
+        loop {
+            stream.read_exact(&mut buffer)?;
+            let value = buffer[0];
+            result |= ((value & 0x7F) as i32) << (7 * num_read);
+
+            num_read += 1;
+            if num_read > 5 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "VarInt is too big",
+                ));
+            }
+            if (value & 0x80) == 0 {
+                break;
+            }
+        }
+        Ok(result)
     }
 
     /// Mock Minecraft server for testing
@@ -482,25 +587,43 @@ mod tests {
                         stream.set_read_timeout(Some(Duration::from_secs(2))).ok();
                         stream.set_write_timeout(Some(Duration::from_secs(2))).ok();
 
-                        // Read handshake packet
-                        let mut buf = [0u8; 1024];
-                        if stream.read(&mut buf).is_ok() {
-                            // Read status request packet
-                            if stream.read(&mut buf).is_ok() {
-                                // Send status response
-                                let json_bytes = response_json.as_bytes();
-                                let json_len = write_test_varint(json_bytes.len() as i32);
+                        // Read handshake packet properly using Minecraft protocol
+                        if let Ok(handshake_len) = read_test_varint(&mut stream) {
+                            // Validate packet length to prevent panic or excessive allocation
+                            if handshake_len <= 0 || handshake_len > 1048576 {
+                                eprintln!("[Mock Server] Invalid handshake length: {}", handshake_len);
+                                return;
+                            }
+                            let mut handshake_buf = vec![0u8; handshake_len as usize];
+                            if stream.read_exact(&mut handshake_buf).is_ok() {
+                                // Read status request packet
+                                if let Ok(request_len) = read_test_varint(&mut stream) {
+                                    // Validate packet length to prevent panic or excessive allocation
+                                    if request_len <= 0 || request_len > 1048576 {
+                                        eprintln!("[Mock Server] Invalid request length: {}", request_len);
+                                        return;
+                                    }
+                                    let mut request_buf = vec![0u8; request_len as usize];
+                                    if stream.read_exact(&mut request_buf).is_ok() {
+                                        // Send status response
+                                        let json_bytes = response_json.as_bytes();
+                                        let json_len = write_test_varint(json_bytes.len() as i32);
 
-                                // Calculate total packet length (packet ID + string length + string data)
-                                let packet_data_len = 1 + json_len.len() + json_bytes.len();
-                                let packet_len = write_test_varint(packet_data_len as i32);
+                                        // Calculate total packet length (packet ID + string length + string data)
+                                        let packet_data_len = 1 + json_len.len() + json_bytes.len();
+                                        let packet_len = write_test_varint(packet_data_len as i32);
 
-                                // Write packet
-                                stream.write_all(&packet_len).ok();
-                                stream.write_all(&[0x00]).ok(); // Packet ID
-                                stream.write_all(&json_len).ok();
-                                stream.write_all(json_bytes).ok();
-                                stream.flush().ok();
+                                        // Write packet
+                                        stream.write_all(&packet_len).ok();
+                                        stream.write_all(&[0x00]).ok(); // Packet ID
+                                        stream.write_all(&json_len).ok();
+                                        stream.write_all(json_bytes).ok();
+                                        stream.flush().ok();
+                                        
+                                        // Give client time to read before closing connection
+                                        thread::sleep(Duration::from_millis(50));
+                                    }
+                                }
                             }
                         }
                         // Connection handled, exit
@@ -606,7 +729,7 @@ mod tests {
             "description": {"text": "Test Server"}
         }"#;
 
-        let _server = start_mock_server(port, response_json.to_string());
+        let server_handle = start_mock_server(port, response_json.to_string());
 
         // Give server time to start
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -625,6 +748,12 @@ mod tests {
         assert_eq!(status.players[1].id, "uuid2");
         assert_eq!(status.version, Some("1.20.4".to_string()));
         assert_eq!(status.motd, Some("Test Server".to_string()));
+        
+        // Wait for server thread to finish (prevents thread leak)
+        // Server should exit after handling the connection
+        let _ = tokio::task::spawn_blocking(move || {
+            let _ = server_handle.join();
+        }).await;
     }
 
     #[tokio::test]
@@ -662,5 +791,31 @@ mod tests {
             .unwrap();
 
         assert_eq!(status.online, false);
+    }
+
+    #[tokio::test]
+    #[ignore] // This is an integration test - run with `cargo test -- --ignored`
+    async fn test_real_server_mc_frostdev_io() {
+        // Test against the actual production server
+        let status = ping_server("mc.frostdev.io:25565")
+            .await
+            .unwrap();
+
+        // Server should respond (even if offline, we should get a valid response)
+        eprintln!("Server status: {:?}", status);
+        eprintln!("Online: {}", status.online);
+        eprintln!("Players: {:?}/{:?}", status.player_count, status.max_players);
+        eprintln!("Version: {:?}", status.version);
+        eprintln!("MOTD: {:?}", status.motd);
+        
+        if status.online {
+            eprintln!("Player list:");
+            for player in &status.players {
+                eprintln!("  - {} ({})", player.name, player.id);
+            }
+        }
+        
+        // Just verify we got a response without IndexOutOfBoundsException
+        assert!(status.motd.is_some() || status.online);
     }
 }

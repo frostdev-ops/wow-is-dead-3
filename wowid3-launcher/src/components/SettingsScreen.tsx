@@ -8,33 +8,23 @@ import { VersionSelector, InstallProgress } from './installer';
 import { useModpack } from '../hooks/useModpack';
 
 export default function SettingsScreen() {
-  const { gameDirectory, ramAllocation, serverAddress, manifestUrl, keepLauncherOpen, setGameDirectory, setRamAllocation, setServerAddress, setManifestUrl, setKeepLauncherOpen } = useSettingsStore();
+  const { 
+    gameDirectory, 
+    ramAllocation, 
+    serverAddress, 
+    manifestUrl, 
+    keepLauncherOpen, 
+    setGameDirectory, 
+    setRamAllocation, 
+    setServerAddress, 
+    setManifestUrl, 
+    setKeepLauncherOpen 
+  } = useSettingsStore();
+  
   const { addToast } = useToast();
   const { downloadProgress, error, verifyAndRepair } = useModpack();
 
-  const [tempGameDir, setTempGameDir] = useState(gameDirectory);
-  const [tempRam, setTempRam] = useState(ramAllocation);
-  const [tempServerAddr, setTempServerAddr] = useState(serverAddress);
-  const [tempManifestUrl, setTempManifestUrl] = useState(manifestUrl);
-  const [tempKeepLauncherOpen, setTempKeepLauncherOpen] = useState(keepLauncherOpen);
   const [isRepairingInProgress, setIsRepairingInProgress] = useState(false);
-
-  const handleSave = () => {
-    setGameDirectory(tempGameDir);
-    setRamAllocation(tempRam);
-    setServerAddress(tempServerAddr);
-    setManifestUrl(tempManifestUrl);
-    setKeepLauncherOpen(tempKeepLauncherOpen);
-    addToast('Settings saved successfully', 'success');
-  };
-
-  const handleReset = () => {
-    setTempGameDir(gameDirectory);
-    setTempRam(ramAllocation);
-    setTempServerAddr(serverAddress);
-    setTempManifestUrl(manifestUrl);
-    setTempKeepLauncherOpen(keepLauncherOpen);
-  };
 
   const handleVerifyAndRepair = async () => {
     try {
@@ -83,29 +73,32 @@ export default function SettingsScreen() {
           <div className="space-y-4">
             <Input
               label="Game Directory"
-              value={tempGameDir}
-              onChange={(e) => setTempGameDir(e.target.value)}
+              value={gameDirectory}
+              onChange={(e) => setGameDirectory(e.target.value)}
               placeholder="/path/to/game"
               helperText="Where the game will be installed"
             />
             <div>
               <label className="block text-sm font-semibold mb-2" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
-                RAM Allocation: {tempRam}MB
+                RAM Allocation: {ramAllocation}MB
               </label>
               <input
                 type="range"
                 min="2048"
-                max="16384"
+                max="65536"
                 step="512"
-                value={tempRam}
-                onChange={(e) => setTempRam(parseInt(e.target.value))}
-                className="w-full"
+                value={ramAllocation}
+                onChange={(e) => setRamAllocation(parseInt(e.target.value))}
+                className="w-full block"
                 style={{
                   accentColor: '#FFD700',
+                  width: '100%',
+                  padding: 0,
+                  margin: 0,
                 }}
               />
               <p className="text-xs mt-1" style={{ color: '#c6ebdaff' }}>
-                Recommended: 4096-8192MB
+                Recommended: 4096-16384MB
               </p>
             </div>
           </div>
@@ -117,8 +110,8 @@ export default function SettingsScreen() {
           <div className="space-y-4">
             <Input
               label="Server Address"
-              value={tempServerAddr}
-              onChange={(e) => setTempServerAddr(e.target.value)}
+              value={serverAddress}
+              onChange={(e) => setServerAddress(e.target.value)}
               placeholder="play.example.com:25565"
               helperText="Default server to connect to"
             />
@@ -131,8 +124,8 @@ export default function SettingsScreen() {
           <div className="space-y-4">
             <Input
               label="Manifest URL"
-              value={tempManifestUrl}
-              onChange={(e) => setTempManifestUrl(e.target.value)}
+              value={manifestUrl}
+              onChange={(e) => setManifestUrl(e.target.value)}
               placeholder="https://example.com/manifest.json"
               helperText="URL to the modpack manifest file"
             />
@@ -147,8 +140,8 @@ export default function SettingsScreen() {
               <input
                 type="checkbox"
                 id="keepLauncherOpen"
-                checked={tempKeepLauncherOpen}
-                onChange={(e) => setTempKeepLauncherOpen(e.target.checked)}
+                checked={keepLauncherOpen}
+                onChange={(e) => setKeepLauncherOpen(e.target.checked)}
                 className="w-5 h-5 rounded cursor-pointer"
                 style={{ accentColor: '#FFD700' }}
               />
@@ -225,16 +218,6 @@ export default function SettingsScreen() {
             <VersionSelector />
             <InstallProgress />
           </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex gap-3 justify-end">
-          <Button variant="outline" onClick={handleReset}>
-            Reset
-          </Button>
-          <Button variant="primary" onClick={handleSave}>
-            Save Settings
-          </Button>
         </div>
       </div>
     </div>

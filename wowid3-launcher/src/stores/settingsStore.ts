@@ -53,7 +53,7 @@ export const useSettingsStore = create<SettingsState>()(
     (set, get) => ({
       // Defaults
       javaPath: null, // Will use bundled Java
-      ramAllocation: 12288, // 12GB default
+      ramAllocation: 16384, // 16GB default
       gameDirectory: '', // Will be set by initializeGameDirectory()
       serverAddress: 'mc.frostdev.io:25565',
       _defaultGameDirectoryFetched: false,

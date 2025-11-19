@@ -163,6 +163,10 @@ export const launchGameWithMetadata = async (config: LaunchConfig, versionId: st
   return await invoke<string>('cmd_launch_game_with_metadata', { config, versionId });
 };
 
+export const isGameRunning = async (): Promise<boolean> => {
+  return await invoke<boolean>('cmd_is_game_running');
+};
+
 // Audio commands
 export const getCachedAudio = async (): Promise<string | null> => {
   return await invoke<string | null>('cmd_get_cached_audio');

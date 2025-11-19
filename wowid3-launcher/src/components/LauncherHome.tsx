@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth, useModpack, useServer, useDiscord, useMinecraftInstaller } from '../hooks';
-import { launchGameWithMetadata } from '../hooks/useTauriCommands';
+import { launchGameWithMetadata, isGameRunning } from '../hooks/useTauriCommands';
 import { useSettingsStore } from '../stores';
 import { useAudioStore } from '../stores/audioStore';
 import { useUIStore } from '../stores/uiStore';
@@ -30,6 +30,7 @@ export default function LauncherHome() {
   const { isConnected: discordConnected, isConnecting: discordConnecting, error: discordError, setPresence, clearPresence, connect: connectDiscord } = useDiscord();
   const { versionId, isInstalled: minecraftInstalled } = useMinecraftInstaller();
   const [isLaunching, setIsLaunching] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [showChangelog, setShowChangelog] = useState(false);
   const [deviceCodeInfo, setDeviceCodeInfo] = useState<DeviceCodeInfo | null>(null);
   const hasCheckedForModpack = useRef(false);
@@ -186,6 +187,7 @@ export default function LauncherHome() {
     const unlistenExit = listen<{exit_code: number; crashed: boolean}>('minecraft-exit', async (event) => {
       console.log('[Minecraft] Process exited with code:', event.payload.exit_code);
       setIsLaunching(false);
+      setIsPlaying(false);
 
       // Close log viewer (but keep it visible if keepLauncherOpen is true, for debugging)
       if (!keepLauncherOpen) {
@@ -227,6 +229,11 @@ export default function LauncherHome() {
       unlistenCrash.then(f => f());
     };
   }, [discordConnected, clearPresence]);
+
+  // Check if game is already running on mount
+  useEffect(() => {
+    isGameRunning().then(setIsPlaying);
+  }, []);
 
   const handlePlayClick = async () => {
     console.log('[UI] Play button clicked. isAuthenticated:', isAuthenticated, 'user:', user);
@@ -316,8 +323,10 @@ export default function LauncherHome() {
         access_token: user.access_token,
       }, versionId);
 
-      // Note: isLaunching is now cleared by minecraft-exit event
+      // Note: isLaunching is now cleared by minecraft-exit event, but we clear it here to switch to "Playing" state
       // Discord presence is also cleared by minecraft-exit event
+      setIsLaunching(false);
+      setIsPlaying(true);
     } catch (error) {
       console.error('Failed to launch game:', error);
       addToast(`Failed to launch game: ${error}`, 'error');
@@ -559,7 +568,7 @@ export default function LauncherHome() {
               >
                 <motion.button
                   onClick={handlePlayClick}
-                  disabled={isLaunching || isDownloading || authLoading}
+                  disabled={isLaunching || isDownloading || authLoading || isPlaying}
                   className="btn-primary text-2xl py-8 px-16 disabled:opacity-50 disabled:cursor-not-allowed btn-gradient-border"
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
@@ -567,10 +576,11 @@ export default function LauncherHome() {
                 >
                   {authLoading && 'Authenticating...'}
                   {!authLoading && isLaunching && 'Launching...'}
+                  {!authLoading && !isLaunching && isPlaying && 'Playing!'}
                   {!authLoading && isDownloading && 'Updating...'}
-                  {!authLoading && !isLaunching && !isDownloading && !isAuthenticated && 'Login'}
-                  {!authLoading && !isLaunching && !isDownloading && isAuthenticated && updateAvailable && 'Update'}
-                  {!authLoading && !isLaunching && !isDownloading && isAuthenticated && !updateAvailable && 'PLAY'}
+                  {!authLoading && !isLaunching && !isDownloading && !isPlaying && !isAuthenticated && 'Login'}
+                  {!authLoading && !isLaunching && !isDownloading && !isPlaying && isAuthenticated && updateAvailable && 'Update'}
+                  {!authLoading && !isLaunching && !isDownloading && !isPlaying && isAuthenticated && !updateAvailable && 'PLAY'}
                 </motion.button>
               </motion.div>
             </motion.div>

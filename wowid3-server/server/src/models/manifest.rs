@@ -17,6 +17,8 @@ pub struct Manifest {
     pub fabric_loader: String,
     pub files: Vec<ManifestFile>,
     pub changelog: String,
+    #[serde(default)]
+    pub ignore_patterns: Vec<String>,
 }
 
 impl Manifest {
@@ -26,6 +28,7 @@ impl Manifest {
         minecraft_version: String,
         fabric_loader: String,
         changelog: String,
+        ignore_patterns: Vec<String>,
     ) -> Self {
         Self {
             version,
@@ -33,6 +36,7 @@ impl Manifest {
             fabric_loader,
             files: Vec::new(),
             changelog,
+            ignore_patterns,
         }
     }
 

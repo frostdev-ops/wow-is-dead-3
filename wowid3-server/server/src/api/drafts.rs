@@ -34,7 +34,7 @@ pub async fn create_draft(
         let upload_dir = state.config.uploads_path().join(&upload_id);
         if upload_dir.exists() {
             let files =
-                scan_upload_files(&upload_dir, &state.config.base_url, &draft.id.to_string())
+                scan_upload_files(&upload_dir, &state.config.base_url, &draft.id.to_string(), None)
                     .await?;
             let updated_draft =
                 storage::add_files_to_draft(&state.config.storage_path(), draft.id, files).await?;
@@ -145,14 +145,34 @@ pub async fn add_files(
     }
 
     // Scan files from upload
-    let files = scan_upload_files(&upload_dir, &state.config.base_url, &id.to_string()).await?;
+    let target_path = request.target_path.as_deref();
+    let files = scan_upload_files(&upload_dir, &state.config.base_url, &id.to_string(), target_path).await?;
 
     // Add to draft
     let draft = storage::add_files_to_draft(&state.config.storage_path(), id, files).await?;
 
     // Copy files to draft directory
     let draft_files_dir = storage::get_draft_files_dir(&state.config.storage_path(), id);
-    copy_dir_all(&upload_dir, &draft_files_dir).await?;
+    
+    // Determine destination directory
+    let dest_dir = if let Some(path) = target_path {
+        let path = path.trim_matches('/');
+        if path.is_empty() {
+            draft_files_dir
+        } else {
+            let joined = draft_files_dir.join(path);
+            // Security check: ensure we don't escape draft directory
+            // Since joined path might not exist, we check components
+            if path.contains("..") {
+                return Err(AppError::BadRequest("Invalid target path".to_string()));
+            }
+            joined
+        }
+    } else {
+        draft_files_dir
+    };
+
+    copy_dir_all(&upload_dir, &dest_dir).await?;
 
     Ok(Json(draft))
 }
@@ -209,16 +229,11 @@ pub async fn generate_changelog_for_draft(
 ) -> Result<Json<GeneratedChangelog>, AppError> {
     let draft = storage::read_draft(&state.config.storage_path(), id).await?;
 
-    // Get previous version files
-    let versions = storage::manifest::list_versions(&state.config).await?;
-    let previous_files = if let Some(prev_version) = versions.first() {
-        storage::manifest::read_manifest(&state.config, prev_version)
-            .await
-            .ok()
-            .map(|m| m.files)
-    } else {
-        None
-    };
+    // Get the latest release manifest for comparison
+    let previous_files = storage::manifest::read_latest_manifest(&state.config)
+        .await
+        .ok()
+        .map(|m| m.files);
 
     let changelog =
         generate_changelog(&draft.files, previous_files.as_ref().map(|v| v.as_slice()))?;
@@ -828,6 +843,7 @@ async fn scan_upload_files(
     upload_dir: &PathBuf,
     base_url: &str,
     draft_id: &str,
+    target_path: Option<&str>,
 ) -> Result<Vec<DraftFile>, AppError> {
     let mut files = Vec::new();
 
@@ -844,6 +860,18 @@ async fn scan_upload_files(
         let relative_str = relative_path
             .to_str()
             .ok_or_else(|| AppError::Internal(anyhow::anyhow!("Invalid path encoding")))?;
+        let relative_str = relative_str.replace('\\', "/");
+
+        let final_path = if let Some(prefix) = target_path {
+            let prefix = prefix.trim_matches('/');
+            if prefix.is_empty() {
+                relative_str
+            } else {
+                format!("{}/{}", prefix, relative_str)
+            }
+        } else {
+            relative_str.clone()
+        };
 
         // Calculate checksum
         let data = fs::read(path)
@@ -854,10 +882,10 @@ async fn scan_upload_files(
         let sha256 = format!("{:x}", hasher.finalize());
 
         files.push(DraftFile {
-            path: relative_str.to_string(),
+            path: final_path.clone(),
             url: Some(format!(
                 "{}/files/draft-{}/{}",
-                base_url, draft_id, relative_str
+                base_url, draft_id, final_path
             )),
             sha256,
             size: data.len() as u64,
@@ -913,6 +941,11 @@ async fn scan_directory_files(dir: &PathBuf) -> Result<Vec<DraftFile>, AppError>
             .to_str()
             .ok_or_else(|| AppError::Internal(anyhow::anyhow!("Invalid path encoding")))?;
         let relative_str = relative_str.replace('\\', "/");
+
+        // Skip manifest.json - it's generated, not part of the modpack files
+        if relative_str == "manifest.json" {
+            continue;
+        }
 
         // Calculate fresh checksum
         let data = fs::read(path)
