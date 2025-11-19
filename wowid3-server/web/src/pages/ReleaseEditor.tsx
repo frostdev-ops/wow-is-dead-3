@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useDrafts } from '../hooks/useDrafts';
 import { useReleaseStore } from '../stores/releaseStore';
 import { Save, AlertCircle, ArrowLeft, FileText, Settings, BookOpen, CheckCircle } from 'lucide-react';
@@ -117,7 +118,7 @@ export default function ReleaseEditor() {
                   {currentDraft.version || 'New Release'}
                 </h1>
                 <p className="text-sm text-muted-foreground flex items-center gap-2">
-                  <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-500 text-xs font-medium rounded">DRAFT</span>
+                  <span className="px-2 py-0.5 bg-warning/20 text-warning text-xs font-medium rounded">DRAFT</span>
                   <span>•</span>
                   <span>Created {formatDistanceToNow(new Date(currentDraft.created_at), { addSuffix: true })}</span>
                 </p>
@@ -127,14 +128,14 @@ export default function ReleaseEditor() {
             {/* Auto-save status */}
             <div className="flex items-center gap-3">
               {editorState.hasUnsavedChanges ? (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-500/20 text-yellow-500 rounded-lg">
-                  <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-warning/20 text-warning rounded-lg">
+                  <div className="w-2 h-2 bg-warning rounded-full animate-pulse"></div>
                   <Save className="w-4 h-4" />
                   <span className="text-sm font-medium">Saving...</span>
                 </div>
               ) : lastSaved ? (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-green-500/20 text-green-500 rounded-lg">
-                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-success/20 text-success rounded-lg">
+                  <div className="w-2 h-2 bg-success rounded-full"></div>
                   <Save className="w-4 h-4" />
                   <span className="text-sm font-medium">
                     Saved {formatDistanceToNow(lastSaved, { addSuffix: true })}
@@ -143,7 +144,7 @@ export default function ReleaseEditor() {
               ) : null}
 
               {hasErrors && (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-red-500/20 text-red-500 rounded-lg">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-destructive/20 text-destructive rounded-lg">
                   <AlertCircle className="w-4 h-4" />
                   <span className="text-sm font-medium">Validation errors</span>
                 </div>
@@ -158,28 +159,54 @@ export default function ReleaseEditor() {
               const isActive = editorState.currentTab === tab.id;
 
               return (
-                <button
+                <motion.button
                   key={tab.id}
                   onClick={() => setCurrentTab(tab.id)}
-                  className={`group relative px-5 py-2.5 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 ${
+                  whileHover={!isActive ? { scale: 1.02, y: -1, backgroundColor: 'var(--accent)' } : {}}
+                  whileTap={{ scale: 0.98 }}
+                  className={`group relative px-5 py-2.5 rounded-lg font-medium flex items-center gap-2 ${
                     isActive
                       ? 'bg-primary text-primary-foreground shadow-lg'
-                      : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                      : 'bg-muted text-muted-foreground'
                   }`}
+                  transition={{ duration: 0.15 }}
+                  style={{ willChange: 'transform, background-color' }}
                 >
-                  <span className={isActive ? 'text-primary-foreground' : 'text-muted-foreground group-hover:text-foreground'}>
+                  <motion.span
+                    className={isActive ? 'text-primary-foreground' : 'text-muted-foreground'}
+                    animate={{
+                      color: isActive ? 'var(--primary-foreground)' : 'var(--muted-foreground)',
+                      scale: isActive ? 1.05 : 1
+                    }}
+                    transition={{ duration: 0.15 }}
+                  >
                     {tab.icon}
-                  </span>
-                  <span>{tab.label}</span>
+                  </motion.span>
+                  <motion.span
+                    animate={{
+                      opacity: isActive ? 1 : 0.8
+                    }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    {tab.label}
+                  </motion.span>
                   {tabErrors.length > 0 && (
-                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-destructive text-destructive-foreground text-xs font-bold rounded-full flex items-center justify-center shadow-lg">
+                    <motion.span
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      className="absolute -top-1 -right-1 w-5 h-5 bg-destructive text-destructive-foreground text-xs font-bold rounded-full flex items-center justify-center shadow-lg"
+                    >
                       {tabErrors.length}
-                    </span>
+                    </motion.span>
                   )}
                   {isActive && (
-                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary-foreground/30 rounded-full"></div>
+                    <motion.div
+                      layoutId="activeTab"
+                      className="absolute bottom-0 left-0 right-0 h-1 bg-primary-foreground/30 rounded-full"
+                      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                    />
                   )}
-                </button>
+                </motion.button>
               );
             })}
           </div>
@@ -188,23 +215,19 @@ export default function ReleaseEditor() {
 
       {/* Tab content */}
       <div className="flex-1 overflow-auto">
-        <div className="animate-[fadeIn_0.3s_ease-out]">
-          {renderTab()}
-        </div>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={editorState.currentTab}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            style={{ willChange: 'opacity, transform' }}
+          >
+            {renderTab()}
+          </motion.div>
+        </AnimatePresence>
       </div>
-
-      <style>{`
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-      `}</style>
     </div>
   );
 }

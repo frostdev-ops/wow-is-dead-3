@@ -100,11 +100,11 @@ export default function ReviewTab({ draft }: ReviewTabProps) {
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       {/* Validation status */}
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="bg-card rounded-lg border border-border shadow-sm p-6">
         <h2 className="text-xl font-bold mb-4">Validation Status</h2>
 
         {validation.isValid ? (
-          <div className="flex items-center gap-3 text-green-700 bg-green-50 px-4 py-3 rounded">
+          <div className="flex items-center gap-3 text-success bg-success/10 px-4 py-3 rounded border border-success/30">
             <CheckCircle className="w-5 h-5" />
             <span className="font-medium">All checks passed! Ready to publish.</span>
           </div>
@@ -113,7 +113,7 @@ export default function ReviewTab({ draft }: ReviewTabProps) {
             {validation.errors.map((error, i) => (
               <div
                 key={i}
-                className="flex items-center gap-3 text-red-700 bg-red-50 px-4 py-3 rounded"
+                className="flex items-center gap-3 text-destructive bg-destructive/10 px-4 py-3 rounded border border-destructive/30"
               >
                 <XCircle className="w-5 h-5 flex-shrink-0" />
                 <span>{error}</span>
@@ -127,7 +127,7 @@ export default function ReviewTab({ draft }: ReviewTabProps) {
             {validation.warnings.map((warning, i) => (
               <div
                 key={i}
-                className="flex items-center gap-3 text-yellow-700 bg-yellow-50 px-4 py-3 rounded"
+                className="flex items-center gap-3 text-warning bg-warning/10 px-4 py-3 rounded border border-warning/30"
               >
                 <AlertCircle className="w-5 h-5 flex-shrink-0" />
                 <span>{warning}</span>
@@ -138,54 +138,54 @@ export default function ReviewTab({ draft }: ReviewTabProps) {
       </div>
 
       {/* Metadata summary */}
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="bg-card rounded-lg border border-border shadow-sm p-6">
         <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
           <Package className="w-5 h-5" />
           Release Metadata
         </h2>
         <div className="grid grid-cols-3 gap-4">
           <div>
-            <p className="text-sm text-gray-600 mb-1">Version</p>
+            <p className="text-sm text-muted-foreground mb-1">Version</p>
             <p className="text-lg font-bold">{draft.version || '(not set)'}</p>
           </div>
           <div>
-            <p className="text-sm text-gray-600 mb-1">Minecraft</p>
+            <p className="text-sm text-muted-foreground mb-1">Minecraft</p>
             <p className="text-lg font-bold">{draft.minecraft_version || '(not set)'}</p>
           </div>
           <div>
-            <p className="text-sm text-gray-600 mb-1">Fabric Loader</p>
+            <p className="text-sm text-muted-foreground mb-1">Fabric Loader</p>
             <p className="text-lg font-bold">{draft.fabric_loader || '(not set)'}</p>
           </div>
         </div>
       </div>
 
       {/* Files summary */}
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="bg-card rounded-lg border border-border shadow-sm p-6">
         <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
           <FileText className="w-5 h-5" />
           Files ({draft.files.length})
         </h2>
         <div className="mb-4">
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-muted-foreground">
             Total size: <span className="font-bold">{formatSize(totalSize)}</span>
           </p>
         </div>
-        <div className="max-h-64 overflow-auto border rounded">
+        <div className="max-h-64 overflow-auto border border-border rounded-lg">
           {draft.files.length === 0 ? (
-            <p className="p-4 text-center text-gray-500">No files</p>
+            <p className="p-4 text-center text-muted-foreground">No files</p>
           ) : (
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 sticky top-0">
+              <thead className="bg-muted sticky top-0">
                 <tr>
                   <th className="text-left px-4 py-2 font-medium">File</th>
                   <th className="text-right px-4 py-2 font-medium">Size</th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
+              <tbody className="divide-y divide-border">
                 {draft.files.map((file) => (
-                  <tr key={file.path} className="hover:bg-gray-50">
+                  <tr key={file.path} className="hover:bg-muted/50">
                     <td className="px-4 py-2 font-mono text-xs">{file.path}</td>
-                    <td className="px-4 py-2 text-right text-gray-600">
+                    <td className="px-4 py-2 text-right text-muted-foreground">
                       {formatSize(file.size)}
                     </td>
                   </tr>
@@ -197,14 +197,14 @@ export default function ReviewTab({ draft }: ReviewTabProps) {
       </div>
 
       {/* Changelog preview */}
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="bg-card rounded-lg border border-border shadow-sm p-6">
         <h2 className="text-xl font-bold mb-4">Changelog</h2>
         {draft.changelog ? (
-          <div className="prose prose-sm max-w-none border rounded p-4 bg-gray-50">
+          <div className="prose prose-sm max-w-none border border-border rounded-lg p-4 bg-muted/20">
             <ReactMarkdown>{draft.changelog}</ReactMarkdown>
           </div>
         ) : (
-          <p className="text-center py-8 text-gray-500">No changelog</p>
+          <p className="text-center py-8 text-muted-foreground">No changelog</p>
         )}
       </div>
 
@@ -212,14 +212,14 @@ export default function ReviewTab({ draft }: ReviewTabProps) {
       <div className="flex justify-end gap-4">
         <button
           onClick={() => navigate('/releases')}
-          className="px-6 py-3 border border-gray-300 rounded hover:bg-gray-50"
+          className="px-6 py-3 border border-border rounded-lg hover:bg-accent transition-colors"
         >
           Cancel
         </button>
         <button
           onClick={handlePublish}
           disabled={!validation.isValid || publishing || loading}
-          className="px-6 py-3 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
         >
           <Upload className="w-5 h-5" />
           {publishing ? 'Publishing...' : 'Publish Release'}

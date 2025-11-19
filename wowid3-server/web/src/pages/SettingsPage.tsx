@@ -3,6 +3,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useBlacklistQuery, useUpdateBlacklistMutation } from '@/hooks/queries';
 import { Plus, Trash2, CheckCircle, AlertCircle } from 'lucide-react';
+import { PageTransition } from '@/components/PageTransition';
 
 export default function SettingsPage() {
   const blacklistQuery = useBlacklistQuery();
@@ -44,8 +45,9 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-2xl">
-      <Card className="p-6">
+    <PageTransition>
+      <div className="p-6 space-y-6 max-w-2xl">
+        <Card className="p-6">
         <h2 className="text-2xl font-bold mb-2">Blacklist Settings</h2>
         <p className="text-muted-foreground mb-6">
           Configure file patterns to exclude from modpack updates. These files won't be included in manifest generation.
@@ -55,19 +57,19 @@ export default function SettingsPage() {
           <div
             className={`mb-6 p-4 rounded-lg flex gap-3 ${
               message.type === 'success'
-                ? 'bg-green-50 border border-green-200'
+                ? 'bg-success/10 border border-success/30'
                 : 'bg-destructive/10 border border-destructive/30'
             }`}
           >
             {message.type === 'success' ? (
-              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+              <CheckCircle className="w-5 h-5 text-success flex-shrink-0 mt-0.5" />
             ) : (
               <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
             )}
             <p
               className={
                 message.type === 'success'
-                  ? 'text-green-900'
+                  ? 'text-success'
                   : 'text-destructive'
               }
             >
@@ -147,23 +149,24 @@ export default function SettingsPage() {
       </Card>
 
       {/* Help Section */}
-      <Card className="p-6 bg-blue-50 border-blue-200">
+      <Card className="p-6 bg-muted/30 border-border">
         <h3 className="font-semibold mb-3">Common Patterns</h3>
         <div className="space-y-2 text-sm">
           <p>
-            <code className="bg-white px-2 py-1 rounded">*.txt</code> - Exclude all text files
+            <code className="bg-background px-2 py-1 rounded">*.txt</code> - Exclude all text files
           </p>
           <p>
-            <code className="bg-white px-2 py-1 rounded">config/**</code> - Exclude entire config directory
+            <code className="bg-background px-2 py-1 rounded">config/**</code> - Exclude entire config directory
           </p>
           <p>
-            <code className="bg-white px-2 py-1 rounded">saves/**</code> - Exclude player save data
+            <code className="bg-background px-2 py-1 rounded">saves/**</code> - Exclude player save data
           </p>
           <p>
-            <code className="bg-white px-2 py-1 rounded">*.json</code> - Exclude all JSON files
+            <code className="bg-background px-2 py-1 rounded">*.json</code> - Exclude all JSON files
           </p>
         </div>
       </Card>
-    </div>
+      </div>
+    </PageTransition>
   );
 }
