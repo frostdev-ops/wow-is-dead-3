@@ -11,7 +11,7 @@ use modules::updater::{check_for_updates, get_installed_version, install_modpack
 use modules::audio::{get_cached_audio, download_and_cache_audio, read_cached_audio_bytes, clear_audio_cache};
 use modules::java_runtime::{get_cached_java, download_and_cache_java};
 use modules::logger::initialize_logger;
-use modules::log_reader::{read_latest_log, get_log_path, get_new_log_lines};
+use modules::log_reader::{read_latest_log, get_log_path, get_new_log_lines, read_log_tail, read_log_from_offset, read_log_before_offset, LogResult};
 use modules::paths::{get_default_game_directory, resolve_game_directory, validate_game_directory};
 use serde::Serialize;
 use std::path::PathBuf;
@@ -590,6 +590,21 @@ fn cmd_get_new_log_lines(game_dir: String, known_line_count: usize) -> Result<Ve
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn cmd_read_log_tail(game_dir: String, lines: usize) -> Result<LogResult, String> {
+    read_log_tail(&game_dir, lines).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn cmd_read_log_from_offset(game_dir: String, start_offset: u64) -> Result<LogResult, String> {
+    read_log_from_offset(&game_dir, start_offset).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn cmd_read_log_before_offset(game_dir: String, end_offset: u64, lines: usize) -> Result<LogResult, String> {
+    read_log_before_offset(&game_dir, end_offset, lines).map_err(|e| e.to_string())
+}
+
 // Path Management Commands
 #[tauri::command]
 fn cmd_get_default_game_directory(app: AppHandle) -> Result<String, String> {
@@ -662,6 +677,9 @@ pub fn run() {
             cmd_read_latest_log,
             cmd_get_log_path,
             cmd_get_new_log_lines,
+            cmd_read_log_tail,
+            cmd_read_log_from_offset,
+            cmd_read_log_before_offset,
             cmd_get_default_game_directory,
             cmd_resolve_game_directory,
             cmd_validate_game_directory,

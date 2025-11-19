@@ -36,10 +36,55 @@ fi
 chmod +x "$ROOT_DIR/src-tauri/wowid3-launcher.sh"
 
 echo "Building Linux AppImage..."
-npm run tauri build -- --bundles appimage
+# Build AppImage - if it fails due to icon mismatch, fix AppDir and manually bundle
+LOG_FILE="/tmp/tauri-build-$$.log"
+if ! npm run tauri build -- --bundles appimage 2>&1 | tee "$LOG_FILE"; then
+    echo "Build failed, checking if AppDir was created..."
+    APPIMAGE_APPDIR="$ROOT_DIR/src-tauri/target/release/bundle/appimage/WOWID3Launcher.AppDir"
+    APPIMAGE_OUTPUT="$ROOT_DIR/src-tauri/target/release/bundle/appimage/WOWID3Launcher_0.1.0_amd64.AppImage"
+    if [[ -d "$APPIMAGE_APPDIR" ]]; then
+        echo "Fixing icon symlink issue in AppDir..."
+        cd "$APPIMAGE_APPDIR"
+        # Fix symlinks (icon name mismatch)
+        [[ -f WOWID3Launcher.png && ! -f wowid3-launcher.png ]] && ln -sf WOWID3Launcher.png wowid3-launcher.png
+        [[ -L .DirIcon ]] && rm -f .DirIcon && ln -sf WOWID3Launcher.png .DirIcon
+        [[ -L WOWID3Launcher.desktop ]] && rm -f WOWID3Launcher.desktop && ln -sf usr/share/applications/WOWID3Launcher.desktop WOWID3Launcher.desktop
+        
+        # Replace AppRun with our Wayland-compatible wrapper
+        if [[ -f "$ROOT_DIR/scripts/apprun-wrapper.sh" ]]; then
+            echo "Replacing AppRun with Wayland wrapper..."
+            mv AppRun AppRun.bin
+            cp "$ROOT_DIR/scripts/apprun-wrapper.sh" AppRun
+            chmod +x AppRun
+        else
+            echo "Warning: apprun-wrapper.sh not found, skipping AppRun replacement."
+        fi
+        
+        cd "$ROOT_DIR"
+        echo "Manually bundling AppImage with appimagetool..."
+        if command -v appimagetool >/dev/null 2>&1; then
+            appimagetool "$APPIMAGE_APPDIR" "$APPIMAGE_OUTPUT" || {
+                echo "Failed to create AppImage manually. Check appimagetool output above." >&2
+                exit 1
+            }
+            echo "AppImage created successfully: $APPIMAGE_OUTPUT"
+        else
+            echo "appimagetool not found. Install it to manually bundle AppImage." >&2
+            exit 1
+        fi
+    else
+        echo "AppDir not found. Original build error:" >&2
+        grep -i error "$LOG_FILE" | tail -5 || tail -10 "$LOG_FILE"
+        rm -f "$LOG_FILE"
+        exit 1
+    fi
+fi
+rm -f "$LOG_FILE"
 
 echo "Building Windows NSIS installer (target: $TARGET_TRIPLE)..."
-npm run tauri build -- --target "$TARGET_TRIPLE" --runner "$RUNNER_BIN" --bundles nsis
+# For Windows targets, NSIS is the default bundle type (configured in tauri.conf.json)
+# The --bundles flag only works for Linux bundles, so omit it for Windows builds
+npm run tauri build -- --target "$TARGET_TRIPLE" --runner "$RUNNER_BIN"
 
 cat <<EOT
 Build complete.

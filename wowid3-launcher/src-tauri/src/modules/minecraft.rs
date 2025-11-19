@@ -6,7 +6,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
-use sysinfo::{System, Pid};
+use sysinfo::{System, Pid, ProcessesToUpdate};
 
 use super::game_installer::get_installed_version;
 use super::library_manager;
@@ -308,7 +308,9 @@ pub async fn is_game_running() -> bool {
         // This works on both Windows and Unix, and avoids spawning terminal windows
         let mut system = System::new();
         let sysinfo_pid = Pid::from(pid as usize);
-        system.refresh_process(sysinfo_pid);
+        // sysinfo 0.33+ uses refresh_processes instead of refresh_process
+        // Refresh all processes to check if the specific PID exists
+        system.refresh_processes(ProcessesToUpdate::All, true);
         system.process(sysinfo_pid).is_some()
     } else {
         false

@@ -13,6 +13,13 @@ interface LogLine {
   message?: string;
 }
 
+interface LogResult {
+  lines: string[];
+  start_offset: number;
+  end_offset: number;
+  total_size: number;
+}
+
 interface LogViewerModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -23,6 +30,7 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
   const [isScrolledToBottom, setIsScrolledToBottom] = useState(true);
   const [isGameRunning, setIsGameRunning] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [isStoppingGame, setIsStoppingGame] = useState(false);
   const [isKillingGame, setIsKillingGame] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -34,6 +42,11 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const gameDir = useSettingsStore((state) => state.gameDirectory);
   const { addToast } = useToast();
+
+  // Track file offsets for efficient loading
+  const startOffsetRef = useRef<number>(0);
+  const endOffsetRef = useRef<number>(0);
+  const totalSizeRef = useRef<number>(0);
 
   // Available log levels
   const LOG_LEVELS = ['INFO', 'WARN', 'WARNING', 'ERROR', 'FATAL', 'DEBUG'];
@@ -172,55 +185,106 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
     );
   };
 
-  // Load initial logs
+  // Load initial logs (tail)
   const loadLogs = useCallback(async () => {
     try {
       console.log('[LogViewer] Loading logs...');
-      console.log('[LogViewer] gameDir value:', gameDir);
-      console.log('[LogViewer] gameDir type:', typeof gameDir);
-      console.log('[LogViewer] gameDir defined?', gameDir !== undefined && gameDir !== null);
-
+      
       if (!gameDir) {
         console.error('[LogViewer] gameDir is not set!');
         return;
       }
 
       setLoading(true);
-      const logLines = await invoke<string[]>('cmd_read_latest_log', {
+      // Use new efficient tail reading command
+      const result = await invoke<LogResult>('cmd_read_log_tail', {
         gameDir: gameDir,
         lines: 500,
       });
-      console.log('[LogViewer] Received log lines:', logLines?.length || 0);
-      if (logLines && logLines.length > 0) {
-        console.log('[LogViewer] First few lines:', logLines.slice(0, 3));
-      }
-      const parsedLogs = logLines.map(parseLogLine);
+      
+      console.log('[LogViewer] Received log result:', result.lines.length, 'lines');
+      
+      // Update offsets
+      startOffsetRef.current = result.start_offset;
+      endOffsetRef.current = result.end_offset;
+      totalSizeRef.current = result.total_size;
+      
+      const parsedLogs = result.lines.map(parseLogLine);
       logsRef.current = parsedLogs;
       setLogs(parsedLogs);
-      console.log('[LogViewer] Set logs state, count:', parsedLogs.length);
     } catch (error) {
       console.error('[LogViewer] Failed to load logs:', error);
-      console.error('[LogViewer] Error type:', typeof error);
-      console.error('[LogViewer] Error details:', JSON.stringify(error, null, 2));
       addToast(`Failed to load logs: ${error}`, 'error');
     } finally {
       setLoading(false);
     }
   }, [gameDir, addToast]);
 
+  // Load older logs (scroll up)
+  const loadOlderLogs = useCallback(async () => {
+    if (loadingMore || startOffsetRef.current <= 0 || !gameDir) return;
+    
+    try {
+      setLoadingMore(true);
+      console.log('[LogViewer] Loading older logs before offset:', startOffsetRef.current);
+      
+      const result = await invoke<LogResult>('cmd_read_log_before_offset', {
+        gameDir: gameDir,
+        endOffset: startOffsetRef.current,
+        lines: 500,
+      });
+      
+      if (result.lines.length > 0) {
+        console.log('[LogViewer] Loaded', result.lines.length, 'older lines');
+        
+        // Update start offset
+        startOffsetRef.current = result.start_offset;
+        
+        const parsedLogs = result.lines.map(parseLogLine);
+        
+        // Prepend to existing logs
+        const updatedLogs = [...parsedLogs, ...logsRef.current];
+        logsRef.current = updatedLogs;
+        setLogs(updatedLogs);
+        
+        // Maintain scroll position
+        // This is tricky in React, usually handled by layout effect or ref manipulation
+        // For now, we let the user scroll, but we might need to adjust scrollTop
+        if (logsContainerRef.current) {
+           // We need to adjust scroll position to prevent jumping
+           // But since we are prepending, the content height increases
+           // The browser might handle this or we might need to manually adjust
+           // Ideally we capture scrollHeight before update and adjust scrollTop after
+           const oldScrollHeight = logsContainerRef.current.scrollHeight;
+           const oldScrollTop = logsContainerRef.current.scrollTop;
+           
+           // We need to wait for render to update scroll position
+           requestAnimationFrame(() => {
+             if (logsContainerRef.current) {
+               const newScrollHeight = logsContainerRef.current.scrollHeight;
+               const heightDifference = newScrollHeight - oldScrollHeight;
+               logsContainerRef.current.scrollTop = oldScrollTop + heightDifference;
+             }
+           });
+        }
+      }
+    } catch (error) {
+      console.error('[LogViewer] Failed to load older logs:', error);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [gameDir, loadingMore]);
+
   // Check if game is running
   const checkGameStatus = useCallback(async () => {
     try {
-      console.log('[LogViewer] Checking game status...');
       const running = await invoke<boolean>('cmd_is_game_running');
-      console.log('[LogViewer] Game status result:', running);
       setIsGameRunning((prevRunning) => {
         if (prevRunning !== running) {
           console.log('[LogViewer] Game status CHANGED:', running ? 'running' : 'stopped');
         }
         return running;
       });
-      // Don't stop polling when game stops - we still want to show historical logs
     } catch (error) {
       console.error('[LogViewer] Failed to check game status:', error);
       setIsGameRunning(false);
@@ -230,7 +294,6 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
   // Poll for new logs
   const startLogPolling = useCallback(() => {
     if (logPollingRef.current) {
-      console.log('[LogViewer] Clearing existing polling interval');
       clearInterval(logPollingRef.current);
     }
 
@@ -240,25 +303,36 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
     logPollingRef.current = setInterval(async () => {
       pollCount++;
       try {
-        if (!gameDir) {
-          console.warn('[LogViewer] Poll #' + pollCount + ': gameDir not set, skipping');
-          return;
-        }
+        if (!gameDir) return;
 
-        const currentLineCount = logsRef.current.length;
-        console.log('[LogViewer] Poll #' + pollCount + ': Checking for new logs (known lines:', currentLineCount + ')');
-
-        const newLines = await invoke<string[]>('cmd_get_new_log_lines', {
+        // Use efficient offset-based polling
+        const result = await invoke<LogResult>('cmd_read_log_from_offset', {
           gameDir: gameDir,
-          knownLineCount: currentLineCount,
+          startOffset: endOffsetRef.current,
         });
 
-        console.log('[LogViewer] Poll #' + pollCount + ': Received', newLines?.length || 0, 'new lines');
-
-        if (newLines && newLines.length > 0) {
-          console.log('[LogViewer] Poll #' + pollCount + ': Adding new log lines to display');
-          const parsedNewLines = newLines.map(parseLogLine);
+        if (result.lines.length > 0) {
+          console.log('[LogViewer] Poll #' + pollCount + ': Received', result.lines.length, 'new lines');
+          
+          // Update end offset
+          endOffsetRef.current = result.end_offset;
+          totalSizeRef.current = result.total_size;
+          
+          const parsedNewLines = result.lines.map(parseLogLine);
           const updatedLogs = [...logsRef.current, ...parsedNewLines];
+          
+          // Limit total logs in memory if needed, but since we paginate upwards, 
+          // we might want to keep them or implement virtual scrolling.
+          // For now, let's keep them as user might want to see history they just scrolled through.
+          // But if it gets too large (> 5000 lines), we might want to trim from top if user is at bottom.
+          
+          if (updatedLogs.length > 5000 && isScrolledToBottom) {
+             // If we have too many logs and are at bottom, trim top to save memory
+             // But this breaks "scroll up" continuity if we trim what we just loaded.
+             // Let's just keep it simple for now. The main issue was loading 100MB at once.
+             // Appending small chunks is fine.
+          }
+          
           logsRef.current = updatedLogs;
           setLogs(updatedLogs);
         }
@@ -268,8 +342,8 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
       } catch (error) {
         console.error('[LogViewer] Poll #' + pollCount + ': Error polling logs:', error);
       }
-    }, 1000); // Increased to 1 second to reduce console spam
-  }, [gameDir, checkGameStatus]);
+    }, 1000);
+  }, [gameDir, checkGameStatus, isScrolledToBottom]);
 
   // Initialize on mount
   useEffect(() => {
@@ -277,6 +351,9 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
       // Clear logs when modal closes
       logsRef.current = [];
       setLogs([]);
+      startOffsetRef.current = 0;
+      endOffsetRef.current = 0;
+      
       // Reset filters
       setSearchTerm('');
       setSelectedLevels(new Set(LOG_LEVELS));
@@ -293,6 +370,8 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
     // Clear old logs and reload fresh
     logsRef.current = [];
     setLogs([]);
+    startOffsetRef.current = 0;
+    endOffsetRef.current = 0;
     setLoading(true);
 
     // Load logs
@@ -349,6 +428,11 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
     const isAtBottom =
       container.scrollHeight - container.scrollTop - container.clientHeight < 50;
     setIsScrolledToBottom(isAtBottom);
+    
+    // Detect scroll to top for infinite scrolling
+    if (container.scrollTop < 50 && !loadingMore && startOffsetRef.current > 0) {
+      loadOlderLogs();
+    }
   };
 
   // Stop game gracefully
@@ -525,6 +609,13 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
               className="bg-slate-950 overflow-y-auto px-4 py-3 space-y-0"
               style={{ maxHeight: 'calc(80vh - 240px)' }}
             >
+              {loadingMore && (
+                <div className="flex items-center justify-center py-2 text-slate-500 text-xs">
+                  <div className="animate-spin mr-2">◌</div>
+                  Loading older logs...
+                </div>
+              )}
+              
               {loading && logs.length === 0 ? (
                 <div className="flex items-center justify-center h-32 text-slate-400">
                   <div className="animate-spin">◌</div>
