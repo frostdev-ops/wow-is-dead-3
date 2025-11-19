@@ -23,28 +23,28 @@ export default function LoginPage() {
 
   return (
     <PageTransition variant="fade">
-      <div className="min-h-screen flex items-center justify-center bg-muted/20 p-4">
+      <div className="min-h-screen flex items-center justify-center p-4">
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.4, ease: 'easeOut' }}
         >
-          <Card className="w-full max-w-md shadow-2xl">
+          <Card className="w-full max-w-md shadow-2xl border-white/20 bg-card/60 backdrop-blur-xl">
             <div className="p-8">
               {/* Header */}
               <div className="text-center mb-8">
                 <div className="flex justify-center mb-4">
                   <motion.div
-                    className="w-14 h-14 bg-primary/10 rounded-lg flex items-center justify-center"
+                    className="w-16 h-16 bg-gradient-to-br from-primary to-purple-600 rounded-2xl flex items-center justify-center shadow-lg shadow-primary/30"
                     initial={{ rotate: -180, opacity: 0 }}
                     animate={{ rotate: 0, opacity: 1 }}
                     transition={{ duration: 0.5, delay: 0.2 }}
                   >
-                    <Lock className="w-7 h-7 text-primary" />
+                    <Lock className="w-8 h-8 text-white" />
                   </motion.div>
                 </div>
                 <motion.h1
-                  className="text-3xl font-bold mb-2"
+                  className="text-3xl font-bold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-white/70"
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3, delay: 0.3 }}
@@ -72,7 +72,7 @@ export default function LoginPage() {
                 {/* Error Alert */}
                 {loginMutation.isError && (
                   <motion.div
-                    className="p-4 bg-destructive/10 border border-destructive/30 rounded-lg flex gap-3"
+                    className="p-4 bg-destructive/10 border border-destructive/30 rounded-lg flex gap-3 backdrop-blur-sm"
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ duration: 0.3 }}
@@ -86,7 +86,7 @@ export default function LoginPage() {
 
                 {/* Password Input */}
                 <div className="space-y-2">
-                  <label htmlFor="password" className="block text-sm font-medium">
+                  <label htmlFor="password" className="block text-sm font-medium ml-1">
                     Admin Password
                   </label>
                   <input
@@ -95,7 +95,7 @@ export default function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Enter admin password"
-                    className="w-full px-4 py-2.5 border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-transparent transition-colors disabled:opacity-50"
+                    className="w-full px-4 py-3 border border-white/10 rounded-xl bg-black/5 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-transparent transition-all disabled:opacity-50 backdrop-blur-sm hover:bg-black/10 dark:hover:bg-white/10"
                     disabled={loginMutation.isPending}
                     autoFocus
                   />
@@ -105,7 +105,7 @@ export default function LoginPage() {
                 <Button
                   type="submit"
                   disabled={loginMutation.isPending || !password}
-                  className="w-full h-10 text-base"
+                  className="w-full h-11 text-base rounded-xl"
                   size="lg"
                 >
                   {loginMutation.isPending ? (
@@ -121,7 +121,7 @@ export default function LoginPage() {
 
               {/* Footer */}
               <motion.div
-                className="mt-8 pt-6 border-t text-center"
+                className="mt-8 pt-6 border-t border-white/10 text-center"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.3, delay: 0.6 }}

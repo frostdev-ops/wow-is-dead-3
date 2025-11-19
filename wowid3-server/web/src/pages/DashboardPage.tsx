@@ -16,16 +16,22 @@ export default function DashboardPage() {
       label: 'Active Releases',
       value: releases.length,
       icon: <Package className="w-6 h-6 text-primary" />,
+      color: "from-blue-500/20 to-blue-600/5",
+      border: "border-blue-500/20"
     },
     {
       label: 'Latest Version',
       value: releases[0]?.version || 'None',
-      icon: <FileText className="w-6 h-6 text-success" />,
+      icon: <FileText className="w-6 h-6 text-green-500" />,
+      color: "from-green-500/20 to-green-600/5",
+      border: "border-green-500/20"
     },
     {
       label: 'Blacklist Rules',
       value: blacklistPatterns.length,
-      icon: <AlertCircle className="w-6 h-6 text-warning" />,
+      icon: <AlertCircle className="w-6 h-6 text-orange-500" />,
+      color: "from-orange-500/20 to-orange-600/5",
+      border: "border-orange-500/20"
     },
   ];
 
@@ -41,7 +47,7 @@ export default function DashboardPage() {
         >
           {stats.map((stat, i) => (
             <motion.div key={i} variants={statsCardVariants}>
-              <Card className="p-6">
+              <Card className={`p-6 bg-gradient-to-br ${stat.color} ${stat.border} backdrop-blur-xl`}>
                 <motion.div
                   className="flex items-start justify-between"
                   whileHover={{ y: -2 }}
@@ -51,7 +57,9 @@ export default function DashboardPage() {
                     <p className="text-sm font-medium text-muted-foreground">{stat.label}</p>
                     <p className="text-3xl font-bold text-foreground">{stat.value}</p>
                   </div>
-                  {stat.icon}
+                  <div className="p-3 rounded-xl bg-white/10 backdrop-blur-md shadow-inner">
+                    {stat.icon}
+                  </div>
                 </motion.div>
               </Card>
             </motion.div>
@@ -74,8 +82,8 @@ export default function DashboardPage() {
                 <motion.div
                   key={release.version}
                   variants={itemVariants}
-                  className="flex items-center justify-between p-3 rounded-lg hover:bg-accent transition-colors"
-                  whileHover={{ x: 4 }}
+                  className="flex items-center justify-between p-3 rounded-xl hover:bg-white/5 border border-transparent hover:border-white/10 transition-all"
+                  whileHover={{ x: 4, backgroundColor: "rgba(255, 255, 255, 0.05)" }}
                   transition={{ duration: 0.2 }}
                 >
                   <div>
@@ -94,14 +102,14 @@ export default function DashboardPage() {
         </Card>
 
       {/* Quick Start */}
-      <Card className="p-6 bg-muted/30">
-        <h2 className="text-xl font-bold mb-2">Quick Start</h2>
+      <Card className="p-6 bg-gradient-to-br from-primary/10 via-purple-500/5 to-transparent border-primary/20">
+        <h2 className="text-xl font-bold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-primary to-purple-400">Quick Start</h2>
         <p className="text-muted-foreground mb-4">Get started by uploading modpack files and creating a new release.</p>
         <div className="space-y-2 text-sm">
-          <p>1. Go to <span className="font-semibold">Upload</span> to upload modpack files</p>
+          <p>1. Go to <span className="font-semibold text-foreground">Upload</span> to upload modpack files</p>
           <p>2. Create a new release with version and changelog</p>
-          <p>3. Manage existing releases in <span className="font-semibold">Releases</span></p>
-          <p>4. Configure blacklist patterns in <span className="font-semibold">Settings</span></p>
+          <p>3. Manage existing releases in <span className="font-semibold text-foreground">Releases</span></p>
+          <p>4. Configure blacklist patterns in <span className="font-semibold text-foreground">Settings</span></p>
         </div>
       </Card>
     </div>

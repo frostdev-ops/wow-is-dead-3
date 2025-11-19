@@ -3,7 +3,7 @@
 @layer theme {
   /* Light Mode (Default) */
   :root {
-    --color-background: 0 0% 100%;
+    --color-background: 210 40% 98%;
     --color-foreground: 222.2 84% 4.9%;
     --color-card: 0 0% 100%;
     --color-card-foreground: 222.2 84% 4.9%;
@@ -71,4 +71,32 @@ body {
   background-color: hsl(var(--color-background));
   color: hsl(var(--color-foreground));
   font-feature-settings: "rlig" 1, "calt" 1;
+  background-image: 
+    radial-gradient(at 0% 0%, hsla(253,16%,7%,0.1) 0, transparent 50%), 
+    radial-gradient(at 50% 0%, hsla(225,39%,30%,0.1) 0, transparent 50%), 
+    radial-gradient(at 100% 0%, hsla(339,49%,30%,0.1) 0, transparent 50%);
+  background-attachment: fixed;
+  background-size: cover;
+}
+
+html.dark body {
+  background-image: 
+    radial-gradient(at 0% 0%, hsla(253,16%,7%,0.15) 0, transparent 50%), 
+    radial-gradient(at 50% 0%, hsla(225,39%,30%,0.15) 0, transparent 50%), 
+    radial-gradient(at 100% 0%, hsla(339,49%,30%,0.15) 0, transparent 50%);
+}
+
+/* Glass Utilities */
+@layer utilities {
+  .glass {
+    @apply bg-[hsl(var(--color-background)/0.6)] backdrop-blur-lg border border-white/10 shadow-xl;
+  }
+  
+  .glass-card {
+    @apply bg-[hsl(var(--color-card)/0.4)] backdrop-blur-md border border-white/10 shadow-lg;
+  }
+  
+  .glass-panel {
+    @apply bg-[hsl(var(--color-background)/0.3)] backdrop-blur-xl border-r border-white/10;
+  }
 }

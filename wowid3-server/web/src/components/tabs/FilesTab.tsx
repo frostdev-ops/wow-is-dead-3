@@ -118,7 +118,8 @@ function FilesTab({ draft, onUpdate }: FilesTabProps) {
       const uploadResponse = await axios.post('/api/admin/upload', formData, {
         headers: {
           ...getAuthHeaders(),
-          'Content-Type': 'multipart/form-data',
+          // Note: Do NOT manually set Content-Type for FormData - axios handles it automatically
+          // Setting it manually breaks the multipart boundary
         },
         onUploadProgress: (progressEvent) => {
           if (progressEvent.total) {

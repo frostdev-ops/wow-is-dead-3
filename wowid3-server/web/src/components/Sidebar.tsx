@@ -8,6 +8,7 @@ import {
   FileText,
   Archive,
 } from 'lucide-react';
+import { motion, LayoutGroup } from 'framer-motion';
 
 interface NavItem {
   label: string;
@@ -63,36 +64,65 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="w-64 bg-card border-r flex flex-col">
+    <aside className="w-64 h-full glass-panel flex flex-col z-20">
       {/* Logo/Branding */}
-      <div className="h-16 flex items-center px-6 border-b">
-        <h2 className="text-xl font-bold text-primary">WID3 Admin</h2>
+      <div className="h-16 flex items-center px-6 border-b border-white/10">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded bg-gradient-to-br from-primary to-purple-500 flex items-center justify-center shadow-lg shadow-primary/20">
+             <span className="text-white font-bold">W</span>
+          </div>
+          <h2 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-white/70">Admin</h2>
+        </div>
       </div>
 
       {/* Navigation Links */}
-      <nav className="flex-1 px-4 py-6 space-y-2">
-        {navItems.map((item) => (
-          <button
-            key={item.path}
-            onClick={() => navigate(item.path)}
-            className={cn(
-              'w-full flex items-center gap-3 px-4 py-3 rounded-md transition-colors',
-              isActive(item.path)
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-            )}
-          >
-            {item.icon}
-            <span className="font-medium">{item.label}</span>
-          </button>
-        ))}
+      <nav className="flex-1 px-3 py-6 space-y-1">
+        <LayoutGroup>
+          {navItems.map((item) => {
+            const active = isActive(item.path);
+            return (
+              <button
+                key={item.path}
+                onClick={() => navigate(item.path)}
+                className={cn(
+                  'relative w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group overflow-hidden',
+                  active
+                    ? 'text-white shadow-lg shadow-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
+                )}
+              >
+                {active && (
+                  <motion.div
+                    layoutId="activeNav"
+                    className="absolute inset-0 bg-gradient-to-r from-primary to-indigo-600 rounded-xl -z-10"
+                    initial={false}
+                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                  />
+                )}
+                
+                <span className="relative z-10 flex items-center gap-3">
+                  {item.icon}
+                  <span className="font-medium">{item.label}</span>
+                </span>
+                
+                {/* Glow effect on hover for non-active items */}
+                {!active && (
+                  <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl" />
+                )}
+              </button>
+            );
+          })}
+        </LayoutGroup>
       </nav>
 
       {/* Footer Info */}
-      <div className="border-t px-4 py-4">
-        <div className="text-xs text-muted-foreground">
-          <p className="font-semibold">Modpack Server</p>
-          <p className="text-xs">Admin Panel v1.0</p>
+      <div className="border-t border-white/10 px-6 py-6 bg-black/20 backdrop-blur-sm">
+        <div className="text-xs text-muted-foreground space-y-1">
+          <p className="font-semibold text-foreground/80">Modpack Server</p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs opacity-70">v1.0.0</p>
+            <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>
+          </div>
         </div>
       </div>
     </aside>

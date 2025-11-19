@@ -49,9 +49,8 @@ export const useAdmin = () => {
         formData.append('files', file, file.webkitRelativePath || file.name);
       });
 
-      const response = await api.post('/admin/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const response = await api.post('/admin/upload', formData);
+      // Note: Do NOT set Content-Type for FormData - axios handles it automatically
       return response.data;
     } catch (err: any) {
       const message = err.response?.data?.error || 'Upload failed';
@@ -173,9 +172,8 @@ export const useAdmin = () => {
         formData.append('files', file, file.name);
       });
 
-      const response = await api.post('/admin/resources', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const response = await api.post('/admin/resources', formData);
+      // Note: Do NOT set Content-Type for FormData - axios handles it automatically
       return response.data;
     } catch (err: any) {
       const message = err.response?.data?.error || 'Resource pack upload failed';

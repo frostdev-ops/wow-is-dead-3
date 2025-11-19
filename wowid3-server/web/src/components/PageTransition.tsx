@@ -21,25 +21,26 @@ const pageVariants: Record<string, Variants> = {
   default: {
     initial: {
       opacity: 0,
-      y: 20,
-      scale: 0.98
+      y: 10,
+      scale: 0.99,
+      filter: 'blur(4px)'
     },
     animate: {
       opacity: 1,
       y: 0,
       scale: 1,
+      filter: 'blur(0px)',
       transition: {
-        duration: 0.3,
-        ease: 'easeOut',
-        opacity: { duration: 0.25 },
-        y: { duration: 0.3 },
-        scale: { duration: 0.3 }
+        duration: 0.4,
+        ease: [0.22, 1, 0.36, 1], // Custom bezier for "glass" feel
+        staggerChildren: 0.1
       }
     },
     exit: {
       opacity: 0,
       y: -10,
-      scale: 0.98,
+      scale: 0.99,
+      filter: 'blur(4px)',
       transition: {
         duration: 0.2,
         ease: 'easeIn'
@@ -49,19 +50,22 @@ const pageVariants: Record<string, Variants> = {
   fade: {
     initial: {
       opacity: 0,
-      scale: 0.95
+      scale: 0.96,
+      filter: 'blur(2px)'
     },
     animate: {
       opacity: 1,
       scale: 1,
+      filter: 'blur(0px)',
       transition: {
-        duration: 0.4,
+        duration: 0.5,
         ease: 'easeOut'
       }
     },
     exit: {
       opacity: 0,
-      scale: 0.95,
+      scale: 0.96,
+      filter: 'blur(2px)',
       transition: {
         duration: 0.2,
         ease: 'easeIn'
@@ -71,11 +75,13 @@ const pageVariants: Record<string, Variants> = {
   slide: {
     initial: {
       opacity: 0,
-      x: 20
+      x: 20,
+      filter: 'blur(2px)'
     },
     animate: {
       opacity: 1,
       x: 0,
+      filter: 'blur(0px)',
       transition: {
         duration: 0.3,
         ease: 'easeOut'
@@ -84,6 +90,7 @@ const pageVariants: Record<string, Variants> = {
     exit: {
       opacity: 0,
       x: -20,
+      filter: 'blur(2px)',
       transition: {
         duration: 0.2,
         ease: 'easeIn'
@@ -122,7 +129,7 @@ export function PageTransition({
       className={className}
       style={{
         // Performance optimization: hint browser about animated properties
-        willChange: 'opacity, transform',
+        willChange: 'opacity, transform, filter',
       }}
     >
       {children}

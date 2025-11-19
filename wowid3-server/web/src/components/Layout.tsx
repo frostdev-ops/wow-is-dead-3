@@ -31,23 +31,23 @@ export function Layout({ children }: LayoutProps) {
   };
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen">
       {/* Sidebar */}
       <Sidebar />
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="border-b bg-card">
+        <header className="border-b border-white/10 bg-background/40 backdrop-blur-md sticky top-0 z-10">
           <div className="flex items-center justify-between h-16 px-6">
-            <h1 className="text-2xl font-bold">{getPageTitle()}</h1>
+            <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-white/70">{getPageTitle()}</h1>
             <div className="flex items-center gap-2">
               <ThemeToggle />
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={handleLogout}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 hover:bg-white/10"
               >
                 <LogOut className="w-4 h-4" />
                 <span>Logout</span>
