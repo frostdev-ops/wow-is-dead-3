@@ -115,6 +115,7 @@ async fn regenerate_manifest(config: &Config, version: &str, set_latest: bool) -
         fabric_loader,
         files,
         changelog,
+        ignore_patterns: blacklist_patterns,
     };
 
     // Write manifest (with validation and atomic write)

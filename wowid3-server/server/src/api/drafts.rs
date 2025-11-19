@@ -348,6 +348,7 @@ pub async fn publish_draft(
         fabric_loader: draft.fabric_loader.clone(),
         files: manifest_files,
         changelog: draft.changelog.clone(),
+        ignore_patterns: blacklist_patterns,
     };
 
     // Write manifest
