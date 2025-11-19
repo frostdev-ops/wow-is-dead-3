@@ -277,8 +277,6 @@ pub async fn publish_draft(
         );
     }
 
-<<<<<<< Current (Your changes)
-=======
     // Regenerate checksums from the actual files on disk to ensure accuracy
     // This is critical because files may have been edited via the file browser
     let verified_files = scan_directory_files(&release_dir).await?;
@@ -289,8 +287,6 @@ pub async fn publish_draft(
                 .to_string(),
         ));
     }
-
->>>>>>> Incoming (Background Agent changes)
     // Convert DraftFile to ManifestFile with fresh checksums and release URLs
     // Filter out blacklisted files to prevent download failures
     let total_files = verified_files.len();

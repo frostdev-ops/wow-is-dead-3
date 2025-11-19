@@ -1,10 +1,6 @@
 use crate::config::Config;
 use crate::models::{Manifest, ManifestFile};
-<<<<<<< Current (Your changes)
-use crate::storage::manifest::{read_manifest, write_manifest, set_latest_manifest};
-=======
 use crate::storage::manifest::{read_manifest, set_latest_manifest, write_manifest};
->>>>>>> Incoming (Background Agent changes)
 use crate::utils;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -186,7 +182,7 @@ async fn scan_release_files(
         }
 
         // Skip blacklisted files
-        if utils::is_blacklisted(relative_str, &glob_set) {
+        if utils::is_blacklisted(&relative_str, &glob_set) {
             filtered_count += 1;
             continue;
         }
