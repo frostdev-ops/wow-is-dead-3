@@ -87,17 +87,17 @@ export default function ResourcePackUploadZone({
           scale: isDragging ? 1.02 : 1,
         }}
         transition={{ duration: 0.2 }}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={handleClickUpload}
+        className={cn(
+          'border-2 border-dashed rounded-lg p-12 transition-colors cursor-pointer',
+          isDragging ? 'border-primary bg-primary/5' : 'border-border bg-background',
+          (disabled || isLoading) && 'opacity-50 cursor-not-allowed'
+        )}
       >
-        <Card
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          className={cn(
-            'border-2 border-dashed rounded-lg p-12 transition-colors cursor-pointer',
-            isDragging ? 'border-primary bg-primary/5' : 'border-border bg-background',
-            (disabled || isLoading) && 'opacity-50 cursor-not-allowed'
-          )}
-        >
+        <Card>
           <input
             ref={fileInputRef}
             type="file"
