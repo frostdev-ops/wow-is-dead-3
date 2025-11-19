@@ -3,6 +3,7 @@ interface ProgressBarProps {
   total: number;
   showLabel?: boolean;
   showPercentage?: boolean;
+  className?: string;
 }
 
 export const ProgressBar = ({
@@ -10,11 +11,12 @@ export const ProgressBar = ({
   total,
   showLabel = true,
   showPercentage = true,
+  className = '',
 }: ProgressBarProps) => {
-  const percentage = Math.min(100, Math.round((current / total) * 100));
+  const percentage = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
 
   return (
-    <div className="w-full">
+    <div className={`w-full ${className}`}>
       {showLabel && (
         <div className="flex justify-between mb-2">
           <span className="text-sm text-slate-300" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>Downloading</span>

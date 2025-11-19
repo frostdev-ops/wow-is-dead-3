@@ -213,6 +213,9 @@ async fn scan_release_files(
         tracing::info!("  Filtered {} blacklisted files from manifest", filtered_count);
     }
 
+    // Sort files by path for deterministic manifest generation
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+
     Ok(files)
 }
 

@@ -91,8 +91,12 @@ pub fn calculate_manifest_hash(manifest: &Manifest) -> String {
     hasher.update(manifest.version.as_bytes());
     hasher.update(b"|");
 
-    // Hash all file checksums in order
-    for file in &manifest.files {
+    // Hash all file checksums in deterministic order (sorted by path)
+    // This ensures manifest hash is stable even if server reorders files
+    let mut files = manifest.files.clone();
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+
+    for file in files {
         hasher.update(file.sha256.as_bytes());
         hasher.update(b"|");
     }

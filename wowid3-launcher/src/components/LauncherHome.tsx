@@ -506,7 +506,7 @@ export default function LauncherHome() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-semibold" style={{ color: '#4FC3F7', fontFamily: "'Trebuchet MS', sans-serif" }}>
-                        ❄️ Update Available!
+                        ❄️ New Release!
                       </p>
                       <p className="text-sm text-gray-300 mt-1" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
                         Version {latestManifest?.version} is ready to install

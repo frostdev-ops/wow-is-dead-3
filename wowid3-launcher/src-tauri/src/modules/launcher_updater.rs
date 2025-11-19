@@ -1,16 +1,29 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::env;
-use std::path::PathBuf;
-use std::process::Command;
-use std::time::Duration;
-use tokio::fs;
-use tokio::io::AsyncWriteExt;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
+#[cfg(target_os = "windows")]
+use anyhow::Context;
+#[cfg(target_os = "windows")]
+use std::time::Duration;
+#[cfg(target_os = "windows")]
+use sha2::{Digest, Sha256};
+#[cfg(target_os = "windows")]
+use std::env;
+#[cfg(target_os = "windows")]
+use std::process::Command;
+#[cfg(target_os = "windows")]
+use tokio::fs;
+#[cfg(target_os = "windows")]
+use tokio::io::AsyncWriteExt;
+#[cfg(target_os = "windows")]
+use futures_util::StreamExt;
+
+#[cfg(target_os = "windows")]
+#[cfg(target_os = "windows")]
 const LAUNCHER_MANIFEST_URL: &str = "https://wowid-launcher.frostdev.io/api/launcher/latest";
 
+#[cfg(target_os = "windows")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LauncherManifest {
     pub version: String,
@@ -33,56 +46,79 @@ pub struct LauncherUpdateInfo {
 
 /// Check for launcher updates
 pub async fn check_launcher_update(app: &AppHandle) -> Result<LauncherUpdateInfo> {
-    // Get current version
-    let package_info = app.package_info();
-    let current_version = &package_info.version;
-    
-    // Fetch manifest
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .context("Failed to create HTTP client")?;
-
-    let response = client
-        .get(LAUNCHER_MANIFEST_URL)
-        .send()
-        .await
-        .context("Failed to fetch launcher manifest")?;
-
-    if response.status() == 404 {
-        // No update available (or configured)
+    // Self-update only supported on Windows
+    #[cfg(not(target_os = "windows"))]
+    {
+        eprintln!("[Launcher Updater] Self-update not supported on this platform");
+        let package_info = app.package_info();
         return Ok(LauncherUpdateInfo {
             available: false,
-            version: current_version.to_string(),
+            version: package_info.version.to_string(),
             changelog: String::new(),
             mandatory: false,
             download_url: String::new(),
             sha256: String::new(),
         });
     }
-
-    let manifest: LauncherManifest = response
-        .json()
-        .await
-        .context("Failed to parse launcher manifest")?;
-
-    // Compare versions
-    // Simple string comparison might fail for semver (e.g. 1.10 < 1.9 if string compare), 
-    // but usually fine if we stick to standard formatting.
-    // Better: Parse versions.
     
-    let update_available = is_newer_version(&manifest.version, &current_version.to_string());
+    #[cfg(target_os = "windows")]
+    {
+        // Get current version
+        let package_info = app.package_info();
+        let current_version = &package_info.version;
+        
+        eprintln!("[Launcher Updater] Current launcher version: {}", current_version);
+        
+        // Fetch manifest
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .context("Failed to create HTTP client")?;
 
-    Ok(LauncherUpdateInfo {
-        available: update_available,
-        version: manifest.version,
-        changelog: manifest.changelog,
-        mandatory: manifest.mandatory,
-        download_url: manifest.url,
-        sha256: manifest.sha256,
-    })
+        let response = client
+            .get(LAUNCHER_MANIFEST_URL)
+            .send()
+            .await
+            .context("Failed to fetch launcher manifest")?;
+
+        if response.status() == 404 {
+            // No update available (or configured)
+            eprintln!("[Launcher Updater] No launcher manifest found on server (404)");
+            return Ok(LauncherUpdateInfo {
+                available: false,
+                version: current_version.to_string(),
+                changelog: String::new(),
+                mandatory: false,
+                download_url: String::new(),
+                sha256: String::new(),
+            });
+        }
+
+        let manifest: LauncherManifest = response
+            .json()
+            .await
+            .context("Failed to parse launcher manifest")?;
+
+        eprintln!("[Launcher Updater] Remote launcher version: {}", manifest.version);
+        
+        // Compare versions
+        let update_available = is_newer_version(&manifest.version, &current_version.to_string());
+        
+        eprintln!("[Launcher Updater] Update available: {} (remote: {}, local: {})", 
+            update_available, manifest.version, current_version);
+
+        Ok(LauncherUpdateInfo {
+            available: update_available,
+            version: manifest.version,
+            changelog: manifest.changelog,
+            mandatory: manifest.mandatory,
+            download_url: manifest.url,
+            sha256: manifest.sha256,
+        })
+    }
 }
 
+#[cfg(target_os = "windows")]
 fn is_newer_version(remote: &str, local: &str) -> bool {
     // Simple SemVer parsing
     let parse_version = |v: &str| -> Vec<u32> {
@@ -112,6 +148,7 @@ fn is_newer_version(remote: &str, local: &str) -> bool {
 }
 
 /// Install launcher update (Windows only logic mostly, but safe to keep generic structure)
+#[allow(unused_variables)]
 pub async fn install_launcher_update<F>(
     url: String, 
     sha256: String, 
@@ -142,7 +179,7 @@ where
         let mut stream = response.bytes_stream();
         let mut downloaded: u64 = 0;
 
-        while let Some(chunk) = tokio_stream::StreamExt::next(&mut stream).await {
+        while let Some(chunk) = stream.next().await {
             let chunk = chunk.context("Error downloading chunk")?;
             file.write_all(&chunk).await.context("Error writing to file")?;
             downloaded += chunk.len() as u64;
@@ -190,4 +227,3 @@ where
         std::process::exit(0);
     }
 }
-

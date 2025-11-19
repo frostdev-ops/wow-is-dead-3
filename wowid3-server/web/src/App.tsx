@@ -18,6 +18,7 @@ const UploadPage = lazy(() => import('./pages/UploadPage'));
 const ResourcePacksPage = lazy(() => import('./pages/ResourcePacksPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const LauncherPage = lazy(() => import('./pages/LauncherPage'));
+const DownloadPage = lazy(() => import('./pages/DownloadPage'));
 
 // Performance: Loading fallback component
 const LoadingFallback = () => (
@@ -45,8 +46,9 @@ function AnimatedRoutes() {
   return (
     <AnimatePresence mode="wait" initial={false}>
       <Routes location={location} key={location.pathname}>
-        {/* Public route: Login */}
-        <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
+        {/* Public routes */}
+        <Route path="/" element={<DownloadPage />} />
+        <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
 
         {/* Protected routes: Admin panel */}
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />

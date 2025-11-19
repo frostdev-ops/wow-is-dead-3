@@ -17,13 +17,16 @@ interface ProgressEvent {
 
 const LauncherUpdateModal: React.FC<LauncherUpdateModalProps> = ({ updateInfo }) => {
   const [isUpdating, setIsUpdating] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [progressState, setProgressState] = useState<{current: number, total: number}>({ current: 0, total: 0 });
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isUpdating) {
       const unlisten = listen<ProgressEvent>('launcher-update-progress', (event) => {
-        setProgress(event.payload.percent);
+        setProgressState({
+            current: event.payload.current,
+            total: event.payload.total
+        });
       });
       
       return () => {
@@ -94,9 +97,15 @@ const LauncherUpdateModal: React.FC<LauncherUpdateModalProps> = ({ updateInfo })
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-400">Downloading update...</span>
-                    <span className="text-primary font-mono">{progress.toFixed(1)}%</span>
+                    <span className="text-primary font-mono">
+                        {progressState.total > 0 ? ((progressState.current / progressState.total) * 100).toFixed(1) : 0}%
+                    </span>
                   </div>
-                  <ProgressBar progress={progress} className="h-2" />
+                  <ProgressBar 
+                    current={progressState.current} 
+                    total={progressState.total} 
+                    className="h-2" 
+                  />
                   <p className="text-xs text-center text-gray-500 mt-2">The launcher will restart automatically</p>
                 </div>
               ) : (
@@ -116,4 +125,3 @@ const LauncherUpdateModal: React.FC<LauncherUpdateModalProps> = ({ updateInfo })
 };
 
 export default LauncherUpdateModal;
-

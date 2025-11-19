@@ -71,6 +71,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::fs::create_dir_all(config.releases_path()).await?;
     tokio::fs::create_dir_all(config.uploads_path()).await?;
     tokio::fs::create_dir_all(config.resources_path()).await?;
+    tokio::fs::create_dir_all(config.launcher_path()).await?;
     tokio::fs::create_dir_all(config.storage_path().join("drafts")).await?;
     tokio::fs::create_dir_all(config.storage_path().join("assets")).await?;
     info!("Storage directories initialized");

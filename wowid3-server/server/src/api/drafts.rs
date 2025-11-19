@@ -304,7 +304,7 @@ pub async fn publish_draft(
     // Convert DraftFile to ManifestFile with fresh checksums and release URLs
     // Filter out blacklisted files to prevent download failures
     let total_files = verified_files.len();
-    let manifest_files: Vec<ManifestFile> = verified_files
+    let mut manifest_files: Vec<ManifestFile> = verified_files
         .iter()
         .filter(|f| !utils::is_blacklisted(&f.path, &glob_set))
         .map(|f| ManifestFile {
@@ -317,6 +317,9 @@ pub async fn publish_draft(
             size: f.size,
         })
         .collect();
+
+    // Sort files by path for deterministic manifest generation
+    manifest_files.sort_by(|a, b| a.path.cmp(&b.path));
 
     let filtered_count = total_files - manifest_files.len();
     if filtered_count > 0 {
