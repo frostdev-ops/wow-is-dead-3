@@ -23,6 +23,7 @@ function AppContent() {
   const fallbackRef = useRef<HTMLAudioElement>(null);
   const mainRef = useRef<HTMLAudioElement>(null);
   const retryIntervalRef = useRef<number | null>(null);
+  const mainBlobUrlRef = useRef<string | null>(null);
   const { checkUpdates, latestManifest } = useModpack();
   const { startPolling } = useServer();
   const { initializeGameDirectory } = useSettingsStore();
@@ -49,6 +50,17 @@ function AppContent() {
     initializeGameDirectory();
   }, [initializeGameDirectory]);
 
+  // Cleanup Blob URLs on component unmount
+  useEffect(() => {
+    return () => {
+      if (mainBlobUrlRef.current) {
+        console.log('[Audio] Revoking Blob URL on unmount');
+        URL.revokeObjectURL(mainBlobUrlRef.current);
+        mainBlobUrlRef.current = null;
+      }
+    };
+  }, []);
+
   // Crossfade from fallback to main audio
   const startCrossfade = () => {
     if (!fallbackRef.current || !mainRef.current || audioState !== 'fallback') return;
@@ -61,17 +73,14 @@ function AppContent() {
 
     // Ensure main audio is loaded and ready before starting crossfade
     const startFadeWhenReady = () => {
-      // Set volume to 0 before loading
+      // Set volume to 0 before crossfade
       main.volume = 0;
 
-      // Force load the audio
-      console.log('[Audio] Loading main audio before crossfade...');
-      main.load();
+      console.log('[Audio] Checking main audio ready state:', main.readyState);
 
-      // Wait for audio to be ready to play
-      const onCanPlayThrough = () => {
-        console.log('[Audio] Main audio ready, starting crossfade');
-        main.removeEventListener('canplaythrough', onCanPlayThrough);
+      // Function to start the actual fade/crossover
+      const executeCrossfade = () => {
+        console.log('[Audio] Main audio is ready, starting crossfade');
 
         // Fade out fallback (0.3 → 0 over 2 seconds)
         const fadeOutSteps = 20;
@@ -132,16 +141,62 @@ function AppContent() {
         }, fadeOutInterval);
       };
 
-      // Add error handler for load failure
-      const onError = () => {
-        console.log('[Audio] Failed to load main audio for crossfade');
+      // Check if audio is already loaded (readyState >= HAVE_ENOUGH_DATA which is 4)
+      // HTMLMediaElement.HAVE_ENOUGH_DATA = 4
+      const HTMLMediaElementHAVE_ENOUGH_DATA = 4;
+      if (main.readyState >= HTMLMediaElementHAVE_ENOUGH_DATA) {
+        console.log('[Audio] Audio already loaded, starting crossfade immediately');
+        executeCrossfade();
+        return;
+      }
+
+      // If not loaded yet, wait for canplaythrough event
+      console.log('[Audio] Waiting for main audio to be ready...');
+      let eventFired = false;
+      let canPlayThroughTimeoutId: number | null = null;
+
+      const onCanPlayThrough = () => {
+        console.log('[Audio] Main audio canplaythrough event fired');
+        eventFired = true;
         main.removeEventListener('canplaythrough', onCanPlayThrough);
         main.removeEventListener('error', onError);
+        if (canPlayThroughTimeoutId !== null) clearTimeout(canPlayThroughTimeoutId);
+        executeCrossfade();
+      };
+
+      const onError = () => {
+        console.log('[Audio] Main audio error during crossfade setup');
+        eventFired = true;
+        main.removeEventListener('canplaythrough', onCanPlayThrough);
+        main.removeEventListener('error', onError);
+        if (canPlayThroughTimeoutId !== null) clearTimeout(canPlayThroughTimeoutId);
         setAudioState('fallback');
       };
 
+      // Add event listeners BEFORE calling load()
       main.addEventListener('canplaythrough', onCanPlayThrough, { once: true });
       main.addEventListener('error', onError, { once: true });
+
+      // Set timeout in case event never fires
+      canPlayThroughTimeoutId = window.setTimeout(() => {
+        if (!eventFired) {
+          console.log('[Audio] Timeout waiting for canplaythrough, proceeding with crossfade anyway');
+          main.removeEventListener('canplaythrough', onCanPlayThrough);
+          main.removeEventListener('error', onError);
+          eventFired = true;
+          // Check if we have enough data despite no event
+          if (main.readyState >= HTMLMediaElementHAVE_ENOUGH_DATA) {
+            executeCrossfade();
+          } else {
+            console.log('[Audio] Audio still not ready after timeout, reverting to fallback');
+            setAudioState('fallback');
+          }
+        }
+      }, 5000); // 5 second timeout
+
+      // Now load the audio (this may fire canplaythrough immediately)
+      console.log('[Audio] Calling load() to ensure audio is buffered...');
+      main.load();
     };
 
     startFadeWhenReady();
@@ -166,6 +221,13 @@ function AppContent() {
           console.log('[Audio] Created Blob URL for cached audio');
 
           if (mainRef.current) {
+            // Revoke old Blob URL if it exists
+            if (mainBlobUrlRef.current) {
+              console.log('[Audio] Revoking previous Blob URL');
+              URL.revokeObjectURL(mainBlobUrlRef.current);
+            }
+            mainBlobUrlRef.current = blobUrl;
+
             // CRITICAL: Attach event handlers BEFORE setting src to avoid race condition
             let loadTimeout: number | null = null;
             let handlersAttached = false;
@@ -179,7 +241,6 @@ function AppContent() {
                 console.log('[Audio] Main audio load timeout, using fallback');
                 if (mainRef.current) {
                   mainRef.current.src = '';
-                  URL.revokeObjectURL(blobUrl); // Clean up blob URL
                 }
               }, 10000);
 
@@ -196,7 +257,11 @@ function AppContent() {
                 const errorMsg = mainRef.current?.error?.message;
                 console.log('[Audio] Cached Blob audio failed to load. Code:', errorCode, 'Message:', errorMsg);
                 if (mainRef.current) mainRef.current.src = '';
-                URL.revokeObjectURL(blobUrl); // Clean up blob URL
+                // Revoke on error
+                if (mainBlobUrlRef.current === blobUrl) {
+                  URL.revokeObjectURL(blobUrl);
+                  mainBlobUrlRef.current = null;
+                }
               };
             };
 
@@ -234,6 +299,13 @@ function AppContent() {
 
           console.log('[Audio] Created Blob URL for downloaded audio');
 
+          // Revoke old Blob URL if it exists
+          if (mainBlobUrlRef.current) {
+            console.log('[Audio] Revoking previous Blob URL');
+            URL.revokeObjectURL(mainBlobUrlRef.current);
+          }
+          mainBlobUrlRef.current = blobUrl;
+
           // CRITICAL: Attach event handlers BEFORE setting src
           let loadTimeout: number | null = null;
           let handlersAttached = false;
@@ -246,7 +318,6 @@ function AppContent() {
               console.log('[Audio] Downloaded audio load timeout, using fallback');
               if (mainRef.current) {
                 mainRef.current.src = '';
-                URL.revokeObjectURL(blobUrl);
               }
             }, 10000);
 
@@ -262,7 +333,11 @@ function AppContent() {
               const errorMsg = mainRef.current?.error?.message;
               console.log('[Audio] Downloaded Blob audio failed to load. Code:', errorCode, 'Message:', errorMsg);
               if (mainRef.current) mainRef.current.src = '';
-              URL.revokeObjectURL(blobUrl);
+              // Revoke on error
+              if (mainBlobUrlRef.current === blobUrl) {
+                URL.revokeObjectURL(blobUrl);
+                mainBlobUrlRef.current = null;
+              }
             };
           };
 
@@ -385,11 +460,6 @@ function AppContent() {
         src={FALLBACK_AUDIO_URL}
         loop
         crossOrigin="anonymous"
-        onLoadStart={() => console.log('[Audio] Fallback load started')}
-        onCanPlay={() => console.log('[Audio] Fallback can play')}
-        onPlay={() => console.log('[Audio] Fallback playing')}
-        onPause={() => console.log('[Audio] Fallback paused')}
-        onError={(e) => console.log('[Audio] Fallback error:', e.currentTarget.error)}
       />
 
       {/* Main Audio (full track from server) */}
@@ -397,11 +467,6 @@ function AppContent() {
         ref={mainRef}
         loop
         crossOrigin="anonymous"
-        onLoadStart={() => console.log('[Audio] Main load started')}
-        onCanPlay={() => console.log('[Audio] Main can play')}
-        onPlay={() => console.log('[Audio] Main playing')}
-        onPause={() => console.log('[Audio] Main paused')}
-        onError={(e) => console.log('[Audio] Main error:', e.currentTarget.error)}
       />
 
       <div className="relative z-10 w-full h-full flex flex-col">
