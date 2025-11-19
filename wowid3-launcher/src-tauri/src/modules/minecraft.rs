@@ -6,6 +6,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
+use sysinfo::{System, Pid};
 
 use super::game_installer::get_installed_version;
 use super::library_manager;
@@ -303,27 +304,12 @@ pub async fn is_game_running() -> bool {
     let game_pid = GAME_PROCESS_ID.lock().await;
 
     if let Some(pid) = *game_pid {
-        // Check if process with this PID still exists using OS-level check
-        #[cfg(unix)]
-        {
-            // On Unix, check if /proc/PID exists
-            std::path::Path::new(&format!("/proc/{}", pid)).exists()
-        }
-
-        #[cfg(windows)]
-        {
-            // On Windows, use tasklist to check if process exists
-            use std::process::Command;
-            if let Ok(output) = Command::new("tasklist")
-                .args(&["/FI", &format!("PID eq {}", pid), "/NH"])
-                .output()
-            {
-                let output_str = String::from_utf8_lossy(&output.stdout);
-                output_str.contains(&pid.to_string())
-            } else {
-                false
-            }
-        }
+        // Use sysinfo to check if process with this PID still exists
+        // This works on both Windows and Unix, and avoids spawning terminal windows
+        let mut system = System::new();
+        let sysinfo_pid = Pid::from(pid as usize);
+        system.refresh_process(sysinfo_pid);
+        system.process(sysinfo_pid).is_some()
     } else {
         false
     }
@@ -487,7 +473,7 @@ fn get_classpath_separator() -> &'static str {
 fn get_bundled_java_path() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
-        PathBuf::from("./runtime/java/bin/java.exe")
+        PathBuf::from("./runtime/java/bin/javaw.exe")
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -574,7 +560,7 @@ mod tests {
         #[cfg(target_os = "windows")]
         {
             let path = get_bundled_java_path();
-            assert_eq!(path, PathBuf::from("./runtime/java/bin/java.exe"));
+            assert_eq!(path, PathBuf::from("./runtime/java/bin/javaw.exe"));
         }
     }
 

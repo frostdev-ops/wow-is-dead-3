@@ -21,7 +21,7 @@ fn get_java_runtime_info(base_url: &str) -> Result<JavaRuntimeInfo> {
     let (filename, exe_path) = match (std::env::consts::OS, std::env::consts::ARCH) {
         ("windows", "x86_64") => (
             "zulu21-windows-x64.zip",
-            "zulu21.46.19-ca-jdk21.0.9-win_x64/bin/java.exe"
+            "zulu21.46.19-ca-jdk21.0.9-win_x64/bin/javaw.exe"
         ),
         ("macos", "x86_64") => (
             "zulu21-macos-x64.tar.gz",
