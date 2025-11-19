@@ -20,8 +20,8 @@ use api::drafts::{
     write_file_content,
 };
 use api::public::{
-    get_latest_manifest, get_manifest_by_version, serve_file, serve_java_runtime, serve_resource,
-    PublicState,
+    get_latest_manifest, get_manifest_by_version, list_resources, serve_audio_file, serve_file,
+    serve_java_runtime, serve_resource, PublicState,
 };
 use axum::{
     extract::DefaultBodyLimit,
@@ -109,6 +109,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/manifest/:version", get(get_manifest_by_version))
         .route("/api/assets/:filename", get(serve_audio_file))
         .route("/api/java/:filename", get(serve_java_runtime))
+        .route("/api/resources", get(list_resources))
         .route("/api/resources/:filename", get(serve_resource))
         .route("/files/:version/*path", get(serve_file))
         .with_state(public_state);

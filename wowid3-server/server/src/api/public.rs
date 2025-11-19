@@ -10,9 +10,19 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use serde::Serialize;
+use sha2::Digest;
 use std::sync::Arc;
 use tokio::fs;
+use tokio::io::AsyncReadExt;
 use tokio_util::io::ReaderStream;
+
+#[derive(Debug, Serialize, Clone)]
+pub struct ResourcePackInfo {
+    pub file_name: String,
+    pub file_size: u64,
+    pub sha256: String,
+}
 
 #[derive(Clone)]
 pub struct PublicState {
@@ -212,6 +222,64 @@ pub async fn serve_file(
         .unwrap())
 }
 
+/// GET /api/resources - List all available resource packs
+pub async fn list_resources(
+    State(state): State<PublicState>,
+) -> Result<Json<Vec<ResourcePackInfo>>, AppError> {
+    let resources_path = state.config.resources_path();
+
+    // Check if directory exists
+    if !resources_path.exists() {
+        return Ok(Json(Vec::new()));
+    }
+
+    let mut resource_packs = Vec::new();
+    let mut entries = fs::read_dir(&resources_path)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read resources directory: {}", e)))?;
+
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read directory entry: {}", e)))?
+    {
+        let path = entry.path();
+
+        // Skip directories, only process files
+        if path.is_dir() {
+            continue;
+        }
+
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|s| s.to_string())
+            .ok_or_else(|| AppError::Internal(anyhow::anyhow!("Invalid filename")))?;
+
+        // Get file metadata
+        let metadata = fs::metadata(&path)
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to get file metadata: {}", e)))?;
+
+        // Calculate SHA256 hash
+        let sha256 = match calculate_sha256(&path).await {
+            Ok(hash) => hash,
+            Err(_) => "unknown".to_string(),
+        };
+
+        resource_packs.push(ResourcePackInfo {
+            file_name,
+            file_size: metadata.len(),
+            sha256,
+        });
+    }
+
+    // Sort by file name
+    resource_packs.sort_by(|a, b| a.file_name.cmp(&b.file_name));
+
+    Ok(Json(resource_packs))
+}
+
 /// GET /api/resources/:filename
 pub async fn serve_resource(
     State(state): State<PublicState>,
@@ -260,6 +328,23 @@ pub async fn serve_resource(
         .header(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", filename))
         .body(body)
         .unwrap())
+}
+
+/// Helper function to calculate SHA256 hash of a file
+async fn calculate_sha256(path: &std::path::Path) -> Result<String, anyhow::Error> {
+    let mut file = fs::File::open(path).await?;
+    let mut hasher = sha2::Sha256::new();
+    let mut buffer = vec![0; 8192];
+
+    loop {
+        let n = file.read(&mut buffer).await?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+    }
+
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 // Error handling

@@ -201,6 +201,21 @@ export const useAdmin = () => {
     }
   };
 
+  const listResourcePacks = async (): Promise<any[]> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await api.get('/resources');
+      return response.data;
+    } catch (err: any) {
+      const message = err.response?.data?.error || 'Failed to list resource packs';
+      setError(message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
     loading,
     error,
@@ -214,5 +229,6 @@ export const useAdmin = () => {
     updateBlacklist,
     uploadResourcePacks,
     deleteResourcePack,
+    listResourcePacks,
   };
 };

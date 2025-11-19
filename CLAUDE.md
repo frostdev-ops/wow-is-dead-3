@@ -294,6 +294,7 @@ These are automatically set by:
 **Files**:
 - `GET /files/:version/*path` - Download modpack file for specific version
 - `GET /api/java/:filename` - Download Java runtime binaries
+- `GET /api/resources` - List all available resource packs
 - `GET /api/resources/:filename` - Download resource pack files
 
 **Health**:

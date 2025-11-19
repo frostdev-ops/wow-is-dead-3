@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, lazy, Suspense, useCallback } from 'react';
 import { AlertCircle, CheckCircle, Package } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -26,7 +26,7 @@ interface UploadResult {
 }
 
 export default function ResourcePacksPage() {
-  const { uploadResourcePacks, deleteResourcePack, loading } = useAdmin();
+  const { uploadResourcePacks, deleteResourcePack, listResourcePacks, loading } = useAdmin();
   const { toast } = useToast();
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -34,6 +34,32 @@ export default function ResourcePacksPage() {
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [uploadResults, setUploadResults] = useState<UploadResult[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [isLoadingResources, setIsLoadingResources] = useState(true);
+
+  // Load persisted resources on mount
+  useEffect(() => {
+    const loadResources = async () => {
+      try {
+        const resources = await listResourcePacks();
+        setUploadResults(
+          resources.map((r: any) => ({
+            upload_id: 'resources',
+            file_name: r.file_name,
+            file_size: r.file_size,
+            sha256: r.sha256,
+            message: 'Persisted resource',
+          }))
+        );
+      } catch (error: any) {
+        console.error('Failed to load resources:', error);
+        // Don't show error toast on initial load, just log it
+      } finally {
+        setIsLoadingResources(false);
+      }
+    };
+
+    loadResources();
+  }, [listResourcePacks]);
 
   const handleFilesSelected = (files: File[]) => {
     setSelectedFiles(files);
@@ -52,14 +78,26 @@ export default function ResourcePacksPage() {
     setUploadSuccess(null);
 
     try {
-      const results = await uploadResourcePacks(selectedFiles);
-      setUploadResults(results);
-      setUploadSuccess(`Successfully uploaded ${results.length} file(s)`);
+      await uploadResourcePacks(selectedFiles);
+
+      // Reload the list to show all resources including newly uploaded ones
+      const resources = await listResourcePacks();
+      setUploadResults(
+        resources.map((r: any) => ({
+          upload_id: 'resources',
+          file_name: r.file_name,
+          file_size: r.file_size,
+          sha256: r.sha256,
+          message: 'Persisted resource',
+        }))
+      );
+
+      setUploadSuccess(`Successfully uploaded ${selectedFiles.length} file(s)`);
       setSelectedFiles([]);
 
       toast({
         title: 'Success',
-        description: `${results.length} resource pack(s) uploaded successfully`,
+        description: `${selectedFiles.length} resource pack(s) uploaded successfully`,
       });
     } catch (error: any) {
       const errorMessage = error.message || 'Upload failed';
@@ -74,14 +112,27 @@ export default function ResourcePacksPage() {
     }
   };
 
-  const handleDelete = async (filename: string) => {
-    try {
-      await deleteResourcePack(filename);
-      setUploadResults((prev) => prev.filter((r) => r.file_name !== filename));
-    } catch (error) {
-      throw error;
-    }
-  };
+  const handleDelete = useCallback(
+    async (filename: string) => {
+      try {
+        await deleteResourcePack(filename);
+        // Reload the list to ensure it's synced with server
+        const resources = await listResourcePacks();
+        setUploadResults(
+          resources.map((r: any) => ({
+            upload_id: 'resources',
+            file_name: r.file_name,
+            file_size: r.file_size,
+            sha256: r.sha256,
+            message: 'Persisted resource',
+          }))
+        );
+      } catch (error) {
+        throw error;
+      }
+    },
+    [deleteResourcePack, listResourcePacks]
+  );
 
   return (
     <div className="space-y-8">
@@ -145,13 +196,17 @@ export default function ResourcePacksPage() {
       {/* List Section */}
       <Card className="p-6 space-y-4">
         <h2 className="text-xl font-semibold">Uploaded Resource Packs</h2>
-        <Suspense fallback={<LoadingFallback />}>
-          <ResourcePackList
-            resourcePacks={uploadResults}
-            onDelete={handleDelete}
-            isDeleting={loading}
-          />
-        </Suspense>
+        {isLoadingResources ? (
+          <LoadingFallback />
+        ) : (
+          <Suspense fallback={<LoadingFallback />}>
+            <ResourcePackList
+              resourcePacks={uploadResults}
+              onDelete={handleDelete}
+              isDeleting={loading}
+            />
+          </Suspense>
+        )}
       </Card>
 
       {/* Info Section */}
