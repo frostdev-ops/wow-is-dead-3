@@ -46,27 +46,9 @@ pub fn read_log_tail(game_dir: &str, lines: usize) -> IoResult<LogResult> {
 
     // If file is small enough, just read it all
     // 100KB is a reasonable threshold where reading all is fast enough
-    if total_size < 100 * 1024 {
-        let reader = BufReader::new(file);
-        let all_lines: Vec<String> = reader
-            .lines()
-            .filter_map(|line| line.ok())
-            .collect();
-            
-        let start_idx = if all_lines.len() > lines {
-            all_lines.len() - lines
-        } else {
-            0
-        };
-        
-        let result_lines = all_lines[start_idx..].to_vec();
-        
-        // Calculate start offset by re-reading (inefficient but simple for small files)
-        // For small files, we can just say start_offset is 0 if we read everything,
-        // or calculate it properly. Since we need accurate offsets for scrolling up,
-        // let's do it properly even for small files by using the generic method below
-        // but starting from end.
-    }
+    // However, for consistency with offset calculation and to avoid ownership issues,
+    // we use the reverse reader for all file sizes.
+    // The reverse reader is efficient enough for small files too.
 
     // Efficient reverse reading
     let mut result_lines = Vec::new();
@@ -138,31 +120,15 @@ pub fn read_log_tail(game_dir: &str, lines: usize) -> IoResult<LogResult> {
     // Calculate start offset
     // If we found all lines, the start offset is the start of the first line we found
     // If we reached start of file, it's 0
+    // Otherwise, the start offset is the position after the newline before the first line we included
     let start_offset = if position == 0 && lines_found < lines {
         0
     } else {
         // We stopped at a newline, so the first line starts after it
-        // But wait, our loop logic sets last_line_end to the newline position.
-        // The line we just pushed starts at...
-        // Let's simplify: we can just calculate the length of all lines + newlines
-        // and subtract from total_size? No, encoding issues.
-        
-        // Better: The loop updates `last_line_end` to the position of the newline found.
+        // The loop updates `last_line_end` to the position of the newline found.
         // When we finish, `last_line_end` points to the newline BEFORE the first line we included.
-        // So the start offset is `last_line_end + 1` (unless we hit start of file).
-        
-        // Actually, let's look at the loop again.
-        // When we find a \n at `i`, we read from `position + i + 1` to `last_line_end`.
-        // Then we set `last_line_end` to `position + i`.
-        // So `last_line_end` is the position of the newline preceding the next line we will read (going backwards).
         // So the start offset of the lines we collected is `last_line_end + 1`.
-        // UNLESS we reached the start of the file.
-        
-        if position == 0 && lines_found < lines {
-            0
-        } else {
-            last_line_end + 1
-        }
+        last_line_end + 1
     };
 
     Ok(LogResult {
@@ -198,30 +164,6 @@ pub fn read_log_from_offset(game_dir: &str, start_offset: u64) -> IoResult<LogRe
         });
     }
 
-    file.seek(SeekFrom::Start(start_offset))?;
-    let reader = BufReader::new(file);
-    
-    let mut lines = Vec::new();
-    let mut bytes_read = 0;
-    
-    for line in reader.lines() {
-        if let Ok(line) = line {
-            // Calculate bytes consumed including newline
-            // Note: this is an approximation because BufRead strips the newline
-            // We assume \n (1 byte) or \r\n (2 bytes). On Linux/Mac it's usually \n.
-            // But we can't easily know exactly how many bytes were consumed by the newline separator
-            // without checking.
-            // A safer way is to just read to end into a string and split.
-            lines.push(line);
-        }
-    }
-    
-    // Re-calculate end offset properly
-    // Since BufRead::lines() strips newlines, we can't know exact byte count easily.
-    // Let's use a different approach: read to string.
-    
-    // Re-open to seek again
-    let mut file = File::open(&log_path)?;
     file.seek(SeekFrom::Start(start_offset))?;
     
     let mut content = String::new();

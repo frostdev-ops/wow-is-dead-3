@@ -57,6 +57,10 @@ export const pingServer = async (address: string): Promise<ServerStatus> => {
   return await invoke<ServerStatus>('cmd_ping_server', { address });
 };
 
+export const resolvePlayerName = async (uuid: string): Promise<string> => {
+  return await invoke<string>('cmd_resolve_player_name', { uuid });
+};
+
 // Modpack update commands
 export const checkForUpdates = async (manifestUrl: string): Promise<Manifest> => {
   return await invoke<Manifest>('cmd_check_updates', { manifestUrl });

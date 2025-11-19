@@ -6,7 +6,7 @@ use modules::minecraft::{launch_game, launch_game_with_metadata, analyze_crash, 
 use modules::minecraft_version::{list_versions, get_latest_release, get_latest_snapshot, VersionInfo};
 use modules::fabric_installer::{get_fabric_loaders, get_latest_fabric_loader, FabricLoader};
 use modules::game_installer::{install_minecraft, is_version_installed, InstallConfig};
-use modules::server::{ping_server, ServerStatus};
+use modules::server::{ping_server, resolve_player_name, ServerStatus};
 use modules::updater::{check_for_updates, get_installed_version, install_modpack, verify_and_repair_modpack, has_manifest_changed, Manifest};
 use modules::audio::{get_cached_audio, download_and_cache_audio, read_cached_audio_bytes, clear_audio_cache};
 use modules::java_runtime::{get_cached_java, download_and_cache_java};
@@ -447,6 +447,11 @@ async fn cmd_ping_server(address: String) -> Result<ServerStatus, String> {
     ping_server(&address).await.map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn cmd_resolve_player_name(uuid: String) -> Result<String, String> {
+    resolve_player_name(&uuid).await.map_err(|e| e.to_string())
+}
+
 // Download progress event payload
 #[derive(Clone, Serialize)]
 struct DownloadProgressEvent {
@@ -656,6 +661,7 @@ pub fn run() {
             cmd_install_minecraft,
             cmd_is_version_installed,
             cmd_ping_server,
+            cmd_resolve_player_name,
             cmd_check_updates,
             cmd_get_installed_version,
             cmd_install_modpack,

@@ -1,8 +1,9 @@
-import React, { useState, useCallback, memo } from 'react';
+import React, { useState, useCallback, memo, useEffect } from 'react';
 import { useDrafts } from '../../hooks/useDrafts';
 import Editor from '@monaco-editor/react';
 import ReactMarkdown from 'react-markdown';
-import { Sparkles, Eye, Code } from 'lucide-react';
+import { Sparkles, Eye, Code, AlertCircle, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { DraftRelease } from '../../types/releases';
 
 interface ChangelogTabProps {
@@ -11,9 +12,17 @@ interface ChangelogTabProps {
 }
 
 function ChangelogTab({ draft, onUpdate }: ChangelogTabProps) {
-  const { generateChangelog, loading } = useDrafts();
+  const { generateChangelog, loading, error } = useDrafts();
   const [generating, setGenerating] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  // Clear local error when hook error changes
+  useEffect(() => {
+    if (error) {
+      setLocalError(error);
+    }
+  }, [error]);
 
   // Performance: Memoize callbacks to prevent re-renders
   const handleEditorChange = useCallback((value: string | undefined) => {
@@ -24,25 +33,17 @@ function ChangelogTab({ draft, onUpdate }: ChangelogTabProps) {
 
   const handleGenerate = useCallback(async () => {
     setGenerating(true);
+    setLocalError(null);
     try {
       const result = await generateChangelog(draft.id);
       if (result) {
-        // Combine generated sections into markdown
-        const sections = [];
-
-        if (result.added.length > 0) {
-          sections.push('## Added\n' + result.added.map((f) => `- ${f}`).join('\n'));
-        }
-        if (result.modified.length > 0) {
-          sections.push('## Modified\n' + result.modified.map((f) => `- ${f}`).join('\n'));
-        }
-        if (result.removed.length > 0) {
-          sections.push('## Removed\n' + result.removed.map((f) => `- ${f}`).join('\n'));
-        }
-
-        const generatedChangelog = sections.join('\n\n');
-        onUpdate({ ...draft, changelog: generatedChangelog });
+        // Use the markdown field directly from the backend
+        onUpdate({ ...draft, changelog: result.markdown });
+      } else {
+        setLocalError('Failed to generate changelog. Please try again.');
       }
+    } catch (err: any) {
+      setLocalError(err.message || 'Failed to generate changelog');
     } finally {
       setGenerating(false);
     }
@@ -50,6 +51,29 @@ function ChangelogTab({ draft, onUpdate }: ChangelogTabProps) {
 
   return (
     <div className="h-full flex flex-col">
+      {/* Error Message */}
+      <AnimatePresence>
+        {localError && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="bg-destructive/10 text-destructive px-6 py-3 border-b border-destructive/20 flex items-center justify-between"
+          >
+            <div className="flex items-center gap-2">
+              <AlertCircle size={16} />
+              <span className="text-sm">{localError}</span>
+            </div>
+            <button
+              onClick={() => setLocalError(null)}
+              className="p-1 hover:bg-destructive/20 rounded transition-colors"
+            >
+              <X size={16} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Toolbar */}
       <div className="bg-card border-b border-border px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">

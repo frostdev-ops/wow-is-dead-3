@@ -5,11 +5,17 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayerInfo {
+    pub name: String,
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerStatus {
     pub online: bool,
     pub player_count: Option<u32>,
     pub max_players: Option<u32>,
-    pub players: Vec<String>,
+    pub players: Vec<PlayerInfo>,
     pub version: Option<String>,
     pub motd: Option<String>,
 }
@@ -37,6 +43,28 @@ struct PlayersInfo {
 #[derive(Debug, Deserialize)]
 struct PlayerSample {
     name: String,
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct MojangProfile {
+    id: String,
+    name: String,
+}
+
+/// Resolve player name from UUID using Mojang API
+pub async fn resolve_player_name(uuid: &str) -> Result<String> {
+    let client = reqwest::Client::new();
+    let url = format!("https://sessionserver.mojang.com/session/minecraft/profile/{}", uuid);
+    
+    let response = client.get(&url).send().await?;
+    
+    if response.status().is_success() {
+        let profile: MojangProfile = response.json().await?;
+        Ok(profile.name)
+    } else {
+        Err(anyhow::anyhow!("Failed to fetch profile: {}", response.status()))
+    }
 }
 
 /// Write a VarInt to the stream
@@ -374,12 +402,25 @@ fn ping_server_sync(mut stream: TcpStream, host: &str, port: u16) -> Result<Serv
     let version = response.version.and_then(|v| v.name);
     let player_count = response.players.as_ref().and_then(|p| p.online);
     let max_players = response.players.as_ref().and_then(|p| p.max);
+    
+    // Log raw player samples for debugging
+    if let Some(players_info) = &response.players {
+        if let Some(samples) = &players_info.sample {
+            eprintln!("[Server Ping] Raw player samples: {:?}", samples);
+        } else {
+            eprintln!("[Server Ping] No player samples in response");
+        }
+    }
+
     let players = response
         .players
         .and_then(|p| p.sample)
         .unwrap_or_default()
         .into_iter()
-        .map(|p| p.name)
+        .map(|p| PlayerInfo {
+            name: p.name,
+            id: p.id,
+        })
         .collect();
     let motd = response.description.map(|desc| extract_motd_text(&desc));
 
@@ -578,8 +619,10 @@ mod tests {
         assert_eq!(status.player_count, Some(5));
         assert_eq!(status.max_players, Some(20));
         assert_eq!(status.players.len(), 2);
-        assert_eq!(status.players[0], "Player1");
-        assert_eq!(status.players[1], "Player2");
+        assert_eq!(status.players[0].name, "Player1");
+        assert_eq!(status.players[0].id, "uuid1");
+        assert_eq!(status.players[1].name, "Player2");
+        assert_eq!(status.players[1].id, "uuid2");
         assert_eq!(status.version, Some("1.20.4".to_string()));
         assert_eq!(status.motd, Some("Test Server".to_string()));
     }

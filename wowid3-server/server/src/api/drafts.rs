@@ -157,15 +157,29 @@ pub async fn add_files(
     Ok(Json(draft))
 }
 
+#[derive(Deserialize)]
+pub struct RecursiveParams {
+    #[serde(default)]
+    recursive: bool,
+}
+
 /// DELETE /api/admin/drafts/:id/files/*path - Remove file from draft
 pub async fn remove_file(
     State(state): State<AdminState>,
     Extension(_token): Extension<AdminToken>,
     Path((id, file_path)): Path<(Uuid, String)>,
+    Query(params): Query<RecursiveParams>,
 ) -> Result<Json<DraftRelease>, AppError> {
-    let draft =
-        storage::remove_file_from_draft(&state.config.storage_path(), id, &file_path).await?;
-    Ok(Json(draft))
+    match storage::remove_file_from_draft(&state.config.storage_path(), id, &file_path, params.recursive).await {
+        Ok(draft) => Ok(Json(draft)),
+        Err(e) => {
+            if e.to_string().contains("Directory is not empty") {
+                Err(AppError::BadRequest("Directory is not empty".to_string()))
+            } else {
+                Err(AppError::Internal(e))
+            }
+        }
+    }
 }
 
 /// PUT /api/admin/drafts/:id/files/*path - Update file metadata

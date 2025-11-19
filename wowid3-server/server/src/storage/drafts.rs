@@ -217,21 +217,50 @@ pub async fn remove_file_from_draft(
     storage_path: &Path,
     id: Uuid,
     file_path: &str,
+    recursive: bool,
 ) -> Result<DraftRelease> {
+    // Validation
+    if file_path.trim().is_empty() || file_path == "/" || file_path == "." {
+        return Err(anyhow::anyhow!("Cannot delete the root files directory"));
+    }
+    if file_path.contains("..") {
+        return Err(anyhow::anyhow!("Invalid file path: directory traversal not allowed"));
+    }
+
     let mut draft = read_draft(storage_path, id).await?;
 
-    draft.files.retain(|f| f.path != file_path);
-    draft.updated_at = Utc::now();
-
-    write_draft(storage_path, &draft).await?;
-
-    // Also delete the physical file
     let draft_dir = storage_path.join("drafts").join(id.to_string());
     let file_full_path = draft_dir.join("files").join(file_path);
 
     if file_full_path.exists() {
-        fs::remove_file(&file_full_path).await.ok();
+        let metadata = fs::metadata(&file_full_path).await?;
+        if metadata.is_dir() {
+            // Check if empty
+            let mut read_dir = fs::read_dir(&file_full_path).await?;
+            let is_empty = read_dir.next_entry().await?.is_none();
+
+            if !is_empty && !recursive {
+                return Err(anyhow::anyhow!("Directory is not empty"));
+            }
+
+            // Remove directory
+            fs::remove_dir_all(&file_full_path).await?;
+
+            // Remove all files in this directory from draft.files
+            let prefix = format!("{}/", file_path.trim_end_matches('/'));
+            draft.files.retain(|f| !f.path.starts_with(&prefix) && f.path != file_path);
+        } else {
+            fs::remove_file(&file_full_path).await?;
+            draft.files.retain(|f| f.path != file_path);
+        }
+    } else {
+        // File doesn't exist on disk, but might be in manifest
+        draft.files.retain(|f| f.path != file_path);
     }
+
+    draft.updated_at = Utc::now();
+
+    write_draft(storage_path, &draft).await?;
 
     Ok(draft)
 }

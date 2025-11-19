@@ -1,80 +1,208 @@
 #!/bin/bash
-set -e
+
+###############################################################################
+# WOWID3 Build & Deploy Script
+# Builds and deploys both frontend and backend to remote server
+###############################################################################
+
+set -euo pipefail
 
 # Configuration
-REMOTE_USER="pma"
-REMOTE_HOST="192.168.10.43"
-REMOTE_PATH="/opt/wowid3-server"
-WEB_PATH="/var/www/wowid3-admin"
-SERVICE_NAME="wowid3-server"
+REMOTE_HOST="${REMOTE_HOST:-pma@192.168.10.43}"
+REMOTE_FRONTEND_PATH="/var/www/wowid3-admin"
+REMOTE_BACKEND_BIN="/usr/local/bin/wowid3-server"
+REMOTE_SERVICE="wowid3-server"
 
-echo "=== WOWID3 Server Deployment ==="
-echo ""
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
-# Check if built
-if [ ! -f "server/target/release/wowid3-modpack-server" ]; then
-    echo "Error: Backend binary not found. Run 'cd server && cargo build --release' first"
+# Helper functions
+log_info() {
+    echo -e "${BLUE}→${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}✗${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}⚠${NC} $1"
+}
+
+section() {
+    echo ""
+    echo -e "${BLUE}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${BLUE}  $1${NC}"
+    echo -e "${BLUE}═══════════════════════════════════════════════════════════${NC}"
+}
+
+# Verify we're in the right directory
+if [ ! -f "server/Cargo.toml" ] || [ ! -f "web/package.json" ]; then
+    log_error "This script must be run from the wowid3-server directory"
     exit 1
 fi
 
-if [ ! -d "web/dist" ]; then
-    echo "Error: Admin panel dist not found. Run 'cd web && npm run build' first"
+# Check if remote server is accessible
+log_info "Checking remote server connectivity..."
+if ! ssh -q "$REMOTE_HOST" "exit" 2>/dev/null; then
+    log_error "Cannot connect to $REMOTE_HOST"
+    exit 1
+fi
+log_success "Remote server is accessible"
+
+###############################################################################
+# Build Frontend
+###############################################################################
+section "Building Frontend"
+
+log_info "Cleaning old build..."
+cd web
+rm -rf dist node_modules
+
+log_info "Installing dependencies..."
+npm install --silent 2>&1 | grep -E "added|removed|up to date" || true
+
+log_info "Building frontend..."
+npm run build 2>&1 | tail -5
+
+log_success "Frontend build complete"
+cd ..
+
+###############################################################################
+# Build Backend
+###############################################################################
+section "Building Backend"
+
+log_info "Cleaning old build..."
+cd server
+cargo clean --quiet
+
+log_info "Building backend (release mode)..."
+if ! cargo build --release 2>&1 | tail -10; then
+    log_error "Backend build failed"
     exit 1
 fi
 
-echo "✓ Build artifacts found"
+BACKEND_BIN="target/release/wowid3-modpack-server"
+if [ ! -f "$BACKEND_BIN" ]; then
+    log_error "Backend binary not found at $BACKEND_BIN"
+    exit 1
+fi
+
+BACKEND_SIZE=$(du -h "$BACKEND_BIN" | cut -f1)
+log_success "Backend build complete (Size: $BACKEND_SIZE)"
+cd ..
+
+###############################################################################
+# Deploy Frontend
+###############################################################################
+section "Deploying Frontend"
+
+log_info "Syncing frontend files to $REMOTE_HOST..."
+if rsync -avz --delete web/dist/ "$REMOTE_HOST:$REMOTE_FRONTEND_PATH/" 2>&1 | tail -3; then
+    log_success "Frontend deployed successfully"
+else
+    log_error "Frontend deployment failed"
+    exit 1
+fi
+
+###############################################################################
+# Deploy Backend
+###############################################################################
+section "Deploying Backend"
+
+log_info "Stopping backend service..."
+if ssh "$REMOTE_HOST" "sudo systemctl stop $REMOTE_SERVICE" 2>&1; then
+    log_success "Backend service stopped"
+else
+    log_warning "Could not stop service (might already be stopped)"
+fi
+
+log_info "Uploading backend binary..."
+if scp "server/$BACKEND_BIN" "$REMOTE_HOST:/tmp/wowid3-server-new" >/dev/null 2>&1; then
+    log_success "Backend binary uploaded"
+else
+    log_error "Failed to upload backend binary"
+    exit 1
+fi
+
+log_info "Installing backend binary..."
+if ssh "$REMOTE_HOST" "sudo mv /tmp/wowid3-server-new $REMOTE_BACKEND_BIN && sudo chmod +x $REMOTE_BACKEND_BIN"; then
+    log_success "Backend binary installed"
+else
+    log_error "Failed to install backend binary"
+    exit 1
+fi
+
+log_info "Starting backend service..."
+sleep 1
+if ssh "$REMOTE_HOST" "sudo systemctl start $REMOTE_SERVICE"; then
+    log_success "Backend service started"
+else
+    log_error "Failed to start backend service"
+    exit 1
+fi
+
+sleep 2
+
+###############################################################################
+# Verification
+###############################################################################
+section "Verifying Deployment"
+
+log_info "Checking backend health..."
+if ssh "$REMOTE_HOST" "curl -s http://127.0.0.1:5566/health | jq -e '.status == \"ok\"' >/dev/null 2>&1"; then
+    log_success "Backend health check passed"
+else
+    log_error "Backend health check failed"
+    exit 1
+fi
+
+log_info "Checking service status..."
+if ssh "$REMOTE_HOST" "systemctl is-active --quiet $REMOTE_SERVICE"; then
+    SERVICE_INFO=$(ssh "$REMOTE_HOST" "systemctl status $REMOTE_SERVICE --no-pager | grep -E 'Active|Memory'")
+    echo "$SERVICE_INFO" | sed 's/^/  /'
+    log_success "Service is active"
+else
+    log_error "Service is not running"
+    exit 1
+fi
+
+log_info "Testing upload endpoint..."
+UPLOAD_TEST=$(ssh "$REMOTE_HOST" "
+    dd if=/dev/zero of=/tmp/test-deploy.bin bs=1M count=1 2>/dev/null
+    curl -s -X POST 'http://127.0.0.1:5566/api/admin/upload' \
+      -H 'Authorization: Bearer test' \
+      -F 'files=@/tmp/test-deploy.bin' | jq -r '.[0].message'
+")
+
+if [ "$UPLOAD_TEST" = "File uploaded successfully" ]; then
+    log_success "Upload endpoint is working"
+else
+    log_warning "Upload test returned: $UPLOAD_TEST"
+fi
+
+###############################################################################
+# Summary
+###############################################################################
+section "Deployment Complete"
+
+log_success "Frontend: Deployed to $REMOTE_HOST:$REMOTE_FRONTEND_PATH"
+log_success "Backend: Deployed to $REMOTE_HOST:$REMOTE_BACKEND_BIN"
+log_success "Service: Running and healthy"
+
 echo ""
-
-# Create remote directories
-echo "Creating remote directories..."
-ssh ${REMOTE_USER}@${REMOTE_HOST} "sudo mkdir -p ${REMOTE_PATH} ${WEB_PATH}"
-ssh ${REMOTE_USER}@${REMOTE_HOST} "sudo mkdir -p ${REMOTE_PATH}/storage/{releases,uploads}"
-
-# Deploy backend binary
-echo "Deploying backend binary..."
-scp server/target/release/wowid3-modpack-server ${REMOTE_USER}@${REMOTE_HOST}:/tmp/
-ssh ${REMOTE_USER}@${REMOTE_HOST} "sudo mv /tmp/wowid3-modpack-server ${REMOTE_PATH}/ && sudo chmod +x ${REMOTE_PATH}/wowid3-modpack-server"
-
-# Deploy admin panel
-echo "Deploying admin panel..."
-rsync -avz --delete web/dist/ ${REMOTE_USER}@${REMOTE_HOST}:/tmp/wowid3-admin/
-ssh ${REMOTE_USER}@${REMOTE_HOST} "sudo rm -rf ${WEB_PATH}/* && sudo mv /tmp/wowid3-admin/* ${WEB_PATH}/"
-
-# Deploy systemd service
-echo "Deploying systemd service..."
-scp wowid3-server.service ${REMOTE_USER}@${REMOTE_HOST}:/tmp/
-ssh ${REMOTE_USER}@${REMOTE_HOST} "sudo mv /tmp/wowid3-server.service /etc/systemd/system/"
-
-# Deploy nginx config
-echo "Deploying nginx configuration..."
-scp nginx.conf ${REMOTE_USER}@${REMOTE_HOST}:/tmp/wowid3-nginx.conf
-ssh ${REMOTE_USER}@${REMOTE_HOST} "sudo mv /tmp/wowid3-nginx.conf /etc/nginx/sites-available/wowid3 && sudo ln -sf /etc/nginx/sites-available/wowid3 /etc/nginx/sites-enabled/wowid3"
-
-# Set permissions
-echo "Setting permissions..."
-ssh ${REMOTE_USER}@${REMOTE_HOST} "sudo chown -R wowid3:wowid3 ${REMOTE_PATH} 2>/dev/null || echo 'User wowid3 may not exist yet - you may need to create it'"
-
-# Test nginx config
-echo "Testing nginx configuration..."
-ssh ${REMOTE_USER}@${REMOTE_HOST} "sudo nginx -t"
-
-# Reload systemd and restart services
-echo "Restarting services..."
-ssh ${REMOTE_USER}@${REMOTE_HOST} "sudo systemctl daemon-reload"
-ssh ${REMOTE_USER}@${REMOTE_HOST} "sudo systemctl enable ${SERVICE_NAME}"
-ssh ${REMOTE_USER}@${REMOTE_HOST} "sudo systemctl restart ${SERVICE_NAME}"
-ssh ${REMOTE_USER}@${REMOTE_HOST} "sudo systemctl reload nginx"
-
-# Check service status
-echo ""
-echo "=== Service Status ==="
-ssh ${REMOTE_USER}@${REMOTE_HOST} "sudo systemctl status ${SERVICE_NAME} --no-pager -l"
+log_info "Recent logs from backend:"
+ssh "$REMOTE_HOST" "journalctl -u $REMOTE_SERVICE -n 3 --no-pager" | sed 's/^/  /'
 
 echo ""
-echo "✓ Deployment complete!"
+log_info "Deployment URL: http://192.168.10.43:5565"
 echo ""
-echo "Next steps:"
-echo "1. Create 'wowid3' user if it doesn't exist: sudo useradd -r -s /bin/false wowid3"
-echo "2. Set ADMIN_PASSWORD: sudo systemctl edit ${SERVICE_NAME}"
-echo "3. Check logs: sudo journalctl -u ${SERVICE_NAME} -f"
-echo "4. Access admin panel: https://wowid-launcher.frostdev.io"

@@ -1,10 +1,15 @@
 import { create } from 'zustand';
 
+export interface PlayerInfo {
+  name: string;
+  id: string;
+}
+
 export interface ServerStatus {
   online: boolean;
   player_count?: number;
   max_players?: number;
-  players: string[];
+  players: PlayerInfo[];
   version?: string;
   motd?: string;
 }
