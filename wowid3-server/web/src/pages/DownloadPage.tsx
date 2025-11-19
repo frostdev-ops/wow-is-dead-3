@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useMotionValue, useTransform } from 'framer-motion';
+import { Volume2, VolumeX } from 'lucide-react';
 import api from '@/api/client';
 
 const SPLASH_TEXTS = [
@@ -17,8 +18,61 @@ const SPLASH_TEXTS = [
   "rith crithpieths threaths",
   "reeces peepees",
   "illidans dick being 20in is canon",
-  "lebron 67"
+  "lebron 67",
+  "legalize nuclear bombs",
+  "shadow wizard money gang",
+  "we love casting spells",
+  "man door hand hook car door",
+  "google en passant",
+  "holy hell",
+  "chat is this real?",
+  "mom get the camera",
+  "connection terminated",
+  "the missile knows where it is",
+  "i am living in your walls",
+  "nice argument senator",
+  "my source is that i made it the fuck up",
+  "nanomachines son",
+  "kid named finger",
+  "shrek 2 free download 240p",
+  "sata andagi",
+  "osaka moment",
+  "subway surfers gameplay playing below",
+  "family guy funny moments #420",
+  "skyler where is the money",
+  "jesse we need to cook",
+  "rat.exe running...",
+  "horizontally spinning rat",
+  "free vbucks generator no scam",
+  "loss.jpg",
+  "gregtech new horizons",
+  "what da dog doin",
+  "certified hood classic",
+  "metal pipe falling sound effect",
+  "who is deez?",
+  "among us potion at 3am",
+  "war crime this, code of conduct that",
+  "road work ahead? uh yeah i sure hope it does",
+  "chris is that a weed",
+  "look at all those chickens",
+  "i smell like beef",
+  "fre shavaca do",
+  "whoever threw that paper, your moms a hoe",
+  "stop i coulda dropped my croissant",
+  "two bros chillin in a hot tub",
+  "what are those",
+  "back at it again at krispy kreme",
+  "i don't have enough money for chicken nuggets",
+  "why you always lyin",
+  "hi my name is trey i have a basketball game tomorrow",
+  "merry chrysler",
+  "happy crism",
+  "an avocado... thaaanks",
+  "hurricane katrina more like hurricane tortilla",
+  "Type Shit"
 ];
+
+const WEDNESDAY_SPLASH = "it is wednesday my dudes";
 
 interface LauncherManifest {
   version: string;
@@ -51,16 +105,47 @@ export default function DownloadPage() {
   const [splashText, setSplashText] = useState("");
   const [trailSnowflakes, setTrailSnowflakes] = useState<TrailSnowflake[]>([]);
   
+  // Music State
+  const [musicVolume, setMusicVolume] = useState(0.3);
+  const [isMusicMuted, setIsMusicMuted] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  
+  // Visualizer State
+  const [snowLimit, setSnowLimit] = useState(50); // Base snow count
+  const logoScale = useMotionValue(1);
+  const logoRotate = useMotionValue(0);
+  
   // Audio refs
   const hoverSound = useRef<HTMLAudioElement | null>(null);
   const clickSound = useRef<HTMLAudioElement | null>(null);
+  const musicRef = useRef<HTMLAudioElement | null>(null);
+  
+  // Web Audio API refs
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const requestRef = useRef<number | null>(null);
   
   const trailIdRef = useRef(0);
   const lastTrailTimeRef = useRef(0);
 
   useEffect(() => {
     // Initialize random splash text
-    setSplashText(SPLASH_TEXTS[Math.floor(Math.random() * SPLASH_TEXTS.length)]);
+    const now = new Date();
+    const isWednesday = now.getDay() === 3; // 0 = Sunday, 3 = Wednesday
+    
+    if (isWednesday) {
+       // 20% chance to override with wednesday meme on wednesdays
+       if (Math.random() < 0.2) {
+           setSplashText(WEDNESDAY_SPLASH);
+       } else {
+           setSplashText(SPLASH_TEXTS[Math.floor(Math.random() * SPLASH_TEXTS.length)]);
+       }
+    } else {
+       // Filter out wednesday meme from normal pool just in case it's in there
+       const filteredSplash = SPLASH_TEXTS.filter(t => t !== "it is wednesday my dudes");
+       setSplashText(filteredSplash[Math.floor(Math.random() * filteredSplash.length)]);
+    }
 
     // Initialize audio
     hoverSound.current = new Audio('/misc/hover.ogg');
@@ -68,12 +153,159 @@ export default function DownloadPage() {
     hoverSound.current.volume = 0.5;
     clickSound.current.volume = 0.5;
 
+    // Initialize Music
+    const music = new Audio('/8-bit-christmas.mp3');
+    music.loop = true;
+    music.volume = musicVolume;
+    music.crossOrigin = "anonymous"; // Important for Web Audio API
+    musicRef.current = music;
+
+    // Setup Web Audio API
+    try {
+      const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
+      const audioCtx = new AudioContextClass();
+      const analyser = audioCtx.createAnalyser();
+      
+      // Configure analyser
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.8;
+      
+      const source = audioCtx.createMediaElementSource(music);
+      source.connect(analyser);
+      analyser.connect(audioCtx.destination);
+      
+      audioContextRef.current = audioCtx;
+      analyserRef.current = analyser;
+      sourceRef.current = source;
+      
+      // Analysis loop
+      const updateVisuals = () => {
+        if (!analyser) return;
+        
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(dataArray);
+        
+        // Calculate average volume (intensity)
+        // Focus on bass frequencies for the bounce (lower indexes)
+        let bassSum = 0;
+        let bassCount = 0;
+        for (let i = 0; i < 10; i++) {
+            bassSum += dataArray[i];
+            bassCount++;
+        }
+        const bassAverage = bassSum / bassCount;
+        
+        // Calculate overall average for snow
+        let totalSum = 0;
+        for(let i=0; i < dataArray.length; i++) {
+            totalSum += dataArray[i];
+        }
+        const totalAverage = totalSum / dataArray.length;
+        
+        // Update Logo - Map 0-255 to 1.0-1.2 scale
+        // Normalize bass: typically music hovers around 100-180 for bass hits
+        const normalizedBass = Math.max(0, (bassAverage - 100) / 100); 
+        const targetScale = 1 + (normalizedBass * 0.15);
+        
+        // Smoothly interpolate
+        const currentScale = logoScale.get();
+        logoScale.set(currentScale + (targetScale - currentScale) * 0.2);
+        
+        // Subtle rotation on beat
+        const targetRotate = normalizedBass * 2 * (Math.random() > 0.5 ? 1 : -1);
+        const currentRotate = logoRotate.get();
+        logoRotate.set(currentRotate + (targetRotate - currentRotate) * 0.1);
+        
+        // Update Snow Count - Map 0-255 to 50-300 flakes
+        // Throttle this update slightly to every 5 frames or just check difference
+        const normalizedTotal = Math.max(0, totalAverage / 128); // 0 to ~2
+        const targetSnow = 50 + Math.floor(normalizedTotal * 250);
+        
+        // Only update state if difference is significant to avoid thrashing
+        setSnowLimit(prev => {
+            const diff = Math.abs(prev - targetSnow);
+            if (diff > 10) return Math.floor(prev + (targetSnow - prev) * 0.1);
+            return prev;
+        });
+        
+        requestRef.current = requestAnimationFrame(updateVisuals);
+      };
+      
+      requestRef.current = requestAnimationFrame(updateVisuals);
+      
+    } catch (e) {
+      console.error("Web Audio API initialization failed", e);
+    }
+
+    // Attempt auto-play
+    const playPromise = music.play();
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => {
+          setIsPlaying(true);
+        })
+        .catch(() => {
+          console.log("Autoplay prevented by browser policy");
+          setIsPlaying(false);
+        });
+    }
+
     // Fetch manifest
     api.get('/launcher/latest')
       .then(res => setManifest(res.data))
       .catch(err => console.error('Failed to fetch launcher manifest:', err))
       .finally(() => setIsLoading(false));
+
+    return () => {
+      if (musicRef.current) {
+        musicRef.current.pause();
+        musicRef.current = null;
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+      }
+      if (requestRef.current) {
+        cancelAnimationFrame(requestRef.current);
+      }
+    };
   }, []);
+
+  // Handle volume changes
+  useEffect(() => {
+    if (musicRef.current) {
+      musicRef.current.volume = isMusicMuted ? 0 : musicVolume;
+    }
+  }, [musicVolume, isMusicMuted]);
+
+  const toggleMute = () => {
+    if (!musicRef.current) return;
+    
+    // Resume audio context if suspended (browser policy)
+    if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume();
+    }
+    
+    if (!isPlaying) {
+      // First interaction start
+      musicRef.current.play()
+        .then(() => setIsPlaying(true))
+        .catch(console.error);
+    }
+    
+    setIsMusicMuted(!isMusicMuted);
+  };
+
+  const handleInteraction = () => {
+    // Resume audio context if suspended
+    if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume();
+    }
+    
+    // Try to start music on any page click if it was blocked
+    if (musicRef.current && !isPlaying) {
+        musicRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
+    }
+  };
 
   // Mouse trail snowflakes
   useEffect(() => {
@@ -129,19 +361,21 @@ export default function DownloadPage() {
       clickSound.current.currentTime = 0;
       clickSound.current.play().catch(() => {});
     }
+    handleInteraction();
   };
 
-  // Generate snowflakes (Updated to match launcher: 200 flakes, slower, larger)
+  // Generate snowflakes (Maximum possible)
   const snowflakes = useMemo(() => {
     const flakes: Snowflake[] = [];
-    for (let i = 0; i < 200; i++) {
+    // Generate up to 300 potential flakes
+    for (let i = 0; i < 300; i++) {
       flakes.push({
         id: i,
         left: `${Math.random() * 100}%`,
-        animationDuration: `${Math.random() * 10 + 8}s`, // 8-18 seconds (slower)
+        animationDuration: `${Math.random() * 10 + 8}s`, 
         animationDelay: `${Math.random() * 15}s`,
-        size: Math.random() * 6 + 4, // 4-10px (bigger)
-        opacity: Math.random() * 0.6 + 0.4, // 0.4-1.0
+        size: Math.random() * 6 + 4, 
+        opacity: Math.random() * 0.6 + 0.4,
       });
     }
     return flakes;
@@ -158,14 +392,43 @@ export default function DownloadPage() {
         backgroundPosition: 'center',
         cursor: "url('/misc/cursor.png'), auto"
       }}
+      onClick={handleInteraction}
     >
+      {/* Music Player Widget */}
+      <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 bg-[#003366]/90 backdrop-blur-md p-3 rounded-2xl border-2 border-white shadow-xl group transition-all hover:scale-105">
+        <button 
+          onClick={(e) => { e.stopPropagation(); toggleMute(); }}
+          className="text-white hover:text-yellow-400 transition-colors"
+        >
+          {isMusicMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+        </button>
+        <div className="flex flex-col w-24">
+            <span className="text-[10px] font-bold text-white/80 uppercase tracking-wider mb-1 truncate">8-bit Christmas</span>
+            <input 
+              type="range" 
+              min="0" 
+              max="1" 
+              step="0.05" 
+              value={isMusicMuted ? 0 : musicVolume}
+              onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  setMusicVolume(val);
+                  if (val > 0) setIsMusicMuted(false);
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="h-1.5 w-full bg-black/40 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:hover:bg-yellow-400"
+            />
+        </div>
+      </div>
+
       {/* Snow - DOM elements */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 5 }}>
-        {snowflakes.map((flake) => (
+        {snowflakes.map((flake, index) => (
           <div
             key={flake.id}
             className="absolute animate-snowfall"
             style={{
+              display: index < snowLimit ? 'block' : 'none',
               left: flake.left,
               top: '-10px',
               width: `${flake.size}px`,
@@ -253,10 +516,11 @@ export default function DownloadPage() {
         >
           {/* Logo */}
           <div className="relative mb-6 hover:scale-105 transition-transform duration-500 ease-in-out">
-            <img 
+            <motion.img 
               src="/logo.png" 
               alt="WOW IS DEAD 3 Logo" 
               className="h-32 md:h-56 object-contain drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)]" 
+              style={{ scale: logoScale, rotate: logoRotate }}
             />
             <motion.div 
               animate={{ rotate: [0, 5, -5, 0] }}
@@ -308,7 +572,7 @@ export default function DownloadPage() {
               />
               
               {/* Text Overlay */}
-              <div className="absolute inset-0 flex flex-col items-center justify-center pt-4 pointer-events-none">
+              <div className="absolute inset-0 flex flex-col items-center justify-center pb-2 pointer-events-none">
                 <span className="text-4xl md:text-5xl font-black text-white drop-shadow-[0_4px_0_rgba(0,0,0,0.8)]" style={{ textShadow: '3px 3px 0 #000' }}>
                   {isLoading ? "LOADING..." : "DOWNLOAD"}
                 </span>
@@ -316,7 +580,7 @@ export default function DownloadPage() {
 
               {/* Version Badge */}
               {manifest && (
-                 <div className="absolute -bottom-5 left-1/2 transform -translate-x-1/2 bg-black/60 backdrop-blur-md border-2 border-white/20 rounded-full px-6 py-1.5 shadow-xl whitespace-nowrap pointer-events-none transition-transform group-hover:scale-105">
+                 <div className="absolute -bottom-4 left-1/2 transform -translate-x-1/2 bg-black/60 backdrop-blur-md border-2 border-white/20 rounded-full px-6 py-1.5 shadow-xl whitespace-nowrap pointer-events-none transition-transform group-hover:scale-105">
                    <span className="text-sm font-bold text-yellow-200 drop-shadow-md tracking-wide">
                      v{manifest.version} • Windows
                    </span>
