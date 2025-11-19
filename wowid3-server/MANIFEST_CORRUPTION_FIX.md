@@ -165,5 +165,25 @@ curl -s https://wowid-launcher.frostdev.io/api/manifest/latest | jq -r '.files[]
 
 ✅ All three match - launcher can now successfully update!
 
+## Post-Fix Remediation Workflow
+
+Now that blacklist enforcement is part of both publishing and the CLI, use the following steps whenever you adjust blacklist patterns or discover that a published release contains filtered files:
+
+1. **Regenerate the affected release manifest (and clean the files on disk):**
+   ```bash
+   cd wowid3-server/server
+   cargo run -- regenerate-manifest 1.0.4 --set-latest
+   ```
+   - Replace `1.0.4` with the version you need to sanitize.
+   - The command now removes any files matching `config-blacklist.txt`, recalculates SHA-256 hashes, writes a fresh manifest atomically, and optionally updates `latest.json`.
+
+2. **Re-test the server crate to ensure everything still passes:**
+   ```bash
+   cargo test -p wowid3-server
+   ```
+   Running the tests right after regeneration verifies that validation logic, blacklist handling, and other invariants still hold before you redeploy.
+
+3. **Publish new releases confidently:** when publishing via the admin UI, blacklisted files are automatically stripped from the release directory. If every file is removed by the blacklist, the publish action now fails with a clear error so you can adjust patterns before players see a bad manifest.
+
 ## Date
 November 18, 2025

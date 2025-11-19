@@ -1,9 +1,14 @@
 use crate::config::Config;
 use crate::models::{Manifest, ManifestFile};
+<<<<<<< Current (Your changes)
 use crate::storage::manifest::{read_manifest, write_manifest, set_latest_manifest};
+=======
+use crate::storage::manifest::{read_manifest, set_latest_manifest, write_manifest};
+>>>>>>> Incoming (Background Agent changes)
 use crate::utils;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use globset::GlobSet;
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use tokio::fs;
@@ -34,7 +39,10 @@ pub enum Commands {
 /// Run CLI command
 pub async fn run_cli(cli: Cli, config: Config) -> Result<()> {
     match cli.command {
-        Some(Commands::RegenerateManifest { version, set_latest }) => {
+        Some(Commands::RegenerateManifest {
+            version,
+            set_latest,
+        }) => {
             regenerate_manifest(&config, &version, set_latest).await?;
         }
         None => {
@@ -54,7 +62,10 @@ async fn regenerate_manifest(config: &Config, version: &str, set_latest: bool) -
 
     // Check if release directory exists
     if !release_dir.exists() {
-        anyhow::bail!("Release directory does not exist: {}", release_dir.display());
+        anyhow::bail!(
+            "Release directory does not exist: {}",
+            release_dir.display()
+        );
     }
 
     // Try to read existing manifest to preserve metadata
@@ -70,17 +81,30 @@ async fn regenerate_manifest(config: &Config, version: &str, set_latest: bool) -
         Err(e) => {
             tracing::warn!("Could not read existing manifest: {}. Using defaults.", e);
             (
-                "1.21.4".to_string(),       // Default Minecraft version
-                "0.16.14".to_string(),      // Default Fabric Loader version
-                String::new(),              // Empty changelog
+                "1.21.4".to_string(),  // Default Minecraft version
+                "0.16.14".to_string(), // Default Fabric Loader version
+                String::new(),         // Empty changelog
             )
         }
     };
 
     tracing::info!("Scanning files in: {}", release_dir.display());
 
+    // Load blacklist patterns to exclude player/local data
+    let blacklist_patterns = utils::load_blacklist_patterns(config).await?;
+    let glob_set = utils::compile_patterns(&blacklist_patterns)?;
+
+    let removed_blacklisted = remove_blacklisted_files(&release_dir, &glob_set).await?;
+    if removed_blacklisted > 0 {
+        tracing::warn!(
+            "Removed {} blacklisted file(s) while regenerating {}",
+            removed_blacklisted,
+            version
+        );
+    }
+
     // Scan all files and calculate fresh checksums
-    let files = scan_release_files(&release_dir, config, version).await?;
+    let files = scan_release_files(&release_dir, config, version, Some(&glob_set)).await?;
 
     tracing::info!("Found {} files", files.len());
 
@@ -123,6 +147,7 @@ async fn scan_release_files(
     dir: &PathBuf,
     config: &Config,
     version: &str,
+    blacklist: Option<&GlobSet>,
 ) -> Result<Vec<ManifestFile>> {
     // Load blacklist patterns to exclude files that should not be distributed
     let blacklist_patterns = utils::load_blacklist_patterns(config).await?;
@@ -148,9 +173,17 @@ async fn scan_release_files(
             .strip_prefix(dir)
             .context("Failed to get relative path")?;
 
-        let relative_str = relative_path
+        let relative_str_raw = relative_path
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("Invalid path encoding"))?;
+        let relative_str = relative_str_raw.replace('\\', "/");
+
+        if let Some(glob) = blacklist {
+            if glob.is_match(&relative_str) {
+                tracing::debug!("Skipping blacklisted file while scanning: {}", relative_str);
+                continue;
+            }
+        }
 
         // Skip blacklisted files
         if utils::is_blacklisted(relative_str, &glob_set) {
@@ -159,7 +192,8 @@ async fn scan_release_files(
         }
 
         // Calculate fresh checksum
-        let data = fs::read(path).await
+        let data = fs::read(path)
+            .await
             .with_context(|| format!("Failed to read file: {}", path.display()))?;
 
         let mut hasher = Sha256::new();
@@ -172,7 +206,7 @@ async fn scan_release_files(
         }
 
         files.push(ManifestFile {
-            path: relative_str.to_string(),
+            path: relative_str.clone(),
             url: format!("{}/files/{}/{}", config.base_url, version, relative_str),
             sha256,
             size: data.len() as u64,
@@ -184,4 +218,33 @@ async fn scan_release_files(
     }
 
     Ok(files)
+}
+
+async fn remove_blacklisted_files(dir: &PathBuf, glob_set: &GlobSet) -> Result<usize> {
+    let mut removed = 0;
+
+    for entry in WalkDir::new(dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+    {
+        let path = entry.path();
+        let relative_path = path
+            .strip_prefix(dir)
+            .context("Failed to get relative path")?;
+
+        let relative_str = relative_path
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid path encoding"))?;
+        let relative_str = relative_str.replace('\\', "/");
+
+        if glob_set.is_match(&relative_str) {
+            fs::remove_file(path)
+                .await
+                .with_context(|| format!("Failed to remove blacklisted file {}", relative_str))?;
+            removed += 1;
+        }
+    }
+
+    Ok(removed)
 }
