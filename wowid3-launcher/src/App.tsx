@@ -4,9 +4,11 @@ import { useModpack, useServer, useTheme } from './hooks';
 import { useSettingsStore } from './stores/settingsStore';
 import { useAudioStore } from './stores/audioStore';
 import { useUIStore } from './stores/uiStore';
+import { checkLauncherUpdate, LauncherUpdateInfo } from './hooks/useTauriCommands';
 import LauncherHome from './components/LauncherHome';
 import SettingsScreen from './components/SettingsScreen';
 import LogViewerModal from './components/LogViewerModal';
+import LauncherUpdateModal from './components/LauncherUpdateModal';
 import ChristmasBackground from './components/theme/ChristmasBackground';
 import { ToastProvider } from './components/ui/ToastContainer';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -20,6 +22,7 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<'home' | 'settings'>('home');
   const [showChangelog, setShowChangelog] = useState(false);
   const [showChangelogModal, setShowChangelogModal] = useState(false);
+  const [launcherUpdate, setLauncherUpdate] = useState<LauncherUpdateInfo | null>(null);
   const fallbackRef = useRef<HTMLAudioElement>(null);
   const mainRef = useRef<HTMLAudioElement>(null);
   const retryIntervalRef = useRef<number | null>(null);
@@ -379,6 +382,15 @@ function AppContent() {
     // Load main audio in background (don't await)
     loadMainAudio();
 
+    // Check for launcher updates
+    checkLauncherUpdate().then(info => {
+        if (info.available) {
+            setLauncherUpdate(info);
+        }
+    }).catch(err => {
+        console.error("Failed to check for launcher updates:", err);
+    });
+
     // Other initialization
     checkUpdates().catch(console.error);
     startPolling(30);
@@ -661,6 +673,11 @@ function AppContent() {
         isOpen={showLogViewer}
         onClose={() => setShowLogViewer(false)}
       />
+
+      {/* Launcher Update Modal - Blocks if update available */}
+      {launcherUpdate && (
+          <LauncherUpdateModal updateInfo={launcherUpdate} />
+      )}
     </div>
   );
 }

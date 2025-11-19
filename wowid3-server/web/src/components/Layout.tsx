@@ -26,6 +26,7 @@ export function Layout({ children }: LayoutProps) {
     if (pathname === '/releases') return 'Releases';
     if (pathname.startsWith('/releases/') && pathname.endsWith('/edit')) return 'Edit Release';
     if (pathname === '/upload') return 'Upload Files';
+    if (pathname === '/launcher') return 'Launcher Updates';
     if (pathname === '/settings') return 'Settings';
     return 'Admin Panel';
   };

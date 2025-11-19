@@ -7,6 +7,7 @@ import {
   Upload,
   FileText,
   Archive,
+  Rocket,
 } from 'lucide-react';
 import { motion, LayoutGroup } from 'framer-motion';
 
@@ -47,6 +48,11 @@ export function Sidebar() {
       icon: <Archive className="w-5 h-5" />,
     },
     {
+      label: 'Launcher',
+      path: '/launcher',
+      icon: <Rocket className="w-5 h-5" />,
+    },
+    {
       label: 'Settings',
       path: '/settings',
       icon: <Settings className="w-5 h-5" />,
@@ -59,6 +65,7 @@ export function Sidebar() {
     if (path === '/releases' && location.pathname.startsWith('/releases')) return true;
     if (path === '/upload' && location.pathname === '/upload') return true;
     if (path === '/resources' && location.pathname === '/resources') return true;
+    if (path === '/launcher' && location.pathname === '/launcher') return true;
     if (path === '/settings' && location.pathname === '/settings') return true;
     return false;
   };

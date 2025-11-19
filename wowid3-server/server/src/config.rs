@@ -87,4 +87,12 @@ impl Config {
     pub fn manifest_path(&self, version: &str) -> PathBuf {
         self.release_path(version).join("manifest.json")
     }
+
+    pub fn launcher_path(&self) -> PathBuf {
+        self.storage_path.join("launcher")
+    }
+
+    pub fn launcher_manifest_path(&self) -> PathBuf {
+        self.launcher_path().join("latest.json")
+    }
 }

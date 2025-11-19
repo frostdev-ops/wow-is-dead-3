@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::models::Manifest;
+use crate::models::{Manifest, manifest::LauncherManifest};
 use crate::storage;
 use crate::utils;
 use anyhow;
@@ -28,6 +28,51 @@ pub struct ResourcePackInfo {
 pub struct PublicState {
     pub config: Arc<Config>,
     pub cache: crate::cache::CacheManager,
+}
+
+/// GET /api/launcher/latest
+pub async fn get_latest_launcher_manifest(
+    State(state): State<PublicState>,
+) -> Result<Json<LauncherManifest>, AppError> {
+    let manifest = storage::launcher::read_latest_launcher_manifest(&state.config)
+        .await
+        .map_err(|_| AppError::NotFound("No launcher update available".to_string()))?;
+
+    Ok(Json(manifest))
+}
+
+/// GET /files/launcher/:filename
+pub async fn serve_launcher_file(
+    State(state): State<PublicState>,
+    Path(filename): Path<String>,
+) -> Result<Response, AppError> {
+    // Security: Only allow specific launcher filenames (currently just the main exe)
+    if filename != "WOWID3Launcher.exe" {
+        return Err(AppError::NotFound(format!("File {} not found", filename)));
+    }
+
+    let launcher_dir = state.config.launcher_path();
+    let file_path = launcher_dir.join(&filename);
+
+    if !file_path.exists() {
+        return Err(AppError::NotFound(format!("File {} not found", filename)));
+    }
+
+    let file = fs::File::open(&file_path).await.map_err(|_| {
+        AppError::NotFound(format!("Could not open file: {}", filename))
+    })?;
+
+    let content_type = "application/vnd.microsoft.portable-executable";
+    
+    let stream = ReaderStream::new(file);
+    let body = Body::from_stream(stream);
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", filename))
+        .body(body)
+        .unwrap())
 }
 
 /// GET /api/manifest/latest

@@ -13,6 +13,7 @@ use modules::java_runtime::{get_cached_java, download_and_cache_java};
 use modules::logger::initialize_logger;
 use modules::log_reader::{read_latest_log, get_log_path, get_new_log_lines, read_log_tail, read_log_from_offset, read_log_before_offset, LogResult};
 use modules::paths::{get_default_game_directory, resolve_game_directory, validate_game_directory};
+use modules::launcher_updater::{check_launcher_update, install_launcher_update, LauncherUpdateInfo};
 use serde::Serialize;
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -66,6 +67,28 @@ async fn cmd_complete_device_code_auth(device_code: String, interval: u64) -> Re
     }
 
     result.map_err(|e| e.to_string())
+}
+
+// Launcher Update Commands
+#[tauri::command]
+async fn cmd_check_launcher_update(app: AppHandle) -> Result<LauncherUpdateInfo, String> {
+    check_launcher_update(&app).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cmd_install_launcher_update(app: AppHandle, url: String, sha256: String) -> Result<(), String> {
+    // Clone app handle for the callback
+    let app_handle = app.clone();
+    
+    install_launcher_update(url, sha256, move |current, total| {
+        let _ = app_handle.emit("launcher-update-progress", serde_json::json!({
+            "current": current,
+            "total": total,
+            "percent": if total > 0 { (current as f64 / total as f64) * 100.0 } else { 0.0 }
+        }));
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 // Minecraft Launch Commands
@@ -689,6 +712,8 @@ pub fn run() {
             cmd_get_default_game_directory,
             cmd_resolve_game_directory,
             cmd_validate_game_directory,
+            cmd_check_launcher_update,
+            cmd_install_launcher_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

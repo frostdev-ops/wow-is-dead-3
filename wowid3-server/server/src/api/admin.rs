@@ -829,6 +829,105 @@ pub async fn delete_resource(
     })))
 }
 
+/// POST /api/admin/launcher - Upload new launcher version
+pub async fn upload_launcher_release(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+    mut multipart: Multipart,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let start = std::time::Instant::now();
+    
+    let mut version = String::new();
+    let mut changelog = String::new();
+    let mut mandatory = true; // Default to mandatory
+    let mut file_saved = false;
+    let mut file_sha256 = String::new();
+    let mut file_size = 0u64;
+    let mut file_name = String::from("WOWID3Launcher.exe");
+
+    let launcher_dir = state.config.launcher_path();
+    fs::create_dir_all(&launcher_dir)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create launcher directory: {}", e)))?;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Multipart error: {}", e)))?
+    {
+        let name = field.name().unwrap_or("").to_string();
+
+        if name == "version" {
+            version = field.text().await.map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read version: {}", e)))?;
+        } else if name == "changelog" {
+            changelog = field.text().await.map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read changelog: {}", e)))?;
+        } else if name == "mandatory" {
+            let val = field.text().await.map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read mandatory flag: {}", e)))?;
+            mandatory = val == "true";
+        } else if name == "file" {
+            let original_name = field.file_name().map(|n| n.to_string()).unwrap_or_else(|| "launcher.exe".to_string());
+            
+            // We'll use a fixed name for the served file, but maybe we should version it on disk?
+            // For now, let's stick to overwriting the served file or using a versioned name.
+            // Let's use WOWID3Launcher.exe as the main download target, but maybe serve it via /files/launcher/WOWID3Launcher.exe
+            
+            // Actually, let's save as WOWID3Launcher.exe directly in launcher dir
+            let file_path = launcher_dir.join(&file_name);
+            
+            let mut file = fs::File::create(&file_path)
+                .await
+                .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create launcher file: {}", e)))?;
+
+            let mut hasher = sha2::Sha256::new();
+            let mut stream = field;
+            
+            while let Some(chunk) = stream.chunk().await.map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read chunk: {}", e)))? {
+                hasher.update(&chunk);
+                file_size += chunk.len() as u64;
+                file.write_all(&chunk).await.map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to write chunk: {}", e)))?;
+            }
+            
+            file.flush().await.map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to flush file: {}", e)))?;
+            file_sha256 = format!("{:x}", hasher.finalize());
+            file_saved = true;
+
+            tracing::info!("Uploaded launcher binary: {} ({} bytes, sha256: {})", original_name, file_size, &file_sha256[..12]);
+        }
+    }
+
+    if !file_saved {
+        return Err(AppError::BadRequest("No file uploaded".to_string()));
+    }
+    if version.is_empty() {
+        return Err(AppError::BadRequest("Version is required".to_string()));
+    }
+
+    // Create manifest
+    let manifest = crate::models::manifest::LauncherManifest {
+        version: version.clone(),
+        url: format!("{}/files/launcher/{}", state.config.base_url, file_name),
+        sha256: file_sha256,
+        size: file_size,
+        changelog,
+        mandatory,
+    };
+
+    // Save manifest
+    storage::launcher::write_launcher_manifest(&state.config, &manifest)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to write launcher manifest: {}", e)))?;
+
+    let duration = start.elapsed();
+    tracing::info!("upload_launcher_release completed in {:?} (version: {})", duration, version);
+
+    Ok(Json(json!({
+        "message": "Launcher release uploaded successfully",
+        "version": version,
+        "mandatory": mandatory
+    })))
+}
+
+
 // Error handling
 pub enum AppError {
     Internal(anyhow::Error),

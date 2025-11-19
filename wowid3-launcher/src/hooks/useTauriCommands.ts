@@ -18,6 +18,15 @@ export interface DeviceCodeInfo {
   interval: number;
 }
 
+export interface LauncherUpdateInfo {
+    available: boolean;
+    version: string;
+    changelog: string;
+    mandatory: boolean;
+    download_url: string;
+    sha256: string;
+}
+
 // Authentication commands
 export const authenticateMinecraft = async (): Promise<MinecraftProfile> => {
   return await invoke<MinecraftProfile>('cmd_authenticate');
@@ -165,4 +174,13 @@ export const downloadAndCacheAudio = async (url: string): Promise<string> => {
 
 export const clearAudioCache = async (): Promise<void> => {
   return await invoke<void>('cmd_clear_audio_cache');
+};
+
+// Launcher update commands
+export const checkLauncherUpdate = async (): Promise<LauncherUpdateInfo> => {
+    return await invoke<LauncherUpdateInfo>('cmd_check_launcher_update');
+};
+
+export const installLauncherUpdate = async (url: string, sha256: string): Promise<void> => {
+    return await invoke<void>('cmd_install_launcher_update', { url, sha256 });
 };

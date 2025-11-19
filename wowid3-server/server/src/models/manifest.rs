@@ -46,3 +46,14 @@ impl Manifest {
         self.files.iter().map(|f| f.size).sum()
     }
 }
+
+/// Launcher update manifest
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LauncherManifest {
+    pub version: String,
+    pub url: String,
+    pub sha256: String,
+    pub size: u64,
+    pub changelog: String,
+    pub mandatory: bool,
+}
