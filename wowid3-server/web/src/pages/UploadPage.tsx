@@ -3,6 +3,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useUploadMutation, useCreateReleaseMutation } from '@/hooks/queries';
 import { AlertCircle, CheckCircle, Upload } from 'lucide-react';
+import { PageTransition } from '@/components/PageTransition';
 
 const FileUploadZone = lazy(() => import('@/components/uploads/FileUploadZone'));
 const UploadProgress = lazy(() => import('@/components/uploads/UploadProgress'));
@@ -86,9 +87,10 @@ export default function UploadPage() {
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-4xl">
-      {/* File Upload Section */}
-      <Card className="p-6">
+    <PageTransition>
+      <div className="p-6 space-y-6 max-w-4xl">
+        {/* File Upload Section */}
+        <Card className="p-6">
         <h2 className="text-2xl font-bold mb-4">Upload Modpack Files</h2>
         <p className="text-muted-foreground mb-6">
           Upload the modpack directory or individual files. The system will automatically create a manifest for distribution.
@@ -105,9 +107,9 @@ export default function UploadPage() {
         )}
 
         {uploadSuccess && (
-          <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex gap-3">
-            <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-            <p className="text-green-900">{uploadSuccess}</p>
+          <div className="mb-4 p-4 bg-success/10 border border-success/30 rounded-lg flex gap-3">
+            <CheckCircle className="w-5 h-5 text-success flex-shrink-0 mt-0.5" />
+            <p className="text-success">{uploadSuccess}</p>
           </div>
         )}
 
@@ -214,6 +216,7 @@ export default function UploadPage() {
           </div>
         </Card>
       )}
-    </div>
+      </div>
+    </PageTransition>
   );
 }

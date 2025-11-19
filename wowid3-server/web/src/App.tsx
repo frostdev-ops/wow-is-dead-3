@@ -1,5 +1,6 @@
 import { useEffect, useState, lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { AnimatePresence } from 'framer-motion';
 import { useAuthStore } from './store/authStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -35,8 +36,35 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <Layout>{children}</Layout>;
 }
 
+// Animated routes wrapper - must be inside BrowserRouter to use useLocation
+function AnimatedRoutes() {
+  const { isAuthenticated } = useAuthStore();
+  const location = useLocation();
+
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      <Routes location={location} key={location.pathname}>
+        {/* Public route: Login */}
+        <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
+
+        {/* Protected routes: Admin panel */}
+        <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+        <Route path="/drafts" element={<ProtectedRoute><DraftsPage /></ProtectedRoute>} />
+        <Route path="/releases" element={<ProtectedRoute><ReleasesPage /></ProtectedRoute>} />
+        <Route path="/releases/:id/edit" element={<ProtectedRoute><ReleaseEditorPage /></ProtectedRoute>} />
+        <Route path="/upload" element={<ProtectedRoute><UploadPage /></ProtectedRoute>} />
+        <Route path="/resources" element={<ProtectedRoute><ResourcePacksPage /></ProtectedRoute>} />
+        <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+
+        {/* Catch-all: Redirect to dashboard or login */}
+        <Route path="*" element={<Navigate to={isAuthenticated ? "/dashboard" : "/"} replace />} />
+      </Routes>
+    </AnimatePresence>
+  );
+}
+
 function App() {
-  const { isAuthenticated, loadTokenFromStorage } = useAuthStore();
+  const { loadTokenFromStorage } = useAuthStore();
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -53,22 +81,7 @@ function App() {
       <TooltipProvider>
         <BrowserRouter>
           <Suspense fallback={<LoadingFallback />}>
-            <Routes>
-              {/* Public route: Login */}
-              <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
-
-              {/* Protected routes: Admin panel */}
-              <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-              <Route path="/drafts" element={<ProtectedRoute><DraftsPage /></ProtectedRoute>} />
-              <Route path="/releases" element={<ProtectedRoute><ReleasesPage /></ProtectedRoute>} />
-              <Route path="/releases/:id/edit" element={<ProtectedRoute><ReleaseEditorPage /></ProtectedRoute>} />
-              <Route path="/upload" element={<ProtectedRoute><UploadPage /></ProtectedRoute>} />
-              <Route path="/resources" element={<ProtectedRoute><ResourcePacksPage /></ProtectedRoute>} />
-              <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
-
-              {/* Catch-all: Redirect to dashboard or login */}
-              <Route path="*" element={<Navigate to={isAuthenticated ? "/dashboard" : "/"} replace />} />
-            </Routes>
+            <AnimatedRoutes />
           </Suspense>
           <Toaster />
         </BrowserRouter>

@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: 'class',
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
@@ -23,6 +24,14 @@ export default {
         destructive: {
           DEFAULT: "hsl(var(--color-destructive) / <alpha-value>)",
           foreground: "hsl(var(--color-destructive-foreground) / <alpha-value>)",
+        },
+        success: {
+          DEFAULT: "hsl(var(--color-success) / <alpha-value>)",
+          foreground: "hsl(var(--color-success-foreground) / <alpha-value>)",
+        },
+        warning: {
+          DEFAULT: "hsl(var(--color-warning) / <alpha-value>)",
+          foreground: "hsl(var(--color-warning-foreground) / <alpha-value>)",
         },
         muted: {
           DEFAULT: "hsl(var(--color-muted) / <alpha-value>)",

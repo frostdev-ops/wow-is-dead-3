@@ -51,24 +51,24 @@ function ChangelogTab({ draft, onUpdate }: ChangelogTabProps) {
   return (
     <div className="h-full flex flex-col">
       {/* Toolbar */}
-      <div className="bg-white border-b px-6 py-3 flex items-center justify-between">
+      <div className="bg-card border-b border-border px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <button
             onClick={handleGenerate}
             disabled={generating || loading || draft.files.length === 0}
-            className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2"
+            className="px-4 py-2 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/90 disabled:opacity-50 flex items-center gap-2 transition-colors"
           >
             <Sparkles className="w-4 h-4" />
             {generating ? 'Generating...' : 'Generate Changelog'}
           </button>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-muted-foreground">
             Auto-generate from file changes or write your own
           </p>
         </div>
 
         <button
           onClick={() => setShowPreview(!showPreview)}
-          className="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 flex items-center gap-2"
+          className="px-4 py-2 bg-muted text-foreground rounded-lg hover:bg-accent flex items-center gap-2 transition-colors"
         >
           {showPreview ? (
             <>
@@ -87,7 +87,7 @@ function ChangelogTab({ draft, onUpdate }: ChangelogTabProps) {
       {/* Editor + Preview */}
       <div className="flex-1 flex overflow-hidden">
         {/* Monaco Editor */}
-        <div className={`${showPreview ? 'w-1/2' : 'w-full'} border-r`}>
+        <div className={`${showPreview ? 'w-1/2' : 'w-full'} border-r border-border`}>
           <Editor
             height="100%"
             defaultLanguage="markdown"
@@ -107,13 +107,13 @@ function ChangelogTab({ draft, onUpdate }: ChangelogTabProps) {
 
         {/* Preview */}
         {showPreview && (
-          <div className="w-1/2 overflow-auto bg-white">
+          <div className="w-1/2 overflow-auto bg-card">
             <div className="p-6">
               <div className="prose prose-sm max-w-none">
                 {draft.changelog ? (
                   <ReactMarkdown>{draft.changelog}</ReactMarkdown>
                 ) : (
-                  <div className="text-center py-12 text-gray-400">
+                  <div className="text-center py-12 text-muted-foreground">
                     <p>Preview will appear here</p>
                     <p className="text-sm mt-2">Start writing or generate a changelog</p>
                   </div>
@@ -126,7 +126,7 @@ function ChangelogTab({ draft, onUpdate }: ChangelogTabProps) {
 
       {/* Help text */}
       {!draft.changelog && (
-        <div className="bg-blue-50 border-t border-blue-200 px-6 py-3 text-sm text-blue-800">
+        <div className="bg-muted/30 border-t border-border px-6 py-3 text-sm">
           <p>
             <strong>Tip:</strong> Use the "Generate Changelog" button to automatically create a changelog
             from your file changes, or write your own using Markdown formatting.

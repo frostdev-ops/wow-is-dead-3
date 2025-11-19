@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Command, X, FileText, Folder, Plus, Trash2, Download, Upload, RefreshCw } from 'lucide-react';
 import Fuse from 'fuse.js';
-import './CommandPalette.css';
 
 export interface Command {
   id: string;
@@ -93,8 +93,6 @@ export default function CommandPalette({ commands, isOpen, onClose }: CommandPal
     }
   }, [selectedIndex]);
 
-  if (!isOpen) return null;
-
   const groupedCommands = filteredCommands.reduce((acc, cmd) => {
     const category = cmd.category || 'General';
     if (!acc[category]) {
@@ -105,69 +103,131 @@ export default function CommandPalette({ commands, isOpen, onClose }: CommandPal
   }, {} as Record<string, Command[]>);
 
   return (
-    <div className="command-palette-overlay" onClick={onClose}>
-      <div className="command-palette" onClick={(e) => e.stopPropagation()}>
-        <div className="command-palette-header">
-          <Search size={20} className="command-palette-search-icon" />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search commands..."
-            className="command-palette-input"
-            autoFocus
-          />
-          <button onClick={onClose} className="command-palette-close">
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="command-palette-results">
-          {filteredCommands.length === 0 && (
-            <div className="command-palette-empty">
-              <p>No commands found</p>
-              <p style={{ fontSize: '12px', opacity: 0.7 }}>Try a different search term</p>
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-start justify-center z-[2000] pt-[15vh]"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: -20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -20 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="bg-card rounded-xl w-[90%] max-w-[600px] max-h-[70vh] flex flex-col shadow-lg border border-border"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center px-5 py-4 border-b border-border gap-3">
+              <Search size={20} className="text-muted-foreground flex-shrink-0" />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search commands..."
+                className="flex-1 bg-transparent border-none outline-none text-foreground text-base placeholder:text-muted-foreground"
+                autoFocus
+              />
+              <motion.button
+                whileHover={{ scale: 1.1, backgroundColor: 'hsl(var(--color-muted))' }}
+                whileTap={{ scale: 0.95 }}
+                onClick={onClose}
+                className="bg-transparent border-none text-muted-foreground cursor-pointer p-1 flex items-center justify-center rounded transition-colors"
+              >
+                <X size={18} />
+              </motion.button>
             </div>
-          )}
 
-          {Object.entries(groupedCommands).map(([category, cmds]) => (
-            <div key={category} className="command-palette-category">
-              <div className="command-palette-category-title">{category}</div>
-              {cmds.map((cmd, idx) => {
-                const globalIndex = filteredCommands.indexOf(cmd);
-                return (
-                  <button
-                    key={cmd.id}
-                    className={`command-palette-item ${globalIndex === selectedIndex ? 'selected' : ''}`}
-                    onClick={() => {
-                      cmd.action();
-                      onClose();
-                    }}
-                    onMouseEnter={() => setSelectedIndex(globalIndex)}
-                  >
-                    {cmd.icon && <span className="command-palette-item-icon">{cmd.icon}</span>}
-                    <div className="command-palette-item-content">
-                      <div className="command-palette-item-name">{cmd.name}</div>
-                      {cmd.description && (
-                        <div className="command-palette-item-description">{cmd.description}</div>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
+            {/* Results */}
+            <div className="flex-1 overflow-y-auto py-2">
+              {filteredCommands.length === 0 && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="py-10 px-5 text-center text-muted-foreground"
+                >
+                  <p className="text-base mb-2 text-foreground">No commands found</p>
+                  <p className="text-xs opacity-70">Try a different search term</p>
+                </motion.div>
+              )}
+
+              {Object.entries(groupedCommands).map(([category, cmds]) => (
+                <div key={category} className="mb-2">
+                  <div className="px-5 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    {category}
+                  </div>
+                  {cmds.map((cmd, idx) => {
+                    const globalIndex = filteredCommands.indexOf(cmd);
+                    const isSelected = globalIndex === selectedIndex;
+                    return (
+                      <motion.button
+                        key={cmd.id}
+                        whileHover={{ x: 2 }}
+                        transition={{ duration: 0.15 }}
+                        className={`command-palette-item flex items-center gap-3 px-5 py-3 bg-transparent border-none w-full text-left cursor-pointer transition-all text-card-foreground border-l-2 ${
+                          isSelected
+                            ? 'bg-muted border-l-primary'
+                            : 'border-l-transparent hover:bg-muted/50'
+                        }`}
+                        onClick={() => {
+                          cmd.action();
+                          onClose();
+                        }}
+                        onMouseEnter={() => setSelectedIndex(globalIndex)}
+                      >
+                        {cmd.icon && (
+                          <span className="flex items-center justify-center text-primary flex-shrink-0">
+                            {cmd.icon}
+                          </span>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-foreground mb-0.5">
+                            {cmd.name}
+                          </div>
+                          {cmd.description && (
+                            <div className="text-xs text-muted-foreground overflow-hidden text-ellipsis whitespace-nowrap">
+                              {cmd.description}
+                            </div>
+                          )}
+                        </div>
+                      </motion.button>
+                    );
+                  })}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        <div className="command-palette-footer">
-          <div className="command-palette-hint">
-            <span className="command-palette-key">↑↓</span> Navigate
-            <span className="command-palette-key">Enter</span> Execute
-            <span className="command-palette-key">Esc</span> Close
-          </div>
-        </div>
-      </div>
-    </div>
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-border bg-muted/50 rounded-b-xl">
+              <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <kbd className="inline-flex items-center justify-center bg-background border border-border rounded px-1.5 py-0.5 font-mono text-[10px] text-foreground">
+                    ↑↓
+                  </kbd>
+                  Navigate
+                </span>
+                <span className="flex items-center gap-1">
+                  <kbd className="inline-flex items-center justify-center bg-background border border-border rounded px-1.5 py-0.5 font-mono text-[10px] text-foreground">
+                    Enter
+                  </kbd>
+                  Execute
+                </span>
+                <span className="flex items-center gap-1">
+                  <kbd className="inline-flex items-center justify-center bg-background border border-border rounded px-1.5 py-0.5 font-mono text-[10px] text-foreground">
+                    Esc
+                  </kbd>
+                  Close
+                </span>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 

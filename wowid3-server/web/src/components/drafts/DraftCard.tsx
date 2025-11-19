@@ -1,5 +1,6 @@
 import { Edit, Copy, Trash2, FileText, Clock } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { DraftCardProps } from '../../types/draft';
@@ -17,7 +18,11 @@ export default function DraftCard({
   isLoading = false,
 }: DraftCardProps) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border-b border-border hover:bg-accent/50 transition-colors">
+    <motion.div
+      className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border-b border-border hover:bg-accent/50 transition-colors"
+      whileHover={{ y: -2, boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}
+      transition={{ duration: 0.2 }}
+    >
       <div className="flex-1 min-w-0">
         <h3 className="text-base font-semibold mb-2 truncate">
           {version || 'Untitled Draft'}
@@ -72,6 +77,6 @@ export default function DraftCard({
           <span className="ml-2">Delete</span>
         </Button>
       </div>
-    </div>
+    </motion.div>
   );
 }

@@ -83,10 +83,10 @@ function FilesTab({ draft, onUpdate }: FilesTabProps) {
 
   // Performance: Memoize icon getter to prevent recreation
   const getFileIcon = useCallback((path: string) => {
-    if (path.endsWith('.jar')) return <FileArchive className="w-5 h-5 text-orange-500" />;
-    if (path.endsWith('.json')) return <FileText className="w-5 h-5 text-blue-500" />;
-    if (path.includes('/')) return <Folder className="w-5 h-5 text-yellow-500" />;
-    return <File className="w-5 h-5 text-gray-500" />;
+    if (path.endsWith('.jar')) return <FileArchive className="w-5 h-5 text-warning" />;
+    if (path.endsWith('.json')) return <FileText className="w-5 h-5 text-primary" />;
+    if (path.includes('/')) return <Folder className="w-5 h-5 text-warning" />;
+    return <File className="w-5 h-5 text-muted-foreground" />;
   }, []);
 
   // Performance: Memoize size formatter
