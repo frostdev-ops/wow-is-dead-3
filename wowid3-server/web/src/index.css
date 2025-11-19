@@ -100,3 +100,17 @@ html.dark body {
     @apply bg-[hsl(var(--color-background)/0.3)] backdrop-blur-xl border-r border-white/10;
   }
 }
+
+/* Snowfall Animation */
+@keyframes snowfall {
+  0% {
+    transform: translateY(-20px) translateX(0);
+  }
+  100% {
+    transform: translateY(100vh) translateX(20px);
+  }
+}
+
+.animate-snowfall {
+  animation: snowfall linear infinite;
+}
