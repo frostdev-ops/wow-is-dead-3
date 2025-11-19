@@ -11,6 +11,30 @@ Custom Minecraft launcher for the WOWID3 modpack built with Tauri 2.x, React, an
 - Bundled Java runtime (Azul Zulu JVM 21)
 - Full Wayland support with X11 fallback
 
+## Local Build Workflow
+
+Build both Linux (AppImage) and Windows (NSIS `.exe`) artifacts directly from Linux using the helper scripts in `scripts/`.
+
+1. **One-time setup**
+
+   ```bash
+   cd wowid3-launcher
+   ./scripts/setup-env.sh
+   ```
+
+   This installs `nsis`, `llvm`, `clang`, `lld`, adds the `x86_64-pc-windows-msvc` Rust target, and installs `cargo-xwin` for cross-compilation.
+
+2. **Build release artifacts**
+
+   ```bash
+   ./scripts/build-release.sh
+   ```
+
+   - Produces Linux AppImage bundles under `src-tauri/target/release/bundle/appimage`
+   - Produces Windows NSIS installers under `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis`
+
+Set `SKIP_NPM_INSTALL=1` when re-running builds and you are sure dependencies are already installed.
+
 ## Recommended IDE Setup
 
 - [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
