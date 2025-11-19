@@ -60,7 +60,7 @@ export default function ResourcePacksPage() {
     };
 
     loadResources();
-  }, [listResourcePacks]);
+  }, []);
 
   const handleFilesSelected = (files: File[]) => {
     setSelectedFiles(files);

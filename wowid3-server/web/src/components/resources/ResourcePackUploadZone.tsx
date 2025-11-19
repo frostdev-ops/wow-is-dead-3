@@ -23,7 +23,7 @@ export default function ResourcePackUploadZone({
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!disabled && !isLoading) {
+    if (!disabled && !isLoading && !isDragging) {
       setIsDragging(true);
     }
   };
@@ -31,7 +31,12 @@ export default function ResourcePackUploadZone({
   const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsDragging(false);
+    // Only set to false if the related target is outside the drop zone
+    const currentTarget = e.currentTarget;
+    const relatedTarget = e.relatedTarget as Node;
+    if (!currentTarget.contains(relatedTarget)) {
+      setIsDragging(false);
+    }
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
@@ -92,46 +97,44 @@ export default function ResourcePackUploadZone({
         onDrop={handleDrop}
         onClick={handleClickUpload}
         className={cn(
-          'border-2 border-dashed rounded-lg p-12 transition-colors cursor-pointer',
+          'border-2 border-dashed rounded-lg p-12 transition-colors cursor-pointer shadow-sm',
           isDragging ? 'border-primary bg-primary/5' : 'border-border bg-background',
           (disabled || isLoading) && 'opacity-50 cursor-not-allowed'
         )}
       >
-        <Card>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            onChange={handleFileInputChange}
-            disabled={disabled || isLoading}
-            className="hidden"
-            accept="*/*"
-          />
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          onChange={handleFileInputChange}
+          disabled={disabled || isLoading}
+          className="hidden"
+          accept="*/*"
+        />
 
-          <div className="flex flex-col items-center justify-center gap-4">
-            <motion.div
-              className="bg-primary/10 rounded-lg p-4"
-              animate={{
-                scale: isDragging ? 1.1 : 1,
-                rotate: isDragging ? [0, -5, 5, 0] : 0,
-              }}
-              transition={{ duration: 0.3 }}
-            >
-              <Upload className="w-8 h-8 text-primary" />
-            </motion.div>
-            <div className="text-center">
-              <p className="text-lg font-semibold">Drag & drop resource packs here</p>
-              <p className="text-sm text-muted-foreground">or click the button below</p>
-            </div>
-            <Button
-              onClick={handleClickUpload}
-              disabled={disabled || isLoading}
-              variant="outline"
-            >
-              {isLoading ? 'Uploading...' : 'Select Files'}
-            </Button>
+        <div className="flex flex-col items-center justify-center gap-4">
+          <motion.div
+            className="bg-primary/10 rounded-lg p-4"
+            animate={{
+              scale: isDragging ? 1.1 : 1,
+              rotate: isDragging ? [0, -5, 5, 0] : 0,
+            }}
+            transition={{ duration: 0.3 }}
+          >
+            <Upload className="w-8 h-8 text-primary" />
+          </motion.div>
+          <div className="text-center">
+            <p className="text-lg font-semibold">Drag & drop resource packs here</p>
+            <p className="text-sm text-muted-foreground">or click the button below</p>
           </div>
-        </Card>
+          <Button
+            onClick={handleClickUpload}
+            disabled={disabled || isLoading}
+            variant="outline"
+          >
+            {isLoading ? 'Uploading...' : 'Select Files'}
+          </Button>
+        </div>
       </motion.div>
 
       <AnimatePresence>
