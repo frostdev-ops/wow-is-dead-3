@@ -6,6 +6,7 @@ use crate::models::{
 };
 use crate::services::{analyze_files, generate_changelog, suggest_next_version, ChangeType};
 use crate::storage;
+use crate::utils;
 use axum::{
     extract::{Path, Query, State},
     Extension, Json,
@@ -245,9 +246,20 @@ pub async fn publish_draft(
     // This is critical because files may have been edited via the file browser
     let verified_files = scan_directory_files(&release_dir).await?;
 
+    // Load blacklist patterns to exclude files that should not be distributed
+    let blacklist_patterns = utils::load_blacklist_patterns(&state.config)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to load blacklist: {}", e)))?;
+
+    let glob_set = utils::compile_patterns(&blacklist_patterns)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to compile blacklist patterns: {}", e)))?;
+
     // Convert DraftFile to ManifestFile with fresh checksums and release URLs
+    // Filter out blacklisted files to prevent download failures
+    let total_files = verified_files.len();
     let manifest_files: Vec<ManifestFile> = verified_files
         .iter()
+        .filter(|f| !utils::is_blacklisted(&f.path, &glob_set))
         .map(|f| ManifestFile {
             path: f.path.clone(),
             url: format!(
@@ -258,6 +270,11 @@ pub async fn publish_draft(
             size: f.size,
         })
         .collect();
+
+    let filtered_count = total_files - manifest_files.len();
+    if filtered_count > 0 {
+        tracing::info!("Filtered {} blacklisted files from manifest", filtered_count);
+    }
 
     // Create manifest
     let manifest = Manifest {

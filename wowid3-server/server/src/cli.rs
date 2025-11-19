@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::models::{Manifest, ManifestFile};
 use crate::storage::manifest::{read_manifest, write_manifest, set_latest_manifest};
+use crate::utils;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use sha2::{Digest, Sha256};
@@ -123,8 +124,13 @@ async fn scan_release_files(
     config: &Config,
     version: &str,
 ) -> Result<Vec<ManifestFile>> {
+    // Load blacklist patterns to exclude files that should not be distributed
+    let blacklist_patterns = utils::load_blacklist_patterns(config).await?;
+    let glob_set = utils::compile_patterns(&blacklist_patterns)?;
+
     let mut files = Vec::new();
     let mut file_count = 0;
+    let mut filtered_count = 0;
 
     for entry in WalkDir::new(dir)
         .into_iter()
@@ -146,6 +152,12 @@ async fn scan_release_files(
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("Invalid path encoding"))?;
 
+        // Skip blacklisted files
+        if utils::is_blacklisted(relative_str, &glob_set) {
+            filtered_count += 1;
+            continue;
+        }
+
         // Calculate fresh checksum
         let data = fs::read(path).await
             .with_context(|| format!("Failed to read file: {}", path.display()))?;
@@ -165,6 +177,10 @@ async fn scan_release_files(
             sha256,
             size: data.len() as u64,
         });
+    }
+
+    if filtered_count > 0 {
+        tracing::info!("  Filtered {} blacklisted files from manifest", filtered_count);
     }
 
     Ok(files)
