@@ -64,3 +64,5 @@ async-trait = "0.1"
 
 # Retry logic
 backoff = { version = "0.4", features = ["tokio"] }
+rusqlite = "0.37.0"
+tokio-rusqlite = "0.7.0"

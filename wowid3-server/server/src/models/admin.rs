@@ -30,11 +30,6 @@ pub struct UpdateBlacklistRequest {
     pub patterns: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ReleaseListResponse {
-    pub releases: Vec<ReleaseInfo>,
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ReleaseInfo {
     pub version: String,

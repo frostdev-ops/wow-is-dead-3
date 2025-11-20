@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::models::{Manifest, manifest::LauncherManifest};
+use crate::models::{Manifest, manifest::LauncherManifest, TrackerState};
 use crate::storage;
 use crate::utils;
 use anyhow;
@@ -14,6 +14,7 @@ use serde::Serialize;
 use sha2::Digest;
 use std::sync::Arc;
 use tokio::fs;
+use tokio::sync::RwLock;
 use tokio::io::AsyncReadExt;
 use tokio_util::io::ReaderStream;
 
@@ -24,10 +25,16 @@ pub struct ResourcePackInfo {
     pub sha256: String,
 }
 
+use crate::services::stats_processor::StatsProcessor;
+use crate::database::Database;
+
 #[derive(Clone)]
 pub struct PublicState {
     pub config: Arc<Config>,
     pub cache: crate::cache::CacheManager,
+    pub tracker: Arc<RwLock<TrackerState>>,
+    pub db: Database,
+    pub stats_processor: Arc<StatsProcessor>,
 }
 
 /// GET /api/launcher/latest

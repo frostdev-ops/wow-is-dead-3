@@ -24,28 +24,6 @@ pub struct FabricLoader {
     pub stable: bool,
 }
 
-/// Fabric launcher metadata
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FabricLauncherMeta {
-    pub version: i32,
-    pub libraries: FabricLibraries,
-    pub main_class: FabricMainClass,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FabricLibraries {
-    pub client: Vec<Library>,
-    pub common: Vec<Library>,
-    pub server: Vec<Library>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FabricMainClass {
-    pub client: String,
-    pub server: String,
-}
-
 /// Combined Fabric profile (from /profile/json endpoint)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

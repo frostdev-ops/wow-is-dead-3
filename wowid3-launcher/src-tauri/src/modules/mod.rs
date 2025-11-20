@@ -16,3 +16,5 @@ pub mod encrypted_storage;
 pub mod log_reader;
 pub mod paths;
 pub mod launcher_updater;
+pub mod stats;
+pub mod map_viewer;

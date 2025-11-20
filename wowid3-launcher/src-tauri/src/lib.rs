@@ -6,7 +6,8 @@ use modules::minecraft::{launch_game, launch_game_with_metadata, analyze_crash, 
 use modules::minecraft_version::{list_versions, get_latest_release, get_latest_snapshot, VersionInfo};
 use modules::fabric_installer::{get_fabric_loaders, get_latest_fabric_loader, FabricLoader};
 use modules::game_installer::{install_minecraft, is_version_installed, InstallConfig};
-use modules::server::{ping_server, resolve_player_name, ServerStatus};
+use modules::server::{ping_server, resolve_player_name, fetch_tracker_status, ServerStatus, TrackerState};
+use modules::stats::{get_player_stats, PlayerStats};
 use modules::updater::{check_for_updates, get_installed_version, install_modpack, verify_and_repair_modpack, has_manifest_changed, Manifest};
 use modules::audio::{get_cached_audio, download_and_cache_audio, read_cached_audio_bytes, clear_audio_cache};
 use modules::java_runtime::{get_cached_java, download_and_cache_java};
@@ -14,6 +15,7 @@ use modules::logger::initialize_logger;
 use modules::log_reader::{read_latest_log, get_log_path, get_new_log_lines, read_log_tail, read_log_from_offset, read_log_before_offset, LogResult};
 use modules::paths::{get_default_game_directory, resolve_game_directory, validate_game_directory};
 use modules::launcher_updater::{check_launcher_update, install_launcher_update, LauncherUpdateInfo};
+use modules::map_viewer::{check_bluemap_available, open_map_viewer, close_map_viewer, get_bluemap_url, BlueMapStatus};
 use serde::Serialize;
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -89,6 +91,27 @@ async fn cmd_install_launcher_update(app: AppHandle, url: String, sha256: String
     })
     .await
     .map_err(|e| e.to_string())
+}
+
+// BlueMap Commands
+#[tauri::command]
+async fn cmd_check_bluemap_available() -> Result<BlueMapStatus, String> {
+    check_bluemap_available().await
+}
+
+#[tauri::command]
+async fn cmd_open_map_viewer(app: AppHandle) -> Result<(), String> {
+    open_map_viewer(app).await
+}
+
+#[tauri::command]
+async fn cmd_close_map_viewer(app: AppHandle) -> Result<(), String> {
+    close_map_viewer(app).await
+}
+
+#[tauri::command]
+fn cmd_get_bluemap_url() -> String {
+    get_bluemap_url()
 }
 
 // Minecraft Launch Commands
@@ -475,6 +498,20 @@ async fn cmd_resolve_player_name(uuid: String) -> Result<String, String> {
     resolve_player_name(&uuid).await.map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn cmd_get_detailed_server_status(base_url: String) -> Result<TrackerState, String> {
+    fetch_tracker_status(&base_url).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cmd_get_player_stats(
+    app: AppHandle,
+    uuid: String,
+    server_url: String
+) -> Result<PlayerStats, String> {
+    get_player_stats(&app, &uuid, &server_url).await.map_err(|e| e.to_string())
+}
+
 // Download progress event payload
 #[derive(Clone, Serialize)]
 struct DownloadProgressEvent {
@@ -685,6 +722,8 @@ pub fn run() {
             cmd_is_version_installed,
             cmd_ping_server,
             cmd_resolve_player_name,
+            cmd_get_detailed_server_status,
+            cmd_get_player_stats,
             cmd_check_updates,
             cmd_get_installed_version,
             cmd_install_modpack,
@@ -713,7 +752,11 @@ pub fn run() {
             cmd_resolve_game_directory,
             cmd_validate_game_directory,
             cmd_check_launcher_update,
-            cmd_install_launcher_update
+            cmd_install_launcher_update,
+            cmd_check_bluemap_available,
+            cmd_open_map_viewer,
+            cmd_close_map_viewer,
+            cmd_get_bluemap_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,0 +1,610 @@
+================================================================================
+BLUEMAP INTEGRATION RESEARCH - EXECUTIVE SUMMARY
+================================================================================
+
+Research Date: November 19, 2025
+Status: COMPREHENSIVE (12+ authoritative sources)
+Recommendation: Method 1 (Embedded Webview - Localhost)
+
+================================================================================
+RESEARCH DELIVERABLES
+================================================================================
+
+1. BLUEMAP_INTEGRATION_RESEARCH.md (1187 lines, 34KB)
+   - Complete technical architecture analysis
+   - All 4 integration methods with detailed pros/cons
+   - Implementation code examples (Rust + React)
+   - Security, performance, and deployment considerations
+   - Troubleshooting guide and best practices
+
+2. BLUEMAP_QUICK_REFERENCE.md (317 lines, 8.7KB)
+   - Quick TL;DR guide for developers
+   - Implementation checklist and code snippets
+   - Configuration examples
+   - Platform-specific notes and troubleshooting
+
+3. BLUEMAP_RESEARCH_SUMMARY.txt (this file)
+   - Executive overview of research findings
+   - Key technical decisions and recommendations
+
+================================================================================
+WHAT IS BLUEMAP?
+================================================================================
+
+BlueMap is a Minecraft mapping tool that:
+- Generates interactive 3D web-based maps of Minecraft worlds
+- Runs as a plugin/mod on the Minecraft server
+- Includes a built-in HTTP web server (default port 8100)
+- Provides real-time player position tracking
+- Supports custom markers and POI (Points of Interest)
+- Updates dynamically as chunks are generated/modified
+
+Key point: BlueMap is a visualization tool, NOT a server manager.
+It cannot execute commands or control game state - only display map data.
+
+================================================================================
+FOUR INTEGRATION METHODS ANALYZED
+================================================================================
+
+METHOD 1: EMBEDDED WEBVIEW (Localhost) ★ RECOMMENDED
+-------------------------------------------------------
+How: Open BlueMap's web UI in a Tauri webview window pointing to 
+     http://localhost:8100
+
+Pros:
+  + Best user experience (integrated into launcher)
+  + Secure (localhost-only, no firewall issues)
+  + Real-time live player/marker updates
+  + No new major dependencies required
+  + Leverages existing Tauri setup
+  + Works offline
+  + Full BlueMap feature access
+
+Cons:
+  - Requires BlueMap plugin running on server
+  - Linux Wayland child webviews not supported (use separate window)
+  - Cannot access from other machines
+
+Timeline: 4-6 hours for Phase 1 (basic), 6-9 hours for Phase 1-2 (polished)
+Complexity: Medium
+Status: Highly recommended
+
+
+METHOD 2: EXTERNAL BROWSER LINK (Simplest)
+--------------------------------------------
+How: Click button → opens BlueMap URL in system default browser
+
+Pros:
+  + Minimal implementation (1-2 hours)
+  + No platform issues
+  + User controls window
+  + Simple button press
+
+Cons:
+  - Poor UX (breaks launcher workflow)
+  - Disconnected feel
+  - Network required
+  - No real-time sync
+
+Best for: Quick MVP or remote server access
+
+
+METHOD 3: STATIC WEB UI BUNDLE (Advanced)
+-------------------------------------------
+How: Embed BlueMap's web files in launcher, run local Rust HTTP server
+
+Pros:
+  + Can customize UI
+  + Full control of web stack
+  + Can modify for launcher-specific needs
+
+Cons:
+  - Complex implementation (16-24 hours)
+  - Maintenance burden
+  - Increases binary size (+50-100MB)
+  - CORS issues possible
+  - Must maintain bundled BlueMap version
+
+Best for: Deep customization needs
+
+
+METHOD 4: DIRECT API INTEGRATION (Custom)
+-------------------------------------------
+How: Build custom React map viewer using BlueMap's HTTP endpoints
+
+Pros:
+  + Complete control over UI
+  + Lightweight
+  + Seamless launcher integration
+  + Real-time capability
+
+Cons:
+  - Major development effort (40+ hours)
+  - PRBM binary format complex to parse
+  - Missing BlueMap features
+  - 3D rendering requires Three.js
+
+Best for: Custom HUD/player tracker
+
+================================================================================
+BLUEMAP TECHNICAL ARCHITECTURE
+================================================================================
+
+Web Server:
+  - Port: 8100 (configurable in plugins/BlueMap/webserver.conf)
+  - Binding: 0.0.0.0 by default (should be 127.0.0.1 for security)
+  - Technology: Built-in Java HTTP server
+  - Root: ./bluemap/web/
+
+API Endpoints:
+  GET /health                                    → Health check
+  GET /maps/{world}/live/players.json           → Player positions (1 sec refresh)
+  GET /maps/{world}/live/markers.json           → Custom markers
+  GET /maps/{world}/tiles/{z}/{x}/{y}.prbm      → 3D tile geometry
+  GET /maps/{world}/tiles/{z}/{x}/{y}.png       → Quick preview tiles
+  GET /maps/{world}/textures.json               → Texture metadata
+
+File Formats:
+  - PNG: Low-res overview tiles (cached)
+  - PRBM: High-res 3D geometry (binary, WebGL-optimized, GZipped)
+  - JSON: Players, markers, config, textures
+  - HOCON: Configuration files
+
+Storage Structure:
+  bluemap/web/maps/{world}/
+  ├── tiles/                 # Map geometry (organized by zoom level)
+  ├── live/                  # Real-time data (players, markers)
+  │   ├── players.json
+  │   └── markers.json
+  └── textures.json
+
+Real-Time Updates:
+  - Uses HTTP polling (no WebSocket currently)
+  - Players update every 1 second (configurable)
+  - Markers update every 5-10 seconds
+  - Automatic cache handling for tiles
+
+================================================================================
+RECOMMENDED IMPLEMENTATION: METHOD 1 (EMBEDDED WEBVIEW)
+================================================================================
+
+Phase 1: Basic Integration (4-6 hours)
+--------------------------------------
+1. Create src-tauri/src/modules/map_viewer.rs
+   - check_bluemap_available() command
+   - open_map_viewer() command
+   - close_map_viewer() command
+
+2. Create src/hooks/useMapViewer.ts
+   - State management (isAvailable, error, isOpen)
+   - Callback hooks for open/close
+
+3. Create src/components/MapViewerButton.tsx
+   - Display button with availability check
+   - Error handling and user feedback
+
+4. Register Tauri commands in src-tauri/src/lib.rs
+
+5. Test locally with BlueMap running
+
+
+Phase 2: Polish & Integration (2-3 hours)
+------------------------------------------
+1. Integrate into Navigation or LauncherHome
+2. Add startup availability check
+3. Style to match launcher theme
+4. Test on all platforms (Linux X11/Wayland, Windows, macOS)
+5. Improve error messages
+
+
+Phase 3: Enhancement (8-16 hours, optional)
+--------------------------------------------
+1. Fetch live player data in launcher
+2. Custom player tracking markers
+3. Real-time player list widget
+4. Marker management UI
+5. Performance optimization
+
+
+Configuration Checklist:
+------------------------
+Server-side (plugins/BlueMap/webserver.conf):
+  ✓ ip: "127.0.0.1"                    (CRITICAL: localhost only)
+  ✓ port: 8100                         (or any available port)
+  ✓ enabled: true
+  ✓ liveUpdates: true
+  ✓ write-players-interval: 1000
+
+Launcher-side:
+  ✓ No special config needed
+  ✓ Check availability before opening
+  ✓ Handle graceful failure if not running
+  ✓ Optional: Allow user to configure IP/port in settings
+
+================================================================================
+SECURITY ANALYSIS
+================================================================================
+
+Critical Requirement: Bind BlueMap to localhost (127.0.0.1) ONLY
+
+Why:
+  - Prevents external access to map and player data
+  - Eliminates need for CORS configuration
+  - No firewall holes opened
+  - User data stays private and local
+
+Implications for WOWID3:
+  - Map/player data never leaves the local machine
+  - Single-user launcher context
+  - No authentication layer needed
+  - No proxy configuration required
+
+Data Exposed (with proper config):
+  - Player names and real-time positions
+  - Minecraft player UUIDs
+  - Player skins (from Mojang)
+  - Custom markers and labels
+  - World terrain visualization
+
+All contained locally - no security risk.
+
+================================================================================
+PERFORMANCE CHARACTERISTICS
+================================================================================
+
+Resource Requirements (BlueMap on server):
+  - Disk: 1-10 GB per world (depending on size)
+  - CPU: Multi-threaded, async (doesn't block server)
+  - Memory: 256MB - 1GB
+  - Network: 10-100 MB per player session (tile downloads)
+
+Update Rates:
+  - Players: 1 second (configurable, don't set lower)
+  - Markers: 5-10 seconds (configurable)
+  - Tiles: On-demand, cached by browser
+  - Full sync: <1 second latency
+
+Polling Impact:
+  - Players fetch: 1 KB per request
+  - Markers fetch: Varies, typically <5 KB
+  - Minimal impact on bandwidth
+  - Browser caches tiles efficiently
+
+WebSocket Future:
+  - GitHub issue #244 requests WebSocket support
+  - Would further reduce polling overhead
+  - Currently HTTP polling is sufficient
+
+================================================================================
+PLATFORM SUPPORT & KNOWN ISSUES
+================================================================================
+
+Linux (X11):
+  ✓ Full support
+  ✓ Child webviews work
+  ✓ No special configuration
+
+Linux (Wayland):
+  ! Child webviews not supported by Tauri
+  ✓ Use separate window instead: WebviewWindowBuilder::new(...)
+  ✓ Or force X11: GDK_BACKEND=x11 npm run tauri:dev
+  ! Some GPU driver issues possible (DMABUF)
+  ✓ Solution: Use WEBKIT_DISABLE_DMABUF_RENDERER=1 (already in .env.wayland)
+
+Windows:
+  ✓ Full support out of the box
+  ✓ WebView2 runtime handles everything
+
+macOS:
+  ✓ Full support
+  ✓ No platform-specific issues
+
+================================================================================
+CODE LOCATION IN WOWID3
+================================================================================
+
+Suggested file structure:
+
+wowid3-launcher/
+├── src-tauri/
+│   └── src/
+│       ├── modules/
+│       │   ├── mod.rs                   (add: pub mod map_viewer;)
+│       │   └── map_viewer.rs            (NEW FILE)
+│       └── lib.rs                       (register commands)
+├── src/
+│   ├── hooks/
+│   │   └── useMapViewer.ts              (NEW FILE)
+│   ├── components/
+│   │   ├── MapViewerButton.tsx          (NEW FILE)
+│   │   ├── Navigation.tsx               (add button)
+│   │   └── LauncherHome.tsx             (add map section)
+│   └── stores/
+│       └── mapStore.ts                  (OPTIONAL: state management)
+└── src-tauri/
+    └── tauri.conf.json                  (no config needed)
+
+================================================================================
+DEPENDENCIES ANALYSIS
+================================================================================
+
+NO NEW MAJOR DEPENDENCIES NEEDED
+
+Already available in WOWID3:
+  - Tauri (webview management)
+  - React (UI components)
+  - TypeScript (type safety)
+  - Zustand (state management, optional)
+  - reqwest (HTTP client, already in server)
+  - tokio (async runtime, already available)
+
+Optional additions:
+  - axios: Better HTTP client (if preferred over fetch)
+  - serde_json: JSON parsing (if not using built-in)
+
+Build Impact:
+  - Zero additional binary size
+  - Only static files loaded from localhost
+  - No bundled dependencies
+
+================================================================================
+MARKER SYSTEM & CUSTOMIZATION
+================================================================================
+
+BlueMap supports 5 marker types:
+  1. POI (Point of Interest) - single icon at position
+  2. HTML - custom HTML element
+  3. Line - connect multiple points
+  4. Shape - flat polygon for areas
+  5. Extrude - 3D box between heights
+
+Marker Storage:
+  - Static: Defined in config files (persistent)
+  - Dynamic: Created via API (not persistent by default)
+
+Access Methods:
+  1. API: BlueMapAPI from server plugins
+  2. File: Direct JSON editing
+  3. Configuration: HOCON config files
+
+Integration with WOWID3:
+  - Phase 2+: Can add custom player tracking markers
+  - Phase 3: Marker management UI in launcher
+  - Future: Real-time marker sync between launcher and server
+
+================================================================================
+REAL-TIME DATA EXAMPLE
+================================================================================
+
+Fetching live player data from launcher:
+
+interface Player {
+  uuid: string;
+  name: string;
+  position: [number, number, number];  // [x, y, z]
+  health: number;
+  armor: number;
+  skin: string;  // URL to player skin
+}
+
+GET http://localhost:8100/maps/world/live/players.json
+Response:
+{
+  "version": 1,
+  "players": [
+    {
+      "uuid": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "PlayerName",
+      "position": [100.5, 64.0, -200.3],
+      "health": 20,
+      "armor": 10,
+      "skin": "https://..."
+    }
+  ]
+}
+
+Update rate: Every 1 second (configurable)
+
+================================================================================
+TROUBLESHOOTING QUICK REFERENCE
+================================================================================
+
+Problem: "BlueMap not accessible"
+Solution:
+  1. Check plugin is loaded: /bluemap status
+  2. Verify correct port: 8100 (or configured value)
+  3. Check binding: ip: "127.0.0.1" in webserver.conf
+  4. Verify no firewall block on 127.0.0.1:8100
+  5. Restart BlueMap: /bluemap reload
+
+Problem: Map loads but tiles are black
+Solution:
+  1. Check chunks are rendered: /bluemap status
+  2. Run render command: /bluemap render
+  3. Verify WebGL support in browser
+  4. Check browser console for errors
+
+Problem: Players not updating in real-time
+Solution:
+  1. Check config: write-players-interval: 1000
+  2. Verify /bluemap status shows live updates enabled
+  3. Check network tab shows successful fetches
+  4. Increase polling frequency (don't go below 1 second)
+
+Problem: Child webview won't open on Linux
+Solution:
+  1. Check if Wayland: echo $XDG_SESSION_TYPE
+  2. If Wayland: use separate window not child webview
+  3. Or force X11: GDK_BACKEND=x11 npm run tauri:dev
+
+================================================================================
+COMPARISON: ALL INTEGRATION METHODS
+================================================================================
+
+Criteria              | Method 1 | Method 2 | Method 3 | Method 4
+                      | Webview  | Browser  | Bundle   | Custom
+---------------------|----------|----------|----------|----------
+Ease of impl.         | ⭐⭐⭐  | ⭐⭐⭐⭐⭐ | ⭐⭐    | ⭐
+User experience       | ⭐⭐⭐⭐⭐ | ⭐⭐   | ⭐⭐⭐⭐  | ⭐⭐⭐⭐
+Real-time updates     | ✓ Yes   | ✓ Yes   | ✓ Yes   | ✓ Yes
+Works offline         | ✓ Yes   | Local   | ✓ Yes   | ✓ Yes
+Security              | ✓ Local | ✓ Local | ✓ Local | ✓ Local
+Feature complete      | ✓ Full  | ✓ Full  | ✓ Full  | ⚠ Limited
+Maintenance           | ⭐⭐⭐  | ⭐⭐⭐⭐⭐ | ⭐⭐   | ⭐
+Binary size impact    | Minimal | None    | +50-100MB| Minimal
+All platforms support | ⚠ X11   | ✓ All   | ✓ All   | ✓ All
+Dev time (Phase 1)    | 4-6h    | 1-2h    | 16-24h  | 40+h
+Recommended           | ★★★     | ★★      | ★       | ★
+
+================================================================================
+RESEARCH SOURCES (12+ AUTHORITATIVE)
+================================================================================
+
+Primary References:
+  1. BlueMap GitHub (Official)
+     https://github.com/BlueMap-Minecraft/BlueMap
+  2. BlueMapAPI GitHub (Official API)
+     https://github.com/BlueMap-Minecraft/BlueMapAPI
+  3. BlueMap Official Documentation
+     https://bluemap.bluecolored.de/
+  4. Tauri 2.x Webview Documentation (Official)
+     https://v2.tauri.app/reference/javascript/api/namespacewebview/
+  5. Tauri IPC Guide (Official)
+     https://v2.tauri.app/concept/inter-process-communication/
+  6. Perplexity AI Research
+     (Multiple queries on BlueMap architecture, Tauri integration)
+
+Additional Sources:
+  - BlueMap wiki and community guides
+  - Minecraft server hosting documentation
+  - Tauri discussion forums and GitHub issues
+  - Web search results from multiple sources
+
+================================================================================
+NEXT STEPS FOR IMPLEMENTATION
+================================================================================
+
+IMMEDIATE (Get Started):
+  1. Review BLUEMAP_INTEGRATION_RESEARCH.md (full technical guide)
+  2. Review BLUEMAP_QUICK_REFERENCE.md (developer cheat sheet)
+  3. Verify BlueMap is installed and running on Minecraft server
+  4. Test BlueMap accessibility: http://localhost:8100 in browser
+
+SHORT TERM (Week 1-2):
+  1. Implement Phase 1 (basic integration)
+     - Create map_viewer.rs module
+     - Create useMapViewer.ts hook
+     - Create MapViewerButton.tsx component
+  2. Test locally
+  3. Handle errors gracefully
+
+MEDIUM TERM (Week 3+):
+  1. Implement Phase 2 (polish)
+     - Integrate into UI
+     - Add startup checks
+     - Match launcher theme
+  2. Test on all platforms
+  3. Gather user feedback
+
+LONG TERM (When time permits):
+  1. Implement Phase 3 (enhancement)
+     - Live player tracking
+     - Marker management
+     - Custom integrations
+
+================================================================================
+RECOMMENDATION SUMMARY
+================================================================================
+
+USE METHOD 1 (EMBEDDED WEBVIEW - LOCALHOST)
+
+Why this is the right choice:
+
+1. BEST USER EXPERIENCE
+   - Integrated into launcher
+   - Professional appearance
+   - Seamless workflow
+
+2. SECURITY
+   - Localhost-only binding prevents external access
+   - No firewall configuration needed
+   - Player data stays private
+
+3. TECHNICAL FEASIBILITY
+   - Uses existing Tauri setup
+   - No new major dependencies
+   - Leverages familiar React patterns
+
+4. TIMELINE
+   - 4-6 hours for working Phase 1
+   - 6-9 hours for polished Phase 1-2
+   - Manageable incremental improvements
+
+5. MAINTENANCE
+   - Minimal ongoing maintenance
+   - Leverages existing technologies
+   - Clear upgrade path
+
+6. FEATURES
+   - Full BlueMap functionality
+   - Real-time player updates
+   - Custom marker support
+   - Works offline
+
+NOT RECOMMENDED:
+  - Method 2: Poor UX, launcher feels disconnected
+  - Method 3: Too complex for marginal benefits
+  - Method 4: Massive development cost, limited feature set
+
+================================================================================
+CONCLUSION
+================================================================================
+
+BlueMap integration is HIGHLY FEASIBLE for WOWID3 launcher.
+
+Using the recommended Method 1 approach:
+  - Can achieve working implementation in 4-6 hours
+  - Polished version in 6-9 hours
+  - No new major dependencies
+  - Leverages existing Tauri/React stack
+  - Provides excellent user experience
+  - Maintains strong security posture
+
+The research has identified all key technical components, API endpoints,
+security considerations, and implementation patterns needed to create a
+robust, production-quality integration.
+
+Start with Phase 1 (basic integration), then iterate based on user
+feedback and available development time.
+
+================================================================================
+DELIVERABLES CHECKLIST
+================================================================================
+
+✓ BLUEMAP_INTEGRATION_RESEARCH.md
+  - 1187 lines of comprehensive technical documentation
+  - Complete architecture analysis
+  - All 4 integration methods with examples
+  - Security, performance, deployment guidance
+  - Troubleshooting and best practices
+
+✓ BLUEMAP_QUICK_REFERENCE.md
+  - 317 lines of developer-focused guide
+  - Implementation checklist
+  - Code snippets ready to use
+  - Platform-specific notes
+  - Quick troubleshooting
+
+✓ BLUEMAP_RESEARCH_SUMMARY.txt
+  - Executive overview (this file)
+  - Key findings and recommendations
+  - Implementation timeline
+  - Technical architecture summary
+
+Ready for: Implementation Phase 1 (Core Integration)
+
+================================================================================
+Contact/Questions: James Kueller
+Last Updated: November 19, 2025
+Status: RESEARCH COMPLETE - READY FOR IMPLEMENTATION
+================================================================================

@@ -20,6 +20,8 @@ interface ModpackState {
   latestManifest: Manifest | null;
   updateAvailable: boolean;
   isDownloading: boolean;
+  isVerifying: boolean;
+  isBlockedForInstall: boolean;
   downloadProgress: {
     current: number;
     total: number;
@@ -31,6 +33,8 @@ interface ModpackState {
   setLatestManifest: (manifest: Manifest | null) => void;
   setUpdateAvailable: (available: boolean) => void;
   setDownloading: (downloading: boolean) => void;
+  setVerifying: (verifying: boolean) => void;
+  setBlockedForInstall: (blocked: boolean) => void;
   setDownloadProgress: (current: number, total: number) => void;
   setError: (error: string | null) => void;
   reset: () => void;
@@ -41,6 +45,8 @@ export const useModpackStore = create<ModpackState>((set) => ({
   latestManifest: null,
   updateAvailable: false,
   isDownloading: false,
+  isVerifying: false,
+  isBlockedForInstall: false,
   downloadProgress: null,
   error: null,
 
@@ -56,6 +62,10 @@ export const useModpackStore = create<ModpackState>((set) => ({
       downloadProgress: downloading ? { current: 0, total: 0 } : null,
     }),
 
+  setVerifying: (verifying) => set({ isVerifying: verifying }),
+
+  setBlockedForInstall: (blocked) => set({ isBlockedForInstall: blocked }),
+
   setDownloadProgress: (current, total) =>
     set({ downloadProgress: { current, total } }),
 
@@ -65,6 +75,8 @@ export const useModpackStore = create<ModpackState>((set) => ({
     set({
       downloadProgress: null,
       isDownloading: false,
+      isVerifying: false,
+      isBlockedForInstall: false,
       error: null,
     }),
 }));

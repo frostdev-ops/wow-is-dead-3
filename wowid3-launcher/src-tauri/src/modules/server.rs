@@ -20,6 +20,49 @@ pub struct ServerStatus {
     pub motd: Option<String>,
 }
 
+// Tracker structures
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayerExt {
+    pub name: String,
+    pub uuid: String,
+    pub position: Option<[f64; 3]>,
+    pub dimension: Option<String>,
+    pub biome: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub sender: String,
+    pub content: String,
+    pub timestamp: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackerState {
+    pub online_players: Vec<PlayerExt>,
+    pub recent_chat: Vec<ChatMessage>,
+    pub tps: Option<f32>,
+    pub mspt: Option<f32>,
+    pub last_updated: u64,
+}
+
+/// Fetch detailed server status from the tracker API
+pub async fn fetch_tracker_status(base_url: &str) -> Result<TrackerState> {
+    let url = format!("{}/api/tracker/status", base_url.trim_end_matches('/'));
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()?;
+
+    let response = client.get(&url).send().await?;
+    
+    if !response.status().is_success() {
+        anyhow::bail!("Failed to fetch tracker status: {}", response.status());
+    }
+    
+    let state: TrackerState = response.json().await?;
+    Ok(state)
+}
+
 /// Minecraft server status response structure (from JSON response)
 #[derive(Debug, Deserialize)]
 struct MinecraftStatusResponse {
@@ -48,6 +91,7 @@ struct PlayerSample {
 
 #[derive(Debug, Deserialize)]
 struct MojangProfile {
+    #[allow(dead_code)]
     id: String,
     name: String,
 }
@@ -86,6 +130,7 @@ fn encode_varint(mut value: i32) -> Vec<u8> {
 
 /// Write a VarInt to the stream
 /// VarInt is a variable-length integer used in Minecraft protocol
+#[allow(dead_code)]
 fn write_varint(stream: &mut TcpStream, value: i32) -> Result<()> {
     let bytes = encode_varint(value);
     stream.write_all(&bytes)?;

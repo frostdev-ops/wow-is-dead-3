@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth, useModpack, useServer, useDiscord, useMinecraftInstaller } from '../hooks';
+import { useServerTracker } from '../hooks/useServerTracker';
 import { launchGameWithMetadata, isGameRunning } from '../hooks/useTauriCommands';
+import { extractBaseUrl } from '../utils/url';
 import { useSettingsStore } from '../stores';
 import { useAudioStore } from '../stores/audioStore';
 import { useUIStore } from '../stores/uiStore';
@@ -21,9 +23,10 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 
 export default function LauncherHome() {
   const { user, isAuthenticated, login, finishDeviceCodeAuth, isLoading: authLoading, error: authError } = useAuth();
-  const { installedVersion, latestManifest, updateAvailable, isDownloading, downloadProgress, checkUpdates, install, error: modpackError } = useModpack();
+  const { installedVersion, latestManifest, updateAvailable, isDownloading, isBlockedForInstall, downloadProgress, checkUpdates, install, verifyAndRepair, error: modpackError } = useModpack();
   const { status } = useServer();
-  const { ramAllocation, gameDirectory, keepLauncherOpen } = useSettingsStore();
+  const { ramAllocation, gameDirectory, keepLauncherOpen, manifestUrl } = useSettingsStore();
+  const { state: trackerState } = useServerTracker(extractBaseUrl(manifestUrl));
   const { setMuted, setWasPaused } = useAudioStore();
   const { setShowLogViewer } = useUIStore();
   const { addToast } = useToast();
@@ -85,7 +88,7 @@ export default function LauncherHome() {
     }
   }, [isAuthenticated, user, authLoading]);
 
-  // Auto-check for updates and install modpack after authentication
+  // Auto-check for updates, verify files, and install modpack after authentication
   useEffect(() => {
     const checkAndInstall = async () => {
       // Guard: Only run once per session after authentication
@@ -135,43 +138,93 @@ export default function LauncherHome() {
     checkAndInstall();
   }, [isAuthenticated, authLoading, isDownloading, checkUpdates]);
 
-  // Separate effect to handle installation after manifest is fetched
+  // Smart installation logic: Block only when necessary, async verify/cleanup after
   useEffect(() => {
-    const performInstall = async () => {
-      // Prevent concurrent installations
+    const performInstallLogic = async () => {
+      // Prevent concurrent operations
       if (isInstallingRef.current) return;
 
-      // Only run if we've checked and there's something to install
+      // Only run if we've checked and manifest is available
       if (!hasCheckedForModpack.current) return;
-      if (isDownloading) return;
       if (!latestManifest) return;
+      if (isDownloading || isBlockedForInstall) return; // Don't interfere with manual operations
 
-      // Check if we need to install
-      const needsInstall = !installedVersion || (updateAvailable && installedVersion !== latestManifest.version);
+      // THREE-PATH LOGIC:
 
-      if (needsInstall) {
-        console.error('[Modpack] ==== STARTING AUTO-INSTALL ====');
-        console.error('[Modpack] Installed:', installedVersion, 'Latest:', latestManifest.version);
-
+      // PATH A: Modpack NOT installed (first time)
+      if (!installedVersion) {
+        console.log('[Modpack] PATH A: No modpack installed - blocking launch, installing...');
         isInstallingRef.current = true;
         try {
-          addToast(installedVersion ? 'Updating modpack...' : 'Installing modpack...', 'info');
-          await install();
+          addToast('Installing modpack (required for first launch)...', 'info');
+          await install({ blockUi: true });
           addToast('Modpack installed successfully!', 'success');
-          console.error('[Modpack] ==== INSTALL COMPLETE ====');
+          console.log('[Modpack] PATH A: Install complete, launch is now enabled');
         } catch (err) {
-          console.error('[Modpack] ==== INSTALL FAILED ====', err);
+          console.error('[Modpack] PATH A: Install failed:', err);
           addToast(`Installation failed: ${err}`, 'error');
         } finally {
           isInstallingRef.current = false;
         }
-      } else {
-        console.error('[Modpack] No install needed. Installed:', installedVersion, 'Latest:', latestManifest?.version);
+        return;
+      }
+
+      // PATH B: Modpack needs update
+      if (updateAvailable && installedVersion !== latestManifest.version) {
+        console.log('[Modpack] PATH B: Update available - blocking launch, updating...');
+        console.log('[Modpack] Installed:', installedVersion, 'Latest:', latestManifest.version);
+        isInstallingRef.current = true;
+        try {
+          addToast('Updating modpack (required to launch)...', 'info');
+          await install({ blockUi: true });
+          addToast('Modpack updated successfully!', 'success');
+          console.log('[Modpack] PATH B: Update complete, launching background verify/cleanup...');
+          // Background verify will run automatically via the background verification effect
+        } catch (err) {
+          console.error('[Modpack] PATH B: Update failed:', err);
+          addToast(`Update failed: ${err}`, 'error');
+        } finally {
+          isInstallingRef.current = false;
+        }
+        return;
+      }
+
+      // PATH C: Modpack installed and on correct version
+      if (installedVersion === latestManifest.version) {
+        console.log('[Modpack] PATH C: Modpack correct version - allowing launch, async verify/cleanup...');
+        // User can launch immediately, background verification will run
+        // This is handled by the background verification effect below
       }
     };
 
-    performInstall();
-  }, [latestManifest, installedVersion, updateAvailable, isDownloading]);
+    performInstallLogic();
+  }, [latestManifest, installedVersion, updateAvailable, isDownloading, isBlockedForInstall]);
+
+  // Background file integrity check (non-blocking)
+  useEffect(() => {
+    const backgroundVerify = async () => {
+      // Only run if we have a manifest and are on the latest version
+      if (!latestManifest) return;
+      if (!installedVersion) return;
+      if (updateAvailable) return;
+      if (isDownloading) return;
+      if (!hasCheckedForModpack.current) return;
+
+      console.log('[Background] Starting background file check...');
+
+      // Run verification in background without blocking UI
+      // silent: true means no UI blocking, no toast shown, just repair files silently
+      verifyAndRepair({ silent: true })
+        .catch((err) => {
+          console.error('[Background] File check failed:', err);
+          // Silent failure - user can manually verify if needed
+        });
+    };
+
+    // Run background check 5 seconds after everything is ready (non-blocking)
+    const timer = setTimeout(backgroundVerify, 5000);
+    return () => clearTimeout(timer);
+  }, [latestManifest, installedVersion, updateAvailable, isDownloading, hasCheckedForModpack.current]);
 
   // Listen for Minecraft events
   useEffect(() => {
@@ -289,15 +342,15 @@ export default function LauncherHome() {
 
       // Handle window and log viewer based on setting
       if (!keepLauncherOpen) {
-        // Hide the launcher window (using hide() instead of minimize() for better Wayland support)
+        // Minimize the launcher window
         try {
-          console.log('[Window] Attempting to hide launcher window...');
+          console.log('[Window] Attempting to minimize launcher window...');
           const appWindow = await getCurrentWindow();
-          await appWindow.hide();
-          console.log('[Window] Window hidden successfully');
+          await appWindow.minimize();
+          console.log('[Window] Window minimized successfully');
         } catch (error) {
-          console.error('[Window] Failed to hide window:', error);
-          addToast('Failed to hide launcher window', 'error');
+          console.error('[Window] Failed to minimize window:', error);
+          addToast('Failed to minimize launcher window', 'error');
         }
       } else {
         // Show log viewer instead
@@ -568,7 +621,7 @@ export default function LauncherHome() {
               >
                 <motion.button
                   onClick={handlePlayClick}
-                  disabled={isLaunching || isDownloading || authLoading || isPlaying}
+                  disabled={isLaunching || isDownloading || isBlockedForInstall || authLoading || isPlaying}
                   className="btn-primary text-2xl py-8 px-16 disabled:opacity-50 disabled:cursor-not-allowed btn-gradient-border"
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
@@ -577,10 +630,11 @@ export default function LauncherHome() {
                   {authLoading && 'Authenticating...'}
                   {!authLoading && isLaunching && 'Launching...'}
                   {!authLoading && !isLaunching && isPlaying && 'Playing!'}
+                  {!authLoading && isBlockedForInstall && 'Installing/Updating...'}
                   {!authLoading && isDownloading && 'Updating...'}
-                  {!authLoading && !isLaunching && !isDownloading && !isPlaying && !isAuthenticated && 'Login'}
-                  {!authLoading && !isLaunching && !isDownloading && !isPlaying && isAuthenticated && updateAvailable && 'Update'}
-                  {!authLoading && !isLaunching && !isDownloading && !isPlaying && isAuthenticated && !updateAvailable && 'PLAY'}
+                  {!authLoading && !isLaunching && !isDownloading && !isBlockedForInstall && !isPlaying && !isAuthenticated && 'Login'}
+                  {!authLoading && !isLaunching && !isDownloading && !isBlockedForInstall && !isPlaying && isAuthenticated && updateAvailable && 'Update'}
+                  {!authLoading && !isLaunching && !isDownloading && !isBlockedForInstall && !isPlaying && isAuthenticated && !updateAvailable && 'PLAY'}
                 </motion.button>
               </motion.div>
             </motion.div>
@@ -588,7 +642,7 @@ export default function LauncherHome() {
         </AnimatePresence>
 
         {/* Player List */}
-        <PlayerList status={status} />
+        <PlayerList status={status} trackerState={trackerState} />
         </div>
 
         {/* Cat Model - Left side */}

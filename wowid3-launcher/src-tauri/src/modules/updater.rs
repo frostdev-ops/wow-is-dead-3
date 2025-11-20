@@ -34,15 +34,8 @@ pub struct Manifest {
     pub fabric_loader: String,
     pub files: Vec<ManifestFile>,
     pub changelog: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct DownloadProgress {
-    pub current_file: usize,
-    pub total_files: usize,
-    pub current_bytes: u64,
-    pub total_bytes: u64,
-    pub current_file_name: String,
+    #[serde(default)]
+    pub ignore_patterns: Vec<String>,
 }
 
 /// Check for modpack updates by fetching the manifest
@@ -315,37 +308,62 @@ async fn cleanup_extra_files(manifest: &Manifest, game_dir: &PathBuf) -> Result<
 
             // Check against server-provided ignore patterns
             let mut should_ignore = false;
+            let mut matched_pattern = String::new();
             
             for pattern in &ignore_patterns {
                 // Exact match
                 if &relative_path == pattern {
                     should_ignore = true;
+                    matched_pattern = format!("exact match: {}", pattern);
                     break;
                 }
                 
-                // Prefix match (e.g., "logs/" matches "logs/debug.log")
-                if pattern.ends_with('/') && relative_path.starts_with(pattern) {
-                    should_ignore = true;
-                    break;
-                }
-                
-                // Wildcard at start (e.g., "*cache/" matches "resourcecache/", "any/path/webcache/")
-                if pattern.starts_with('*') && pattern.ends_with('/') {
-                    let suffix = &pattern[1..]; // Remove leading *
-                    // Check if any path component matches the pattern
-                    if relative_path.split('/').any(|part| part.ends_with(&suffix[..suffix.len()-1])) {
+                // Directory prefix match (e.g., "logs/" matches "logs/debug.log", "logs/2024/debug.log")
+                // This protects all files within a directory and its subdirectories
+                if pattern.ends_with('/') {
+                    if relative_path.starts_with(pattern) {
                         should_ignore = true;
+                        matched_pattern = format!("directory: {}", pattern);
                         break;
                     }
                 }
                 
-                // Wildcard at end (e.g., "user*" matches "user.dat", "userconfig.json")
-                if pattern.ends_with('*') {
+                // Wildcard at start AND end (e.g., "*cache/" matches any directory ending in "cache")
+                // Checks if any path component matches (e.g., "mods/resourcecache/file.txt" matches "*cache/")
+                if pattern.starts_with('*') && pattern.ends_with('/') {
+                    let middle = &pattern[1..pattern.len()-1]; // Remove * and /
+                    // Split path into components and check if any directory matches
+                    let components: Vec<&str> = relative_path.split('/').collect();
+                    for (i, component) in components.iter().enumerate() {
+                        // Don't check the last component (filename)
+                        if i < components.len() - 1 && component.ends_with(middle) {
+                            should_ignore = true;
+                            matched_pattern = format!("*dir pattern: {}", pattern);
+                            break;
+                        }
+                    }
+                    if should_ignore {
+                        break;
+                    }
+                }
+                
+                // Wildcard at end only (e.g., "user*" matches "user.dat", "usercache.json")
+                // Also matches directories: "Xaero*" matches "XaeroWorldMap/data.txt"
+                if pattern.ends_with('*') && !pattern.starts_with('*') {
                     let prefix = &pattern[..pattern.len()-1]; // Remove trailing *
-                    // Get just the filename for comparison
+                    
+                    // Check if the relative path starts with the prefix (for directory patterns like "Xaero*")
+                    if relative_path.starts_with(prefix) {
+                        should_ignore = true;
+                        matched_pattern = format!("prefix*: {}", pattern);
+                        break;
+                    }
+                    
+                    // Also check just the filename (for file patterns like "user*")
                     if let Some(filename) = relative_path.split('/').last() {
                         if filename.starts_with(prefix) {
                             should_ignore = true;
+                            matched_pattern = format!("file*: {}", pattern);
                             break;
                         }
                     }
@@ -354,11 +372,12 @@ async fn cleanup_extra_files(manifest: &Manifest, game_dir: &PathBuf) -> Result<
 
             if should_ignore {
                 kept_count += 1;
+                println!("[Cleanup] Keeping (ignored): {} [matched: {}]", relative_path, matched_pattern);
                 continue;
             }
 
             // If we got here, delete it
-            println!("[Cleanup] Deleting extra file: {}", relative_path);
+            println!("[Cleanup] DELETING: {}", relative_path);
             if let Err(e) = std::fs::remove_file(path) {
                 eprintln!("[Cleanup] Failed to delete {}: {}", relative_path, e);
             } else {
@@ -622,6 +641,9 @@ pub async fn verify_and_repair_modpack(
 
     if files_to_repair.is_empty() {
         println!("[Repair] ✓ All files verified - no corruption detected");
+        // Still run cleanup even if no repairs needed
+        println!("[Repair] Running cleanup to remove extra files...");
+        cleanup_extra_files(manifest, game_dir).await?;
         return Ok(());
     }
 
@@ -698,6 +720,10 @@ pub async fn verify_and_repair_modpack(
 
     // Wait for progress tracking to complete
     progress_task.await?;
+
+    // Clean up extra files not in the manifest
+    println!("[Repair] Running cleanup to remove extra files...");
+    cleanup_extra_files(manifest, game_dir).await?;
 
     // Save manifest hash to prevent re-detection of these files on next repair
     let manifest_hash = calculate_manifest_hash(manifest);

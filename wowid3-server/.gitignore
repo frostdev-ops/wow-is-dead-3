@@ -47,3 +47,8 @@ Thumbs.db
 *.tar.gz
 server.zip
 server-files.tar.gz
+
+# Secrets
+.tracker_secret
+server/.tracker_secret
+.env

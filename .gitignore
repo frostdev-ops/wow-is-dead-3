@@ -54,3 +54,17 @@ wowid3-client-data/*
 wowid3-client-data.7z
 wowid3-server/eggs/
 wowid3-server/eggs/*
+wowid3-tracker-mod/.gradle/*
+wowid3-tracker-mod/build/
+
+wowid3-tracker-mod/build/
+wowid3-tracker-mod/build/*
+wowid3-tracker-mod/build/classes/
+wowid3-tracker-mod/build/classes/*
+wowid3-tracker-mod/build/classes/java/
+wowid3-tracker-mod/build/classes/java/*
+wowid3-tracker-mod/build/classes/java/main/
+wowid3-tracker-mod/build/classes/java/main/*
+wowid3-tracker-mod/build/classes/java/main/com/
+wowid3-tracker-mod/build/classes/java/main/com/wowid3/
+wowid3-tracker-mod/build/classes/java/main/com/wowid3/tracker/

@@ -281,10 +281,6 @@ pub async fn publish_draft(
     let draft_files_dir = storage::get_draft_files_dir(&state.config.storage_path(), id);
     copy_dir_all(&draft_files_dir, &release_dir).await?;
 
-    // Regenerate checksums from the actual files on disk to ensure accuracy
-    // This is critical because files may have been edited via the file browser
-    let verified_files = scan_directory_files(&release_dir).await?;
-
     // Load blacklist patterns to exclude files that should not be distributed
     let blacklist_patterns = utils::load_blacklist_patterns(&state.config)
         .await

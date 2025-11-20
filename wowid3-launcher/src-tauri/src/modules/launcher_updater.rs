@@ -1,9 +1,11 @@
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::AppHandle;
 
 #[cfg(target_os = "windows")]
 use anyhow::Context;
+#[cfg(target_os = "windows")]
+use serde::Deserialize;
 #[cfg(target_os = "windows")]
 use std::time::Duration;
 #[cfg(target_os = "windows")]

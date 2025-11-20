@@ -3,7 +3,7 @@ use crate::middleware::AdminToken;
 use crate::models::{
     AdminError, BlacklistResponse, CreateReleaseRequest, DeleteReleaseResponse, DraftFile,
     DraftRelease, LoginRequest, LoginResponse, Manifest, ManifestFile, ReleaseInfo,
-    ReleaseListResponse, UpdateBlacklistRequest, UploadResponse,
+    UpdateBlacklistRequest, UploadResponse,
 };
 use crate::storage;
 use crate::utils;
@@ -662,7 +662,8 @@ pub async fn get_blacklist(
             // User configuration files
             "options.txt".to_string(),
             "emi.json".to_string(),
-            "server.dat".to_string(),
+            "servers.dat".to_string(),
+            "servers.dat_old".to_string(),
             
             // Wildcard patterns for mod-specific user data
             "iris*".to_string(),
@@ -888,7 +889,7 @@ pub async fn upload_launcher_release(
     let mut file_saved = false;
     let mut file_sha256 = String::new();
     let mut file_size = 0u64;
-    let mut file_name = String::from("WOWID3Launcher.exe");
+    let file_name = String::from("WOWID3Launcher.exe");
 
     let launcher_dir = state.config.launcher_path();
     fs::create_dir_all(&launcher_dir)

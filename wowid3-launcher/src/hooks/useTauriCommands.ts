@@ -188,3 +188,26 @@ export const checkLauncherUpdate = async (): Promise<LauncherUpdateInfo> => {
 export const installLauncherUpdate = async (url: string, sha256: string): Promise<void> => {
     return await invoke<void>('cmd_install_launcher_update', { url, sha256 });
 };
+
+// BlueMap commands
+export interface BlueMapStatus {
+  available: boolean;
+  url: string;
+  error: string | null;
+}
+
+export const checkBlueMapAvailable = async (): Promise<BlueMapStatus> => {
+  return await invoke<BlueMapStatus>('cmd_check_bluemap_available');
+};
+
+export const openMapViewer = async (): Promise<void> => {
+  return await invoke<void>('cmd_open_map_viewer');
+};
+
+export const closeMapViewer = async (): Promise<void> => {
+  return await invoke<void>('cmd_close_map_viewer');
+};
+
+export const getBlueMapUrl = async (): Promise<string> => {
+  return await invoke<string>('cmd_get_bluemap_url');
+};

@@ -10,8 +10,9 @@ Environment="API_PORT=5566"
 Environment="API_HOST=127.0.0.1"
 Environment="STORAGE_PATH=/opt/wowid3-server/storage"
 Environment="RUST_LOG=info"
-# Update ADMIN_PASSWORD on deployment
+# Update ADMIN_PASSWORD and TRACKER_SECRET on deployment
 Environment=ADMIN_PASSWORD=EmoBeemo6716!
+Environment="TRACKER_SECRET=PLACEHOLDER"
 ExecStart=/opt/wowid3-server/wowid3-modpack-server
 Restart=always
 RestartSec=10

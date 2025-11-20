@@ -142,6 +142,34 @@ else
     exit 1
 fi
 
+# Deploy systemd service file with TRACKER_SECRET injected
+if [ -f "server/.tracker_secret" ]; then
+    TRACKER_SECRET=$(cat server/.tracker_secret | tr -d '\n\r ')
+    log_info "Injecting TRACKER_SECRET into systemd service file..."
+
+    # Create temporary service file with secret injected
+    sed "s|TRACKER_SECRET=PLACEHOLDER|TRACKER_SECRET=$TRACKER_SECRET|" wowid3-server.service > /tmp/wowid3-server.service.tmp
+
+    # Upload and install service file
+    if scp /tmp/wowid3-server.service.tmp "$REMOTE_HOST:/tmp/wowid3-server.service" >/dev/null 2>&1; then
+        if ssh "$REMOTE_HOST" "sudo mv /tmp/wowid3-server.service /etc/systemd/system/wowid3-server.service && sudo systemctl daemon-reload"; then
+            log_success "Service file deployed with TRACKER_SECRET"
+        else
+            log_error "Failed to install service file"
+            exit 1
+        fi
+    else
+        log_error "Failed to upload service file"
+        exit 1
+    fi
+
+    # Clean up temp file
+    rm -f /tmp/wowid3-server.service.tmp
+else
+    log_warning "No .tracker_secret file found - tracker will use default secret"
+    log_warning "Generate one with: python3 gen_secret.py > server/.tracker_secret"
+fi
+
 log_info "Starting backend service..."
 sleep 1
 if ssh "$REMOTE_HOST" "sudo systemctl start $REMOTE_SERVICE"; then

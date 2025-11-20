@@ -141,19 +141,28 @@ The server is a **modpack distribution and release management system**, NOT a Mi
   - `public.rs`: Public API for manifest and file serving (no auth required)
   - `admin.rs`: Admin endpoints for release management (auth required)
   - `drafts.rs`: Draft release management and file browser
+  - `tracker.rs`: Player tracking and statistics endpoints (requires TRACKER_SECRET)
 - `models/`: Data models
   - `manifest.rs`: Modpack manifest structure with file hashes and changelog
   - `release.rs`: Release version metadata
   - `admin.rs`: Admin authentication models
+  - `tracker.rs`: Tracker state and player data models
+  - `stats.rs`: Player statistics and event models
 - `services/`: Business logic
   - `analyzer.rs`: Automatic modpack analysis and version detection
   - `changelog.rs`: Automatic changelog generation from file diffs
+  - `stats_processor.rs`: Asynchronous stats event processing with batching
 - `storage/`: File system operations
   - `files.rs`: File upload, storage, and retrieval
   - `manifest.rs`: Manifest JSON generation and storage
   - `drafts.rs`: Draft management in file system
+- `database/`: SQLite database layer
+  - `mod.rs`: Database connection and initialization
+  - `stats.rs`: Player statistics schema and queries
 - `middleware/`: Request middleware
   - `auth.rs`: JWT-based authentication middleware
+- `cache/`: In-memory caching layer
+  - `mod.rs`: LRU cache for manifests and JAR metadata
 - `utils.rs`: Utility functions (JAR version extraction, etc.)
 
 **React Admin Panel (web/src/)**:
@@ -255,6 +264,7 @@ Create `wowid3-server/server/.env` based on environment variables:
 
 ```env
 ADMIN_PASSWORD=your-secure-password  # Admin login password
+TRACKER_SECRET=your-tracker-secret   # Secret for Minecraft mod authentication
 STORAGE_PATH=../storage              # Path to file storage
 API_PORT=8080                        # API server port
 API_HOST=0.0.0.0                     # Bind address
@@ -262,7 +272,7 @@ CORS_ORIGIN=http://localhost:5173    # CORS origin (dev mode)
 BASE_URL=https://your-domain.com     # Public base URL for file downloads
 ```
 
-**Important**: Always change `ADMIN_PASSWORD` from the default `changeme`.
+**Important**: Always change `ADMIN_PASSWORD` and `TRACKER_SECRET` from the default `changeme`.
 
 ## Linux Wayland Support
 
@@ -299,6 +309,13 @@ These are automatically set by:
 
 **Health**:
 - `GET /health` - Server health check
+
+**Tracker** (Requires TRACKER_SECRET in header):
+- `POST /api/tracker/update` - Update tracker state from Minecraft mod
+- `POST /api/tracker/chat` - Submit chat message from Minecraft mod
+- `GET /api/tracker/status` - Get current tracker status
+- `POST /api/tracker/stats-events` - Submit player stat events from Minecraft mod
+- `GET /api/stats/:uuid` - Get player statistics (supports ETag caching)
 
 ### Admin API (Requires authentication)
 
@@ -417,12 +434,13 @@ This is publicly available and used by third-party launchers for Microsoft authe
 
 Based on recent commits:
 
-1. **Verify & Repair System** (806a278, c486f5f): Full modpack integrity verification with selective repair
-2. **Manifest Hash Versioning** (806a278): Hash-based version comparison for faster update detection
-3. **Platform-specific GPU Handling** (97cbcea): Automatic GPU detection and JVM flag optimization
-4. **CLI Manifest Utility** (271d754): Command-line tool for regenerating manifests without web UI
-5. **Enhanced Wayland Support** (65b2d0e): Comprehensive Wayland environment variable setup
-6. **Draft System Improvements** (51cc662): Better file handling in draft workflow
+1. **Tracker & Stats System**: Player activity tracking and statistics collection from Minecraft mod with SQLite persistence, event batching, and ETag caching
+2. **Verify & Repair System** (806a278, c486f5f): Full modpack integrity verification with selective repair
+3. **Manifest Hash Versioning** (806a278): Hash-based version comparison for faster update detection
+4. **Platform-specific GPU Handling** (97cbcea): Automatic GPU detection and JVM flag optimization
+5. **CLI Manifest Utility** (271d754): Command-line tool for regenerating manifests without web UI
+6. **Enhanced Wayland Support** (65b2d0e): Comprehensive Wayland environment variable setup
+7. **Draft System Improvements** (51cc662): Better file handling in draft workflow
 
 ## Project-Specific Notes
 

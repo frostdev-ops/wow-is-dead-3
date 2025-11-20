@@ -2,35 +2,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// Release state
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ReleaseState {
-    Draft,
-    Published,
-}
-
-/// Release metadata for admin API
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Release {
-    pub version: String,
-    pub minecraft_version: String,
-    pub fabric_loader: String,
-    pub created_at: DateTime<Utc>,
-    pub file_count: usize,
-    pub size_bytes: u64,
-    #[serde(default)]
-    pub state: ReleaseState,
-    #[serde(default)]
-    pub is_latest: bool,
-}
-
-impl Default for ReleaseState {
-    fn default() -> Self {
-        ReleaseState::Draft
-    }
-}
-
 /// Request to create a new release
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateReleaseRequest {
@@ -39,14 +10,6 @@ pub struct CreateReleaseRequest {
     pub fabric_loader: String,
     pub changelog: String,
     pub upload_id: String, // References temp upload directory
-}
-
-/// Uploaded file metadata
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UploadedFile {
-    pub path: String,
-    pub size: u64,
-    pub sha256: String,
 }
 
 /// Draft release metadata

@@ -20,6 +20,13 @@ pub struct Config {
 
     #[serde(default = "default_base_url")]
     pub base_url: String,
+
+    #[serde(default = "default_tracker_secret")]
+    pub tracker_secret: String,
+}
+
+fn default_tracker_secret() -> String {
+    "changeme".to_string()
 }
 
 fn default_admin_password() -> String {
@@ -51,6 +58,10 @@ impl Config {
         // Validate admin password is set
         if config.admin_password == "changeme" {
             eprintln!("WARNING: Using default admin password. Set ADMIN_PASSWORD in .env");
+        }
+
+        if config.tracker_secret == "changeme" {
+            eprintln!("WARNING: Using default tracker secret. Set TRACKER_SECRET in .env");
         }
 
         Ok(config)

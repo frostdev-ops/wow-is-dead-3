@@ -2,6 +2,7 @@ mod api;
 mod cache;
 mod cli;
 mod config;
+mod database;
 mod middleware;
 mod models;
 mod services;
@@ -13,6 +14,10 @@ use api::admin::{
     delete_release, delete_resource, get_blacklist, get_cache_stats, list_releases, login,
     update_blacklist, upload_files, upload_resource, upload_launcher_release, AdminState as AdminApiState,
 };
+use api::bluemap::{
+    get_global_settings, get_live_markers, get_live_players, get_map_asset, get_map_settings,
+    get_map_textures, get_map_textures_gz, get_map_tile, serve_webapp_file, BlueMapState,
+};
 use api::drafts::{
     add_files, analyze_draft, browse_directory, create_directory, create_draft, delete_draft,
     duplicate_draft, generate_changelog_for_draft, get_draft, list_drafts, move_file,
@@ -23,6 +28,7 @@ use api::public::{
     get_latest_manifest, get_manifest_by_version, list_resources, serve_audio_file, serve_file,
     serve_java_runtime, serve_resource, get_latest_launcher_manifest, serve_launcher_file, PublicState,
 };
+use api::tracker::{get_tracker_status, submit_chat_message, update_tracker_state, submit_stat_events, get_player_stats};
 use axum::{
     extract::DefaultBodyLimit,
     middleware as axum_middleware,
@@ -33,9 +39,13 @@ use axum::{
 use clap::Parser;
 use cli::Cli;
 use config::Config;
+use database::Database;
 use middleware::auth::auth_middleware;
+use models::tracker::TrackerState;
+use services::stats_processor::StatsProcessor;
 use serde_json::json;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 use tracing::info;
 
@@ -76,16 +86,33 @@ async fn main() -> anyhow::Result<()> {
     tokio::fs::create_dir_all(config.storage_path().join("assets")).await?;
     info!("Storage directories initialized");
 
+    // Initialize database connection pool
+    let db_path = config.storage_path().join("stats.db");
+    let db = Database::new(&db_path).await?;
+    db.init_schema().await?;
+    info!("Database initialized at {:?}", db_path);
+
     let config_arc = Arc::new(config.clone());
 
     // Initialize cache manager
     let cache_manager = cache::CacheManager::new();
     info!("Cache manager initialized");
 
+    // Initialize tracker state
+    let tracker_state = Arc::new(RwLock::new(TrackerState::default()));
+    info!("Tracker state initialized");
+
+    // Initialize stats processor
+    let stats_processor = Arc::new(StatsProcessor::new(db.clone()));
+    info!("Stats processor initialized");
+
     // Create shared state for public API
     let public_state = PublicState {
         config: config_arc.clone(),
         cache: cache_manager.clone(),
+        tracker: tracker_state.clone(),
+        db: db.clone(),
+        stats_processor: stats_processor.clone(),
     };
 
     // Create shared state for admin API
@@ -95,6 +122,10 @@ async fn main() -> anyhow::Result<()> {
         admin_password: Arc::new(admin_password),
         cache: cache_manager.clone(),
     };
+
+    // Create shared state for BlueMap API
+    let bluemap_state = Arc::new(BlueMapState::new());
+    info!("BlueMap state initialized");
 
     // Build CORS layer
     let cors = if let Some(origin) = &config.cors_origin {
@@ -115,7 +146,33 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/resources/:filename", get(serve_resource))
         .route("/files/:version/*path", get(serve_file))
         .route("/files/launcher/:filename", get(serve_launcher_file))
+        // Tracker routes
+        .route("/api/tracker/update", post(update_tracker_state))
+        .route("/api/tracker/chat", post(submit_chat_message))
+        .route("/api/tracker/status", get(get_tracker_status))
+        .route("/api/tracker/stats-events", post(submit_stat_events))
+        .route("/api/stats/:uuid", get(get_player_stats))
         .with_state(public_state);
+
+    // Build BlueMap maps router (shared by both paths)
+    let bluemap_maps_routes = Router::new()
+        .route("/maps/:map_id/settings.json", get(get_map_settings))
+        .route("/maps/:map_id/textures.json", get(get_map_textures))
+        .route("/maps/:map_id/textures.json.gz", get(get_map_textures_gz))
+        .route("/maps/:map_id/live/markers.json", get(get_live_markers))
+        .route("/maps/:map_id/live/players.json", get(get_live_players))
+        .route("/maps/:map_id/tiles/*tile_path", get(get_map_tile))
+        .route("/maps/:map_id/assets/*asset_path", get(get_map_asset))
+        .with_state(bluemap_state.clone());
+
+    // Build BlueMap API router
+    // IMPORTANT: Wildcard route MUST come before nest() for specific routes to take priority
+    let bluemap_routes = Router::new()
+        .route("/api/bluemap/settings.json", get(get_global_settings))
+        .route("/api/bluemap/webapp/*path", get(serve_webapp_file))
+        .nest("/api/bluemap", bluemap_maps_routes.clone())
+        .nest("/api/bluemap/webapp", bluemap_maps_routes)
+        .with_state(bluemap_state);
 
     // Admin login route (no auth required)
     let admin_login = Router::new()
@@ -160,6 +217,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(health_check))
         .merge(public_routes)
+        .merge(bluemap_routes)
         .merge(admin_login)
         .merge(admin_routes)
         .layer(DefaultBodyLimit::max(20 * 1024 * 1024 * 1024)) // 20GB limit

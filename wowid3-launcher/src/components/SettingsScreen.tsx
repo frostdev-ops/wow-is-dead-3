@@ -29,8 +29,9 @@ export default function SettingsScreen() {
   const handleVerifyAndRepair = async () => {
     try {
       setIsRepairingInProgress(true);
-      await verifyAndRepair();
-      addToast('Verification and repair complete!', 'success');
+      // silent: false for manual verification - shows progress and toast
+      await verifyAndRepair({ silent: false });
+      addToast('Game files verified and repaired successfully!', 'success');
     } catch (err) {
       addToast(err instanceof Error ? err.message : 'Verification and repair failed', 'error');
     } finally {
