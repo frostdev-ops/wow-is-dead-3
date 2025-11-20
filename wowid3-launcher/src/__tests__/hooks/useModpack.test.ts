@@ -3,7 +3,6 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { useModpack } from '../../hooks/useModpack';
 import { useModpackStore } from '../../stores/modpackStore';
 import * as tauriCommands from '../../hooks/useTauriCommands';
-import { mockTauriListen } from '../utils/tauri-mock';
 
 // Mock Tauri commands
 vi.mock('../../hooks/useTauriCommands', () => ({
@@ -16,7 +15,7 @@ vi.mock('../../hooks/useTauriCommands', () => ({
 
 // Mock Listen
 vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn((event, handler) => {
+  listen: vi.fn((_event, _handler) => {
       return Promise.resolve(() => {});
   }),
 }));
@@ -116,7 +115,9 @@ describe('useModpack', () => {
     vi.mocked(tauriCommands.checkForUpdates).mockResolvedValue({
         version: '1.0.0',
         minecraft_version: '1.20.1',
-        files: []
+        fabric_loader: '0.15.0',
+        files: [],
+        changelog: ''
     });
 
     const { result } = renderHook(() => useModpack());

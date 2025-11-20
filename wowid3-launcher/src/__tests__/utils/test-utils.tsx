@@ -1,6 +1,5 @@
 import { ReactElement } from 'react';
 import { render, RenderOptions } from '@testing-library/react';
-import { vi } from 'vitest';
 
 // Mock providers wrapper (add any providers your app uses)
 const AllTheProviders = ({ children }: { children: React.ReactNode }) => {

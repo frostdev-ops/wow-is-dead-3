@@ -305,6 +305,12 @@ async fn cleanup_extra_files(manifest: &Manifest, game_dir: &PathBuf) -> Result<
             if manifest_files.contains(&relative_path) {
                 continue;
             }
+            
+            // CRITICAL: Never delete launcher meta files
+            if relative_path == ".wowid3-version" || relative_path == ".wowid3-manifest-hash" {
+                kept_count += 1;
+                continue;
+            }
 
             // Check against server-provided ignore patterns
             let mut should_ignore = false;

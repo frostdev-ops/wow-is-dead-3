@@ -1,10 +1,10 @@
 import { vi } from 'vitest';
 
-export const mockTauriCommand = (command: string, returnValue: any = {}) => {
+export const mockTauriCommand = (_command: string, returnValue: any = {}) => {
   return vi.fn().mockResolvedValue(returnValue);
 };
 
-export const mockTauriListen = (eventName: string, handler?: (event: any) => void) => {
+export const mockTauriListen = (_eventName: string, _handler?: (event: any) => void) => {
   return vi.fn().mockResolvedValue(() => {
     // Unlisten function
   });

@@ -6,12 +6,19 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import {
   __resetMocks,
   __setMockInvokeResponse,
+  __setMockInvokeResponses,
 } from '../../__mocks__/@tauri-apps/api/core';
 import { createMockManifest } from '../utils/mockData';
 
 describe('Manifest Validation and Security', () => {
   beforeEach(() => {
     __resetMocks();
+
+    // Set up default mock responses for commands that are called automatically
+    __setMockInvokeResponses({
+      'cmd_get_installed_version': { response: null },
+      'cmd_has_manifest_changed': { response: false },
+    });
 
     useModpackStore.setState({
       installedVersion: null,
@@ -56,7 +63,10 @@ describe('Manifest Validation and Security', () => {
         ],
       });
 
-      __setMockInvokeResponse('cmd_check_updates', manifest);
+      __setMockInvokeResponses({
+        'cmd_get_installed_version': { response: null },
+        'cmd_check_updates': { response: manifest },
+      });
 
       const { result } = renderHook(() => useModpack());
 
@@ -79,7 +89,10 @@ describe('Manifest Validation and Security', () => {
         ],
       });
 
-      __setMockInvokeResponse('cmd_check_updates', manifest);
+      __setMockInvokeResponses({
+        'cmd_get_installed_version': { response: null },
+        'cmd_check_updates': { response: manifest },
+      });
 
       const { result } = renderHook(() => useModpack());
 
@@ -90,7 +103,10 @@ describe('Manifest Validation and Security', () => {
 
     it('should reject manifests with malicious URLs', async () => {
       // Backend should validate and reject
-      __setMockInvokeResponse('cmd_check_updates', 'Invalid URL scheme', true);
+      __setMockInvokeResponses({
+        'cmd_get_installed_version': { response: null },
+        'cmd_check_updates': { response: 'Invalid URL scheme', reject: true },
+      });
 
       const { result } = renderHook(() => useModpack());
 
@@ -98,7 +114,10 @@ describe('Manifest Validation and Security', () => {
     });
 
     it('should prevent file:// protocol URLs', async () => {
-      __setMockInvokeResponse('cmd_check_updates', 'File protocol not allowed', true);
+      __setMockInvokeResponses({
+        'cmd_get_installed_version': { response: null },
+        'cmd_check_updates': { response: 'File protocol not allowed', reject: true },
+      });
 
       const { result } = renderHook(() => useModpack());
 
@@ -106,7 +125,10 @@ describe('Manifest Validation and Security', () => {
     });
 
     it('should prevent javascript: protocol URLs', async () => {
-      __setMockInvokeResponse('cmd_check_updates', 'Invalid protocol', true);
+      __setMockInvokeResponses({
+        'cmd_get_installed_version': { response: null },
+        'cmd_check_updates': { response: 'Invalid protocol', reject: true },
+      });
 
       const { result } = renderHook(() => useModpack());
 
@@ -141,7 +163,7 @@ describe('Manifest Validation and Security', () => {
     });
 
     it('should reject manifest with missing required fields', async () => {
-      __setMockInvokeResponse('cmd_check_updates', 'Missing required field: version', true);
+      __setMockInvokeResponses({ 'cmd_get_installed_version': { response: null }, 'cmd_check_updates': { response: 'Missing required field: version', reject: true } });
 
       const { result } = renderHook(() => useModpack());
 
@@ -149,7 +171,7 @@ describe('Manifest Validation and Security', () => {
     });
 
     it('should reject manifest with invalid version format', async () => {
-      __setMockInvokeResponse('cmd_check_updates', 'Invalid version format', true);
+      __setMockInvokeResponses({ 'cmd_get_installed_version': { response: null }, 'cmd_check_updates': { response: 'Invalid version format', reject: true } });
 
       const { result } = renderHook(() => useModpack());
 
@@ -157,7 +179,7 @@ describe('Manifest Validation and Security', () => {
     });
 
     it('should reject empty files array', async () => {
-      __setMockInvokeResponse('cmd_check_updates', 'Manifest must contain files', true);
+      __setMockInvokeResponses({ 'cmd_get_installed_version': { response: null }, 'cmd_check_updates': { response: 'Manifest must contain files', reject: true } });
 
       const { result } = renderHook(() => useModpack());
 
@@ -178,7 +200,7 @@ describe('Manifest Validation and Security', () => {
         ],
       });
 
-      __setMockInvokeResponse('cmd_check_updates', manifest);
+      __setMockInvokeResponses({ 'cmd_get_installed_version': { response: null }, 'cmd_check_updates': { response: manifest } });
 
       const { result } = renderHook(() => useModpack());
 
@@ -188,7 +210,7 @@ describe('Manifest Validation and Security', () => {
     });
 
     it('should reject invalid hash length', async () => {
-      __setMockInvokeResponse('cmd_check_updates', 'Invalid hash length', true);
+      __setMockInvokeResponses({ 'cmd_get_installed_version': { response: null }, 'cmd_check_updates': { response: 'Invalid hash length', reject: true } });
 
       const { result } = renderHook(() => useModpack());
 
@@ -196,7 +218,7 @@ describe('Manifest Validation and Security', () => {
     });
 
     it('should reject non-hexadecimal hashes', async () => {
-      __setMockInvokeResponse('cmd_check_updates', 'Invalid hash characters', true);
+      __setMockInvokeResponses({ 'cmd_get_installed_version': { response: null }, 'cmd_check_updates': { response: 'Invalid hash characters', reject: true } });
 
       const { result } = renderHook(() => useModpack());
 
@@ -205,7 +227,7 @@ describe('Manifest Validation and Security', () => {
 
     it('should detect hash mismatch during download', async () => {
       const manifest = createMockManifest();
-      __setMockInvokeResponse('cmd_install_modpack', 'Hash mismatch detected', true);
+      __setMockInvokeResponses({ 'cmd_get_installed_version': { response: null }, 'cmd_install_modpack': { response: 'Hash mismatch detected', reject: true } });
 
       useModpackStore.setState({ latestManifest: manifest });
 
@@ -217,7 +239,7 @@ describe('Manifest Validation and Security', () => {
 
   describe('path traversal protection', () => {
     it('should reject paths with ../', async () => {
-      __setMockInvokeResponse('cmd_check_updates', 'Path traversal detected', true);
+      __setMockInvokeResponses({ 'cmd_get_installed_version': { response: null }, 'cmd_check_updates': { response: 'Path traversal detected', reject: true } });
 
       const { result } = renderHook(() => useModpack());
 
@@ -225,7 +247,7 @@ describe('Manifest Validation and Security', () => {
     });
 
     it('should reject absolute paths', async () => {
-      __setMockInvokeResponse('cmd_check_updates', 'Absolute paths not allowed', true);
+      __setMockInvokeResponses({ 'cmd_get_installed_version': { response: null }, 'cmd_check_updates': { response: 'Absolute paths not allowed', reject: true } });
 
       const { result } = renderHook(() => useModpack());
 
@@ -250,7 +272,7 @@ describe('Manifest Validation and Security', () => {
         ],
       });
 
-      __setMockInvokeResponse('cmd_check_updates', manifest);
+      __setMockInvokeResponses({ 'cmd_get_installed_version': { response: null }, 'cmd_check_updates': { response: manifest } });
 
       const { result } = renderHook(() => useModpack());
 
@@ -271,7 +293,7 @@ describe('Manifest Validation and Security', () => {
         })),
       });
 
-      __setMockInvokeResponse('cmd_check_updates', manifest);
+      __setMockInvokeResponses({ 'cmd_get_installed_version': { response: null }, 'cmd_check_updates': { response: manifest } });
 
       const { result } = renderHook(() => useModpack());
 
@@ -290,7 +312,7 @@ describe('Manifest Validation and Security', () => {
         })),
       });
 
-      __setMockInvokeResponse('cmd_check_updates', manifest);
+      __setMockInvokeResponses({ 'cmd_get_installed_version': { response: null }, 'cmd_check_updates': { response: manifest } });
 
       const { result } = renderHook(() => useModpack());
 
@@ -346,7 +368,7 @@ describe('Manifest Validation and Security', () => {
         ],
       });
 
-      __setMockInvokeResponse('cmd_check_updates', manifest);
+      __setMockInvokeResponses({ 'cmd_get_installed_version': { response: null }, 'cmd_check_updates': { response: manifest } });
 
       const { result } = renderHook(() => useModpack());
 
@@ -356,7 +378,7 @@ describe('Manifest Validation and Security', () => {
     });
 
     it('should reject negative file sizes', async () => {
-      __setMockInvokeResponse('cmd_check_updates', 'Invalid file size', true);
+      __setMockInvokeResponses({ 'cmd_get_installed_version': { response: null }, 'cmd_check_updates': { response: 'Invalid file size', reject: true } });
 
       const { result } = renderHook(() => useModpack());
 
@@ -365,7 +387,7 @@ describe('Manifest Validation and Security', () => {
 
     it('should reject zero byte files in critical paths', async () => {
       // Backend should validate this
-      __setMockInvokeResponse('cmd_check_updates', 'Zero-byte file not allowed', true);
+      __setMockInvokeResponses({ 'cmd_get_installed_version': { response: null }, 'cmd_check_updates': { response: 'Zero-byte file not allowed', reject: true } });
 
       const { result } = renderHook(() => useModpack());
 
@@ -378,7 +400,7 @@ describe('Manifest Validation and Security', () => {
       const manifest1 = createMockManifest({ version: '1.0.0' });
       const manifest2 = createMockManifest({ version: '1.0.0' }); // Same version, different content
 
-      __setMockInvokeResponse('cmd_check_updates', manifest1);
+      __setMockInvokeResponses({ 'cmd_get_installed_version': { response: null }, 'cmd_check_updates': { response: manifest1 } });
 
       const { result } = renderHook(() => useModpack());
 
@@ -387,8 +409,8 @@ describe('Manifest Validation and Security', () => {
       });
 
       // Update to manifest2
-      __setMockInvokeResponse('cmd_check_updates', manifest2);
-      __setMockInvokeResponse('cmd_has_manifest_changed', true);
+      __setMockInvokeResponses({ 'cmd_get_installed_version': { response: null }, 'cmd_check_updates': { response: manifest2 } });
+      __setMockInvokeResponses({ 'cmd_has_manifest_changed': { response: true } });
 
       await result.current.checkUpdates();
 
@@ -400,7 +422,7 @@ describe('Manifest Validation and Security', () => {
 
     it('should validate manifest integrity on every check', async () => {
       const manifest = createMockManifest();
-      __setMockInvokeResponse('cmd_check_updates', manifest);
+      __setMockInvokeResponses({ 'cmd_get_installed_version': { response: null }, 'cmd_check_updates': { response: manifest } });
 
       const { result } = renderHook(() => useModpack());
 
@@ -417,7 +439,7 @@ describe('Manifest Validation and Security', () => {
 
   describe('manifest content type validation', () => {
     it('should handle JSON parsing errors', async () => {
-      __setMockInvokeResponse('cmd_check_updates', 'Invalid JSON', true);
+      __setMockInvokeResponses({ 'cmd_get_installed_version': { response: null }, 'cmd_check_updates': { response: 'Invalid JSON', reject: true } });
 
       const { result } = renderHook(() => useModpack());
 
@@ -425,7 +447,7 @@ describe('Manifest Validation and Security', () => {
     });
 
     it('should reject non-object manifests', async () => {
-      __setMockInvokeResponse('cmd_check_updates', 'Manifest must be an object', true);
+      __setMockInvokeResponses({ 'cmd_get_installed_version': { response: null }, 'cmd_check_updates': { response: 'Manifest must be an object', reject: true } });
 
       const { result } = renderHook(() => useModpack());
 

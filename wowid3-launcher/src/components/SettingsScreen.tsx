@@ -1,7 +1,9 @@
 import { FC, ChangeEvent, useState, useCallback } from 'react';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useAudio } from '../hooks';
 import { Input } from './ui/Input';
-import { logger, LogCategory } from '../utils/logger';
+// Logger import for future use
+// import { logger, LogCategory } from '../utils/logger';
 
 // Validation helpers
 const validateGameDirectory = (path: string): { valid: boolean; message?: string } => {
@@ -40,6 +42,8 @@ export const SettingsScreen: FC = () => {
     keepLauncherOpen,
     setKeepLauncherOpen,
   } = useSettingsStore();
+
+  const { volume, setVolume } = useAudio();
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -89,6 +93,11 @@ export const SettingsScreen: FC = () => {
     setKeepLauncherOpen(e.target.checked);
   }, [setKeepLauncherOpen]);
 
+  const handleVolumeChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    const newVolume = parseFloat(e.target.value);
+    setVolume(newVolume);
+  }, [setVolume]);
+
   return (
     <div className="max-w-2xl mx-auto w-full pt-8 px-4 pb-20">
       <h1 className="text-2xl font-bold mb-8 text-white" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
@@ -103,8 +112,7 @@ export const SettingsScreen: FC = () => {
           onChange={handleGamePathChange}
           status={errors.gamePath ? 'error' : 'default'}
           error={errors.gamePath}
-          helper="Path where Minecraft files will be stored"
-          fullWidth
+          helperText="Path where Minecraft files will be stored"
         />
 
         <Input
@@ -113,8 +121,7 @@ export const SettingsScreen: FC = () => {
           onChange={handleManifestUrlChange}
           status={errors.manifestUrl ? 'error' : 'default'}
           error={errors.manifestUrl}
-          helper="URL to the modpack manifest JSON file"
-          fullWidth
+          helperText="URL to the modpack manifest JSON file"
         />
 
         <Input
@@ -124,26 +131,47 @@ export const SettingsScreen: FC = () => {
           onChange={handleRamChange}
           status={errors.ram ? 'error' : 'default'}
           error={errors.ram}
-          helper={`Recommended: ${getRecommendedRam()}MB. Allocated to Minecraft Java process.`}
-          fullWidth
+          helperText={`Recommended: ${getRecommendedRam()}MB. Allocated to Minecraft Java process.`}
         />
 
-        <div className="flex items-center space-x-3 pt-2">
-          <input
-            id="keepLauncherOpen"
-            type="checkbox"
-            checked={keepLauncherOpen}
-            onChange={handleKeepLauncherOpenChange}
-            className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 bg-gray-700 border-gray-600"
-          />
-          <label 
-            htmlFor="keepLauncherOpen" 
-            className="text-sm font-medium text-gray-200 cursor-pointer"
-          >
-            Keep launcher open while game is running
-          </label>
+        <div className="space-y-4 pt-2">
+          <div>
+            <label htmlFor="volume" className="block text-sm font-medium text-gray-200 mb-2">
+              Music Volume: {Math.round(volume * 100)}%
+            </label>
+            <input
+              id="volume"
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={volume}
+              onChange={handleVolumeChange}
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+              style={{
+                background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${volume * 100}%, #374151 ${volume * 100}%, #374151 100%)`
+              }}
+            />
+            <p className="text-xs text-gray-400 mt-1">Adjust background music volume</p>
+          </div>
+
+          <div className="flex items-center space-x-3">
+            <input
+              id="keepLauncherOpen"
+              type="checkbox"
+              checked={keepLauncherOpen}
+              onChange={handleKeepLauncherOpenChange}
+              className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 bg-gray-700 border-gray-600"
+            />
+            <label
+              htmlFor="keepLauncherOpen"
+              className="text-sm font-medium text-gray-200 cursor-pointer"
+            >
+              Keep launcher open while game is running
+            </label>
+          </div>
         </div>
-        
+
       </div>
       
       <div className="mt-8 text-center text-xs text-gray-500">

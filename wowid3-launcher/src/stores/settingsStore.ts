@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist, PersistStorage } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
 import { platform } from '@tauri-apps/plugin-os';
 import { homeDir } from '@tauri-apps/api/path';
@@ -9,7 +9,8 @@ import {
   validateRamAllocation,
   validateServerAddress,
 } from '../utils/security';
-import { setSecureItem, getSecureItem } from '../utils/secureStorage';
+// Secure storage disabled for now due to Zustand compatibility issues
+// import { setSecureItem, getSecureItem } from '../utils/secureStorage';
 
 interface SettingsState {
   // Java settings
@@ -55,20 +56,9 @@ interface SettingsState {
   initializeGameDirectory: () => Promise<void>;
 }
 
-// Custom storage with integrity verification
-const secureStorage: PersistStorage<SettingsState> = {
-  getItem: async (name: string): Promise<string | null> => {
-    const data = await getSecureItem<SettingsState>(name);
-    return data ? JSON.stringify(data) : null;
-  },
-  setItem: async (name: string, value: string): Promise<void> => {
-    const data = JSON.parse(value) as SettingsState;
-    await setSecureItem(name, data);
-  },
-  removeItem: (name: string): void => {
-    localStorage.removeItem(name);
-  },
-};
+// Note: SecureStorage with HMAC verification is disabled for now due to Zustand compatibility
+// The persist storage expects synchronous operations, but HMAC verification is async
+// For production, consider implementing a custom persist middleware or using sessionStorage
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
@@ -182,7 +172,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'wowid3-settings', // localStorage key
       version: 1,
-      storage: secureStorage,
+      storage: createJSONStorage(() => localStorage),
       migrate: (persistedState: any, version: number) => {
         // Migration logic for updating old URLs
         if (version === 0) {

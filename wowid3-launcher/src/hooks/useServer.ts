@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { LauncherError, LauncherErrorCode } from '../utils/errors';
 import { useServerStatus, useServerIsPolling, useServerError, useServerActions, useServerAddress } from '../stores/selectors';
 import { pingServer } from './useTauriCommands';
 import { createRateLimiter } from '../utils/rateLimit';
@@ -22,7 +23,8 @@ export const useServer = () => {
       setStatus(serverStatus);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to ping server');
+      const error = LauncherError.from(err, LauncherErrorCode.NETWORK_SERVER_ERROR);
+      setError(error);
     }
   };
 

@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
-import { MinecraftProfile, Manifest, ServerStatus } from '../stores';
+import { z } from 'zod';
+import type { MinecraftProfile, Manifest, ServerStatus } from '../stores';
 import { deduplicator } from '../utils/deduplication';
 import {
   VersionInfo,
@@ -7,6 +8,15 @@ import {
   InstallConfig,
   LaunchConfig
 } from '../types/minecraft';
+import {
+  MinecraftProfileSchema,
+  ManifestSchema,
+  ServerStatusSchema,
+  TrackerStateSchema,
+  DeviceCodeInfoSchema,
+  VersionInfoSchema,
+  FabricLoaderSchema,
+} from '../types/schemas';
 
 // Re-export LaunchConfig for backward compatibility
 export type { LaunchConfig };
@@ -33,17 +43,42 @@ export interface AvatarData {
     content_type: string;
 }
 
-// Authentication commands
+// Authentication commands with Zod validation
 export const authenticateMinecraft = async (): Promise<MinecraftProfile> => {
-  return await invoke<MinecraftProfile>('cmd_authenticate');
+  try {
+    const result = await invoke('cmd_authenticate');
+    return MinecraftProfileSchema.parse(result);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      throw new Error(`Invalid authentication response: ${err.message}`);
+    }
+    throw err;
+  }
 };
 
 export const authenticateFromOfficialLauncher = async (): Promise<MinecraftProfile> => {
-  return await invoke<MinecraftProfile>('cmd_authenticate_official_launcher');
+  try {
+    const result = await invoke('cmd_authenticate_official_launcher');
+    return MinecraftProfileSchema.parse(result);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      throw new Error(`Invalid authentication response: ${err.message}`);
+    }
+    throw err;
+  }
 };
 
 export const getCurrentUser = async (): Promise<MinecraftProfile | null> => {
-  return await invoke<MinecraftProfile | null>('cmd_get_current_user');
+  try {
+    const result = await invoke('cmd_get_current_user');
+    if (result === null) return null;
+    return MinecraftProfileSchema.parse(result);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      throw new Error(`Invalid user profile: ${err.message}`);
+    }
+    throw err;
+  }
 };
 
 export const logout = async (): Promise<void> => {
@@ -51,15 +86,26 @@ export const logout = async (): Promise<void> => {
 };
 
 export const refreshToken = async (): Promise<MinecraftProfile | null> => {
-  return await invoke<MinecraftProfile | null>('cmd_refresh_token');
+  try {
+    const result = await invoke('cmd_refresh_token');
+    if (result === null) return null;
+    return MinecraftProfileSchema.parse(result);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      throw new Error(`Invalid token response: ${err.message}`);
+    }
+    throw err;
+  }
 };
 
 export const getDeviceCode = async (): Promise<DeviceCodeInfo> => {
-  return await invoke<DeviceCodeInfo>('cmd_get_device_code');
+  const result = await invoke('cmd_get_device_code');
+  return DeviceCodeInfoSchema.parse(result);
 };
 
 export const completeDeviceCodeAuth = async (deviceCode: string, interval: number): Promise<MinecraftProfile> => {
-  return await invoke<MinecraftProfile>('cmd_complete_device_code_auth', { deviceCode, interval });
+  const result = await invoke('cmd_complete_device_code_auth', { deviceCode, interval });
+  return MinecraftProfileSchema.parse(result);
 };
 
 export const fetchAvatar = async (username: string): Promise<AvatarData> => {
@@ -73,9 +119,10 @@ export const launchGame = async (config: LaunchConfig): Promise<string> => {
 
 // Server status commands
 export const pingServer = async (address: string): Promise<ServerStatus> => {
-  return await deduplicator.execute(`pingServer:${address}`, () => 
-    invoke<ServerStatus>('cmd_ping_server', { address })
+  const result = await deduplicator.execute(`pingServer:${address}`, () =>
+    invoke('cmd_ping_server', { address })
   );
+  return ServerStatusSchema.parse(result);
 };
 
 export const resolvePlayerName = async (uuid: string): Promise<string> => {
@@ -83,14 +130,16 @@ export const resolvePlayerName = async (uuid: string): Promise<string> => {
 };
 
 export const getDetailedServerStatus = async (baseUrl: string): Promise<any> => {
-  return await invoke<any>('cmd_get_detailed_server_status', { baseUrl });
+  const result = await invoke('cmd_get_detailed_server_status', { baseUrl });
+  return TrackerStateSchema.parse(result);
 };
 
 // Modpack update commands
 export const checkForUpdates = async (manifestUrl: string): Promise<Manifest> => {
-  return await deduplicator.execute(`checkForUpdates:${manifestUrl}`, () => 
-    invoke<Manifest>('cmd_check_updates', { manifestUrl })
+  const result = await deduplicator.execute(`checkForUpdates:${manifestUrl}`, () =>
+    invoke('cmd_check_updates', { manifestUrl })
   );
+  return ManifestSchema.parse(result);
 };
 
 export const getInstalledVersion = async (gameDir: string): Promise<string | null> => {
@@ -163,7 +212,8 @@ export const discordIsConnected = async (): Promise<boolean> => {
 
 // Version Management
 export const listMinecraftVersions = async (versionType?: 'release' | 'snapshot'): Promise<VersionInfo[]> => {
-  return await invoke<VersionInfo[]>('cmd_list_minecraft_versions', { versionType });
+  const result = await invoke('cmd_list_minecraft_versions', { versionType });
+  return z.array(VersionInfoSchema).parse(result);
 };
 
 export const getLatestRelease = async (): Promise<string> => {
@@ -176,11 +226,13 @@ export const getLatestSnapshot = async (): Promise<string> => {
 
 // Fabric Loader Management
 export const getFabricLoaders = async (gameVersion: string): Promise<FabricLoader[]> => {
-  return await invoke<FabricLoader[]>('cmd_get_fabric_loaders', { gameVersion });
+  const result = await invoke('cmd_get_fabric_loaders', { gameVersion });
+  return z.array(FabricLoaderSchema).parse(result);
 };
 
 export const getLatestFabricLoader = async (gameVersion: string): Promise<FabricLoader> => {
-  return await invoke<FabricLoader>('cmd_get_latest_fabric_loader', { gameVersion });
+  const result = await invoke('cmd_get_latest_fabric_loader', { gameVersion });
+  return FabricLoaderSchema.parse(result);
 };
 
 // Installation Commands

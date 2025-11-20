@@ -54,7 +54,7 @@ export function useGameLauncher(): UseGameLauncherReturn {
   const [error, setError] = useState<LauncherError | null>(null);
 
   const { ramAllocation, gameDirectory, keepLauncherOpen } = useSettingsStore();
-  const { setMuted, setWasPaused } = useAudioStore();
+  const { pauseForGame } = useAudioStore();
   const { setShowLogViewer } = useUIStore();
 
   /**
@@ -84,18 +84,8 @@ export function useGameLauncher(): UseGameLauncherReturn {
           );
         }
 
-        // Pause and mute background music
-        const audioElements = document.querySelectorAll('audio');
-        let wasPaused = false;
-        audioElements.forEach((audio) => {
-          if (!audio.paused) {
-            wasPaused = true;
-            audio.pause();
-          }
-        });
-
-        setWasPaused(wasPaused);
-        setMuted(true);
+        // Pause and mute background music via audio store
+        pauseForGame();
 
         // Handle window based on settings
         if (!keepLauncherOpen) {
@@ -121,7 +111,7 @@ export function useGameLauncher(): UseGameLauncherReturn {
             game_dir: gameDirectory,
             username: params.username,
             uuid: params.uuid,
-            access_token: params.accessToken,
+            session_id: params.accessToken, // Backend expects session_id
           },
           params.versionId
         );
@@ -137,7 +127,7 @@ export function useGameLauncher(): UseGameLauncherReturn {
         throw launcherError;
       }
     },
-    [ramAllocation, gameDirectory, keepLauncherOpen, setMuted, setWasPaused, setShowLogViewer]
+    [ramAllocation, gameDirectory, keepLauncherOpen, pauseForGame, setShowLogViewer]
   );
 
   /**
@@ -206,43 +196,50 @@ export function useGameLauncher(): UseGameLauncherReturn {
 
   // Listen for Minecraft events
   useEffect(() => {
-    let unlisteners: Array<Promise<UnlistenFn>> = [];
+    let unlisteners: Array<UnlistenFn> = [];
 
     const setupListeners = async () => {
-      // Listen for log events
-      const unlistenLog = listen<MinecraftLogEvent>('minecraft-log', (event) => {
-        logger.debug(LogCategory.MINECRAFT, event.payload.message, {
-          metadata: { level: event.payload.level },
+      try {
+        // Listen for log events
+        const unlistenLog = await listen<MinecraftLogEvent>('minecraft-log', (event) => {
+          logger.debug(LogCategory.MINECRAFT, event.payload.message, {
+            metadata: { level: event.payload.level },
+          });
+
+          if (event.payload.level === 'error') {
+            logger.error(LogCategory.MINECRAFT, `Game error: ${event.payload.message}`);
+          }
         });
 
-        if (event.payload.level === 'error') {
-          logger.error(LogCategory.MINECRAFT, `Game error: ${event.payload.message}`);
-        }
-      });
+        // Listen for exit events
+        const unlistenExit = await listen<MinecraftExitEvent>('minecraft-exit', (event) => {
+          handleGameExit(event.payload.exit_code, event.payload.crashed);
+        });
 
-      // Listen for exit events
-      const unlistenExit = listen<MinecraftExitEvent>('minecraft-exit', (event) => {
-        handleGameExit(event.payload.exit_code, event.payload.crashed);
-      });
+        // Listen for crash events
+        const unlistenCrash = await listen<MinecraftCrashEvent>('minecraft-crash', (event) => {
+          logger.error(LogCategory.MINECRAFT, `Game crash: ${event.payload.message}`);
+          setError(
+            new LauncherError(LauncherErrorCode.MC_LAUNCH_FAILED, event.payload.message)
+          );
+        });
 
-      // Listen for crash events
-      const unlistenCrash = listen<MinecraftCrashEvent>('minecraft-crash', (event) => {
-        logger.error(LogCategory.MINECRAFT, `Game crash: ${event.payload.message}`);
-        setError(
-          new LauncherError(LauncherErrorCode.MC_LAUNCH_FAILED, event.payload.message)
-        );
-      });
-
-      unlisteners = [unlistenLog, unlistenExit, unlistenCrash];
+        unlisteners = [unlistenLog, unlistenExit, unlistenCrash];
+      } catch (err) {
+        logger.error(LogCategory.MINECRAFT, 'Failed to setup event listeners:', err instanceof Error ? err : new Error(String(err)));
+      }
     };
 
     setupListeners();
 
-    // Cleanup function
+    // Cleanup function - properly teardown all event listeners synchronously
     return () => {
-      unlisteners.forEach(async (unlistenPromise) => {
-        const unlisten = await unlistenPromise;
-        unlisten();
+      unlisteners.forEach((unlisten) => {
+        try {
+          unlisten();
+        } catch (err) {
+          logger.error(LogCategory.MINECRAFT, 'Failed to unlisten from event:', err instanceof Error ? err : new Error(String(err)));
+        }
       });
     };
   }, [handleGameExit]);

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { LauncherError } from '../types';
 
 export interface ModpackFile {
   path: string;
@@ -16,49 +17,52 @@ export interface Manifest {
   changelog: string;
 }
 
-interface ModpackState {
+interface ModpackStoreState {
   installedVersion: string | null;
   latestManifest: Manifest | null;
   updateAvailable: boolean;
   isDownloading: boolean;
+  isValidating: boolean;
   isVerifying: boolean;
   isBlockedForInstall: boolean;
   downloadProgress: {
     current: number;
     total: number;
   } | null;
-  error: string | null;
+  error: LauncherError | null;
 
   // Lifecycle tracking (previously refs in LauncherHome)
   hasCheckedForModpack: boolean;
   modpackCheckRetries: number;
   lastCheckAttempt: number;
-  lastModpackError: string | null;
+  lastModpackError: LauncherError | null;
 
   // Actions
   setInstalledVersion: (version: string | null) => void;
   setLatestManifest: (manifest: Manifest | null) => void;
   setUpdateAvailable: (available: boolean) => void;
   setDownloading: (downloading: boolean) => void;
+  setValidating: (validating: boolean) => void;
   setVerifying: (verifying: boolean) => void;
   setBlockedForInstall: (blocked: boolean) => void;
   setDownloadProgress: (current: number, total: number) => void;
-  setError: (error: string | null) => void;
+  setError: (error: LauncherError | null) => void;
   setHasCheckedForModpack: (checked: boolean) => void;
   incrementCheckRetries: () => void;
   resetCheckRetries: () => void;
   setLastCheckAttempt: (timestamp: number) => void;
-  setLastModpackError: (error: string | null) => void;
+  setLastModpackError: (error: LauncherError | null) => void;
   reset: () => void;
 }
 
-export const useModpackStore = create<ModpackState>()(
+export const useModpackStore = create<ModpackStoreState>()(
   persist(
     (set) => ({
       installedVersion: null,
       latestManifest: null,
       updateAvailable: false,
       isDownloading: false,
+      isValidating: false,
       isVerifying: false,
       isBlockedForInstall: false,
       downloadProgress: null,
@@ -81,6 +85,8 @@ export const useModpackStore = create<ModpackState>()(
           isDownloading: downloading,
           downloadProgress: downloading ? { current: 0, total: 0 } : null,
         }),
+
+      setValidating: (validating) => set({ isValidating: validating }),
 
       setVerifying: (verifying) => set({ isVerifying: verifying }),
 
@@ -106,6 +112,7 @@ export const useModpackStore = create<ModpackState>()(
         set({
           downloadProgress: null,
           isDownloading: false,
+          isValidating: false,
           isVerifying: false,
           isBlockedForInstall: false,
           error: null,

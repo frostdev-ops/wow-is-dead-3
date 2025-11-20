@@ -42,13 +42,13 @@ export const once = vi.fn(<T = any>(
   event: string,
   handler: EventCallback<T>
 ): Promise<UnlistenFn> => {
-  const wrappedHandler: EventCallback<T> = (event) => {
-    handler(event);
-    const listeners = eventListeners.get(event as any);
+  const wrappedHandler = ((evt: { payload: unknown }) => {
+    handler(evt as { payload: T });
+    const listeners = eventListeners.get(event);
     if (listeners) {
       listeners.delete(wrappedHandler);
     }
-  };
+  }) as EventCallback<any>;
 
   return listen(event, wrappedHandler);
 });

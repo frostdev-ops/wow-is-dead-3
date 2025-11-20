@@ -137,7 +137,7 @@ export const usePollingManager = () => {
   }, []);
 
   const stopAll = useCallback(() => {
-    polls.current.forEach((state, key) => {
+    polls.current.forEach((state, _key) => {
       if (state.timer) {
         clearInterval(state.timer);
       }

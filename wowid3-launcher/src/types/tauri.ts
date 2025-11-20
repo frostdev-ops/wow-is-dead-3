@@ -4,7 +4,7 @@
  * Types for Rust <-> TypeScript interop via Tauri commands.
  */
 
-import { UUID, Bytes, Milliseconds, ISO8601 } from './utils';
+import { UUID, Bytes, ISO8601 } from './utils';
 
 /**
  * Launch Config for Minecraft

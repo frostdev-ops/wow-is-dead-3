@@ -42,6 +42,10 @@ export enum LauncherErrorCode {
   DISCORD_CONNECTION_FAILED = 6002,
   DISCORD_RPC_ERROR = 6003,
 
+  // Audio errors (7xxx)
+  AUDIO_DOWNLOAD_FAILED = 7001,
+  AUDIO_PLAYBACK_FAILED = 7002,
+
   // Unknown errors
   UNKNOWN = 9999,
 }
@@ -66,7 +70,7 @@ export class LauncherError extends Error {
       cause?: Error;
     } = {}
   ) {
-    super(message, { cause: options.cause });
+    super(message);
     this.name = 'LauncherError';
     this.code = code;
     this.recoverable = options.recoverable ?? this.isRecoverable(code);
@@ -138,6 +142,9 @@ export class LauncherError extends Error {
       [LauncherErrorCode.DISCORD_NOT_RUNNING]: 'Discord is not running. Please start Discord to enable rich presence.',
       [LauncherErrorCode.DISCORD_CONNECTION_FAILED]: 'Failed to connect to Discord.',
       [LauncherErrorCode.DISCORD_RPC_ERROR]: 'Discord Rich Presence error.',
+
+      [LauncherErrorCode.AUDIO_DOWNLOAD_FAILED]: 'Failed to download background music. Using fallback audio.',
+      [LauncherErrorCode.AUDIO_PLAYBACK_FAILED]: 'Failed to play background music.',
     };
 
     return userMessages[code] ?? message;

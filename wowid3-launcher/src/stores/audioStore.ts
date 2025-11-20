@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import { LauncherError } from '../types';
 
 export type AudioState = 'loading' | 'fallback' | 'transitioning' | 'main';
 export type AudioSource = 'none' | 'fallback' | 'cached' | 'downloaded';
@@ -14,7 +16,7 @@ interface AudioStoreState {
   // Download/loading state
   isDownloading: boolean;
   downloadProgress: number; // 0-100
-  downloadError: string | null;
+  downloadError: LauncherError | null;
 
   // Retry state
   retryCount: number;
@@ -24,10 +26,8 @@ interface AudioStoreState {
   // Crossfade state
   isCrossfading: boolean;
 
-  // Volume
-  fallbackVolume: number;
-  mainVolume: number;
-  targetVolume: number; // For smooth transitions
+  // Volume (persisted)
+  volume: number; // 0-1 range
 
   // Actions
   setMuted: (muted: boolean) => void;
@@ -37,20 +37,22 @@ interface AudioStoreState {
   setAudioSource: (source: AudioSource) => void;
   setIsDownloading: (downloading: boolean) => void;
   setDownloadProgress: (progress: number) => void;
-  setDownloadError: (error: string | null) => void;
+  setDownloadError: (error: LauncherError | null) => void;
   incrementRetryCount: () => void;
   resetRetryCount: () => void;
   setLastErrorTimestamp: (timestamp: number | null) => void;
   setIsCrossfading: (fading: boolean) => void;
-  setFallbackVolume: (volume: number) => void;
-  setMainVolume: (volume: number) => void;
-  setTargetVolume: (volume: number) => void;
+  setVolume: (volume: number) => void;
 
   // Computed/helper actions
   canRetry: () => boolean;
   reset: () => void; // Reset to initial state
   markDownloadSuccess: () => void;
-  markDownloadFailure: (error: string) => void;
+  markDownloadFailure: (error: LauncherError) => void;
+  
+  // Game launch integration
+  pauseForGame: () => void; // Pause audio and track state before game launch
+  resumeFromGame: () => void; // Resume audio after game closes
 }
 
 const INITIAL_STATE = {
@@ -66,62 +68,81 @@ const INITIAL_STATE = {
   maxRetries: 3,
   lastErrorTimestamp: null,
   isCrossfading: false,
-  fallbackVolume: 0.3,
-  mainVolume: 0.3,
-  targetVolume: 0.3,
+  volume: 0.3, // Default volume 30%
 };
 
-export const useAudioStore = create<AudioStoreState>((set, get) => ({
-  ...INITIAL_STATE,
+export const useAudioStore = create<AudioStoreState>()(
+  persist(
+    (set, get) => ({
+      ...INITIAL_STATE,
 
-  // Basic setters
-  setMuted: (muted) => set({ isMuted: muted }),
-  setWasPaused: (paused) => set({ wasPaused: paused }),
-  setAudioState: (state) => set({ audioState: state }),
-  setMainAudioReady: (ready) => set({ mainAudioReady: ready }),
-  setAudioSource: (source) => set({ audioSource: source }),
-  setIsDownloading: (downloading) => set({ isDownloading: downloading }),
-  setDownloadProgress: (progress) => set({ downloadProgress: progress }),
-  setDownloadError: (error) => set({ downloadError: error }),
-  setLastErrorTimestamp: (timestamp: number | null) => set({ lastErrorTimestamp: timestamp }),
-  setIsCrossfading: (fading: boolean) => set({ isCrossfading: fading }),
-  setFallbackVolume: (volume: number) => set({ fallbackVolume: volume }),
-  setMainVolume: (volume: number) => set({ mainVolume: volume }),
-  setTargetVolume: (volume: number) => set({ targetVolume: volume }),
+      // Basic setters
+      setMuted: (muted) => set({ isMuted: muted }),
+      setWasPaused: (paused) => set({ wasPaused: paused }),
+      setAudioState: (state) => set({ audioState: state }),
+      setMainAudioReady: (ready) => set({ mainAudioReady: ready }),
+      setAudioSource: (source) => set({ audioSource: source }),
+      setIsDownloading: (downloading) => set({ isDownloading: downloading }),
+      setDownloadProgress: (progress) => set({ downloadProgress: progress }),
+      setDownloadError: (error) => set({ downloadError: error }),
+      setLastErrorTimestamp: (timestamp: number | null) => set({ lastErrorTimestamp: timestamp }),
+      setIsCrossfading: (fading: boolean) => set({ isCrossfading: fading }),
+      setVolume: (volume: number) => set({ volume: Math.max(0, Math.min(1, volume)) }),
 
-  // Retry management
-  incrementRetryCount: () => set((state: AudioStoreState) => ({
-    retryCount: state.retryCount + 1,
-    lastErrorTimestamp: Date.now()
-  })),
+      // Retry management
+      incrementRetryCount: () => set((state: AudioStoreState) => ({
+        retryCount: state.retryCount + 1,
+        lastErrorTimestamp: Date.now()
+      })),
 
-  resetRetryCount: () => set({
-    retryCount: 0,
-    lastErrorTimestamp: null
-  }),
+      resetRetryCount: () => set({
+        retryCount: 0,
+        lastErrorTimestamp: null
+      }),
 
-  // Computed helpers
-  canRetry: () => {
-    const state = get();
-    return state.retryCount < state.maxRetries;
-  },
+      // Computed helpers
+      canRetry: () => {
+        const state = get();
+        return state.retryCount < state.maxRetries;
+      },
 
-  // Complex actions
-  markDownloadSuccess: () => set({
-    isDownloading: false,
-    downloadProgress: 100,
-    downloadError: null,
-    audioSource: 'downloaded',
-    retryCount: 0,
-    lastErrorTimestamp: null,
-  }),
+      // Complex actions
+      markDownloadSuccess: () => set({
+        isDownloading: false,
+        downloadProgress: 100,
+        downloadError: null,
+        audioSource: 'downloaded',
+        retryCount: 0,
+        lastErrorTimestamp: null,
+      }),
 
-  markDownloadFailure: (error: string) => set((state: AudioStoreState) => ({
-    isDownloading: false,
-    downloadError: error,
-    retryCount: state.retryCount + 1,
-    lastErrorTimestamp: Date.now(),
-  })),
+      markDownloadFailure: (error: LauncherError) => set((state: AudioStoreState) => ({
+        isDownloading: false,
+        downloadError: error,
+        retryCount: state.retryCount + 1,
+        lastErrorTimestamp: Date.now(),
+      })),
 
-  reset: () => set(INITIAL_STATE),
-}));
+      reset: () => set(INITIAL_STATE),
+
+      // Game launch integration
+      pauseForGame: () => set((state: AudioStoreState) => ({
+        wasPaused: !state.isMuted, // Track if we should resume later
+        isMuted: true, // Mute audio for game
+      })),
+
+      resumeFromGame: () => set((state: AudioStoreState) => ({
+        isMuted: !state.wasPaused, // Restore previous mute state
+        wasPaused: false,
+      })),
+    }),
+    {
+      name: 'wowid3-audio-storage', // localStorage key
+      partialize: (state) => ({
+        // Only persist volume and muted state
+        volume: state.volume,
+        isMuted: state.isMuted,
+      }),
+    }
+  )
+);

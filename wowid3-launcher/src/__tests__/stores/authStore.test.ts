@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useAuthStore, MinecraftProfile } from '../../stores/authStore';
 import { createMockProfile } from '../utils/mockData';
+import { LauncherError, LauncherErrorCode } from '../../utils/errors';
 
 describe('authStore', () => {
   beforeEach(() => {
@@ -54,7 +55,9 @@ describe('authStore', () => {
     });
 
     it('should clear errors when setting user', () => {
-      useAuthStore.setState({ error: 'Previous error' });
+      useAuthStore.setState({ 
+        error: new LauncherError(LauncherErrorCode.AUTH_FAILED, 'Previous error')
+      });
 
       const { setUser } = useAuthStore.getState();
       setUser(createMockProfile());
@@ -80,15 +83,18 @@ describe('authStore', () => {
       useAuthStore.setState({ isLoading: true });
 
       const { setError } = useAuthStore.getState();
-      setError('Authentication failed');
+      const error = new LauncherError(LauncherErrorCode.AUTH_FAILED, 'Authentication failed');
+      setError(error);
 
       const state = useAuthStore.getState();
-      expect(state.error).toBe('Authentication failed');
+      expect(state.error).toBe(error);
       expect(state.isLoading).toBe(false);
     });
 
     it('should clear error when set to null', () => {
-      useAuthStore.setState({ error: 'Previous error' });
+      useAuthStore.setState({ 
+        error: new LauncherError(LauncherErrorCode.AUTH_FAILED, 'Previous error')
+      });
 
       const { setError } = useAuthStore.getState();
       setError(null);
@@ -103,7 +109,7 @@ describe('authStore', () => {
         user: createMockProfile(),
         isAuthenticated: true,
         isLoading: false,
-        error: 'Some error',
+        error: new LauncherError(LauncherErrorCode.AUTH_FAILED, 'Some error'),
       });
 
       const { logout } = useAuthStore.getState();
@@ -118,7 +124,7 @@ describe('authStore', () => {
 
   describe('state transitions', () => {
     it('should handle login flow state transitions', () => {
-      const { setLoading, setUser, setError } = useAuthStore.getState();
+      const { setLoading, setUser } = useAuthStore.getState();
 
       // Start loading
       setLoading(true);
@@ -134,13 +140,14 @@ describe('authStore', () => {
 
     it('should handle failed login flow', () => {
       const { setLoading, setError } = useAuthStore.getState();
+      const error = new LauncherError(LauncherErrorCode.AUTH_FAILED, 'Login failed');
 
       setLoading(true);
-      setError('Login failed');
+      setError(error);
 
       const state = useAuthStore.getState();
       expect(state.isLoading).toBe(false);
-      expect(state.error).toBe('Login failed');
+      expect(state.error).toBe(error);
       expect(state.isAuthenticated).toBe(false);
     });
   });
@@ -183,17 +190,19 @@ describe('authStore', () => {
   describe('concurrent updates', () => {
     it('should handle rapid state updates', () => {
       const { setLoading, setError } = useAuthStore.getState();
+      const error1 = new LauncherError(LauncherErrorCode.AUTH_FAILED, 'Error 1');
+      const error2 = new LauncherError(LauncherErrorCode.AUTH_FAILED, 'Error 2');
 
       setLoading(true);
       setLoading(false);
       setLoading(true);
-      setError('Error 1');
-      setError('Error 2');
+      setError(error1);
+      setError(error2);
 
       // Final state should reflect last update
       const state = useAuthStore.getState();
       expect(state.isLoading).toBe(false); // setError sets loading to false
-      expect(state.error).toBe('Error 2');
+      expect(state.error).toBe(error2);
     });
 
     it('should handle user updates during loading', () => {

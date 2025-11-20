@@ -48,7 +48,8 @@ class Logger {
   }
 
   private getLogLevelFromEnv(): LogLevel {
-    switch (ENV_CONFIG.LOG_LEVEL) {
+    const level = ENV_CONFIG.LOG_LEVEL as string;
+    switch (level) {
       case 'debug':
         return LogLevel.DEBUG;
       case 'info':
@@ -176,7 +177,7 @@ class Logger {
     let filtered = [...this.logs];
 
     if (filter?.level !== undefined) {
-      filtered = filtered.filter(log => log.level >= filter.level);
+      filtered = filtered.filter(log => log.level >= filter.level!);
     }
 
     if (filter?.category) {

@@ -1,0 +1,96 @@
+src/__mocks__/@tauri-apps/api/core.ts(13,43): error TS6133: 'args' is declared but its value is never read.
+src/__mocks__/@tauri-apps/api/core.ts(28,43): error TS6133: 'args' is declared but its value is never read.
+src/__mocks__/@tauri-apps/api/event.ts(53,24): error TS2345: Argument of type 'EventCallback<T>' is not assignable to parameter of type 'EventCallback<unknown>'.
+  Type 'unknown' is not assignable to type 'T'.
+    'T' could be instantiated with an arbitrary type which could be unrelated to 'unknown'.
+src/__tests__/components/LauncherHome.test.tsx(2,10): error TS6133: 'screen' is declared but its value is never read.
+src/__tests__/hooks/useModpack.test.ts(6,1): error TS6133: 'mockTauriListen' is declared but its value is never read.
+src/__tests__/hooks/useModpack.test.ts(19,18): error TS6133: 'event' is declared but its value is never read.
+src/__tests__/hooks/useModpack.test.ts(19,25): error TS6133: 'handler' is declared but its value is never read.
+src/__tests__/hooks/useModpack.test.ts(116,64): error TS2345: Argument of type '{ version: string; minecraft_version: string; files: never[]; }' is not assignable to parameter of type 'Manifest'.
+  Type '{ version: string; minecraft_version: string; files: never[]; }' is missing the following properties from type 'Manifest': fabric_loader, changelog
+src/__tests__/stores/authStore.test.ts(121,36): error TS6133: 'setError' is declared but its value is never read.
+src/__tests__/utils/tauri-mock.ts(3,34): error TS6133: 'command' is declared but its value is never read.
+src/__tests__/utils/tauri-mock.ts(7,33): error TS6133: 'eventName' is declared but its value is never read.
+src/__tests__/utils/tauri-mock.ts(7,52): error TS6133: 'handler' is declared but its value is never read.
+src/__tests__/utils/test-utils.tsx(3,1): error TS6133: 'vi' is declared but its value is never read.
+src/components/CatModel.tsx(26,7): error TS2322: Type 'Scene<Object3DEventMap>' is not assignable to type 'Scene'.
+  Types of property 'fog' are incompatible.
+    Type 'Fog | FogExp2 | null' is not assignable to type 'FogBase | null'.
+      Type 'Fog' is not assignable to type 'FogBase'.
+        The types of 'color.set' are incompatible between these types.
+          Type '(...args: [color: ColorRepresentation] | [r: number, g: number, b: number]) => Color' is not assignable to type '{ (color: ColorRepresentation): Color; (r: number, g: number, b: number): Color; }'.
+            Types of parameters 'args' and 'color' are incompatible.
+              Type '[color: ColorRepresentation]' is not assignable to type '[color: ColorRepresentation] | [r: number, g: number, b: number]'.
+                Type '[color: THREE.ColorRepresentation]' is not assignable to type '[color: import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/math/Color").ColorRepresentation]'.
+                  Type 'THREE.ColorRepresentation' is not assignable to type 'import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/math/Color").ColorRepresentation'.
+                    Type 'Color' is not assignable to type 'ColorRepresentation'.
+                      Type 'THREE.Color' is not assignable to type 'import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/math/Color").Color'.
+                        Types of property 'set' are incompatible.
+                          Type '{ (color: ColorRepresentation): Color; (r: number, g: number, b: number): Color; }' is not assignable to type '(...args: [color: ColorRepresentation] | [r: number, g: number, b: number]) => Color'.
+                            Types of parameters 'color' and 'args' are incompatible.
+                              Type '[color: ColorRepresentation] | [r: number, g: number, b: number]' is not assignable to type '[color: ColorRepresentation]'.
+                                Type '[color: import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/math/Color").ColorRepresentation]' is not assignable to type '[color: THREE.ColorRepresentation]'.
+                                  Type 'import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/math/Color").ColorRepresentation' is not assignable to type 'THREE.ColorRepresentation'.
+                                    Type 'Color' is not assignable to type 'ColorRepresentation'.
+src/components/CatModel.tsx(32,7): error TS2322: Type 'import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/cameras/PerspectiveCamera").PerspectiveCamera' is not assignable to type 'THREE.PerspectiveCamera'.
+  Types of property 'matrixWorldInverse' are incompatible.
+    Type 'Matrix4' is missing the following properties from type 'Matrix4': multiplyToArray, extractPosition, setRotationFromQuaternion, multiplyVector3, and 6 more.
+src/components/CatModel.tsx(39,7): error TS2739: Type 'WebGLRenderer' is missing the following properties from type 'WebGLRenderer': outputEncoding, useLegacyLights, pixelRatio, copyTextureToTexture3D
+src/components/CatModel.tsx(167,13): error TS2322: Type 'Mesh<BoxGeometry, MeshLambertMaterial, Object3DEventMap>' is not assignable to type 'Mesh<BufferGeometry<NormalBufferAttributes>, Material | Material[], Object3DEventMap>'.
+  The types of 'geometry.index' are incompatible between these types.
+    Type 'import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/core/BufferAttribute").BufferAttribute | null' is not assignable to type 'THREE.BufferAttribute | null'.
+      Property 'updateRange' is missing in type 'import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/core/BufferAttribute").BufferAttribute' but required in type 'THREE.BufferAttribute'.
+src/components/CatModel.tsx(177,11): error TS2322: Type 'import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/objects/Group").Group<import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/core/Object3D").Object3DEventMap>' is not assignable to type 'THREE.Group<THREE.Object3DEventMap>'.
+  Types of property 'parent' are incompatible.
+    Type 'import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/core/Object3D").Object3D<import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/core/Object3D").Object3DEventMap> | null' is not assignable to type 'THREE.Object3D<THREE.Object3DEventMap> | null'.
+      Type 'import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/core/Object3D").Object3D<import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/core/Object3D").Object3DEventMap>' is not assignable to type 'THREE.Object3D<THREE.Object3DEventMap>'.
+        Types of property 'up' are incompatible.
+          Type 'Vector3' is missing the following properties from type 'Vector3': lengthManhattan, distanceToManhattan
+src/components/CatModel.tsx(181,11): error TS2322: Type 'import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/objects/Group").Group<import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/core/Object3D").Object3DEventMap>' is not assignable to type 'THREE.Group<THREE.Object3DEventMap>'.
+  Types of property 'parent' are incompatible.
+    Type 'import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/core/Object3D").Object3D<import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/core/Object3D").Object3DEventMap> | null' is not assignable to type 'THREE.Object3D<THREE.Object3DEventMap> | null'.
+      Type 'import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/core/Object3D").Object3D<import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/core/Object3D").Object3DEventMap>' is not assignable to type 'THREE.Object3D<THREE.Object3DEventMap>'.
+        Types of property 'up' are incompatible.
+          Type 'Vector3' is missing the following properties from type 'Vector3': lengthManhattan, distanceToManhattan
+src/components/CatModel.tsx(210,25): error TS2345: Argument of type 'import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/math/Vector3").Vector3' is not assignable to parameter of type 'THREE.Vector3'.
+  Type 'Vector3' is missing the following properties from type 'Vector3': lengthManhattan, distanceToManhattan
+src/components/CatModel.tsx(225,34): error TS2345: Argument of type 'Mesh<BufferGeometry<NormalBufferAttributes>, Material | Material[], Object3DEventMap>' is not assignable to parameter of type 'Object3D<Object3DEventMap>'.
+  Type 'Mesh<BufferGeometry<NormalBufferAttributes>, Material | Material[], Object3DEventMap>' is missing the following properties from type 'Object3D<Object3DEventMap>': onBeforeShadow, onAfterShadow
+src/components/CatModel.tsx(237,62): error TS2345: Argument of type 'Mesh<BufferGeometry<NormalBufferAttributes>, Material | Material[], Object3DEventMap>' is not assignable to parameter of type 'Object3D<Object3DEventMap>'.
+  Type 'Mesh<BufferGeometry<NormalBufferAttributes>, Material | Material[], Object3DEventMap>' is missing the following properties from type 'Object3D<Object3DEventMap>': onBeforeShadow, onAfterShadow
+src/components/CatModel.tsx(253,31): error TS2345: Argument of type 'Mesh<BufferGeometry<NormalBufferAttributes>, Material | Material[], Object3DEventMap>' is not assignable to parameter of type 'Object3D<Object3DEventMap>'.
+  Type 'Mesh<BufferGeometry<NormalBufferAttributes>, Material | Material[], Object3DEventMap>' is missing the following properties from type 'Object3D<Object3DEventMap>': onBeforeShadow, onAfterShadow
+src/components/CatModel.tsx(255,33): error TS2345: Argument of type 'import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/math/Vector3").Vector3' is not assignable to parameter of type 'THREE.Vector3'.
+  Type 'Vector3' is missing the following properties from type 'Vector3': lengthManhattan, distanceToManhattan
+src/components/CatModel.tsx(256,29): error TS2345: Argument of type 'Mesh<BufferGeometry<NormalBufferAttributes>, Material | Material[], Object3DEventMap>' is not assignable to parameter of type 'Object3D<Object3DEventMap>'.
+  Type 'Mesh<BufferGeometry<NormalBufferAttributes>, Material | Material[], Object3DEventMap>' is missing the following properties from type 'Object3D<Object3DEventMap>': onBeforeShadow, onAfterShadow
+src/components/CatModel.tsx(269,62): error TS2345: Argument of type 'Mesh<BufferGeometry<NormalBufferAttributes>, Material | Material[], Object3DEventMap>' is not assignable to parameter of type 'Object3D<Object3DEventMap>'.
+  Type 'Mesh<BufferGeometry<NormalBufferAttributes>, Material | Material[], Object3DEventMap>' is missing the following properties from type 'Object3D<Object3DEventMap>': onBeforeShadow, onAfterShadow
+src/components/CatModel.tsx(285,31): error TS2345: Argument of type 'Mesh<BufferGeometry<NormalBufferAttributes>, Material | Material[], Object3DEventMap>' is not assignable to parameter of type 'Object3D<Object3DEventMap>'.
+  Type 'Mesh<BufferGeometry<NormalBufferAttributes>, Material | Material[], Object3DEventMap>' is missing the following properties from type 'Object3D<Object3DEventMap>': onBeforeShadow, onAfterShadow
+src/components/CatModel.tsx(287,33): error TS2345: Argument of type 'import("/mnt/Dongus/wow-is-dead-3/wowid3-launcher/node_modules/@types/three/src/math/Vector3").Vector3' is not assignable to parameter of type 'THREE.Vector3'.
+  Type 'Vector3' is missing the following properties from type 'Vector3': lengthManhattan, distanceToManhattan
+src/components/CatModel.tsx(288,29): error TS2345: Argument of type 'Mesh<BufferGeometry<NormalBufferAttributes>, Material | Material[], Object3DEventMap>' is not assignable to parameter of type 'Object3D<Object3DEventMap>'.
+  Type 'Mesh<BufferGeometry<NormalBufferAttributes>, Material | Material[], Object3DEventMap>' is missing the following properties from type 'Object3D<Object3DEventMap>': onBeforeShadow, onAfterShadow
+src/components/CatModel.tsx(330,9): error TS6133: 'animationId' is declared but its value is never read.
+src/components/CatModel.tsx(381,47): error TS2552: Cannot find name 'handleMouseMove'. Did you mean 'onmousemove'?
+src/components/CatModel.tsx(382,11): error TS2552: Cannot find name 'animationId'. Did you mean 'Animation'?
+src/components/CatModel.tsx(382,45): error TS2552: Cannot find name 'animationId'. Did you mean 'Animation'?
+src/components/LauncherHome.tsx(9,3): error TS6133: 'useKeepLauncherOpen' is declared but its value is never read.
+src/components/LauncherHome.tsx(10,3): error TS6133: 'useUIActions' is declared but its value is never read.
+src/components/LauncherHome.tsx(26,1): error TS6133: 'useWindowManager' is declared but its value is never read.
+src/components/SettingsScreen.tsx(108,11): error TS2322: Type '{ label: string; value: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void; status: "error" | "default"; error: string; helperText: string; fullWidth: true; }' is not assignable to type 'IntrinsicAttributes & InputProps'.
+  Property 'fullWidth' does not exist on type 'IntrinsicAttributes & InputProps'.
+src/components/SettingsScreen.tsx(118,11): error TS2322: Type '{ label: string; value: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void; status: "error" | "default"; error: string; helperText: string; fullWidth: true; }' is not assignable to type 'IntrinsicAttributes & InputProps'.
+  Property 'fullWidth' does not exist on type 'IntrinsicAttributes & InputProps'.
+src/components/SettingsScreen.tsx(129,11): error TS2322: Type '{ label: string; type: "number"; value: number; onChange: (e: ChangeEvent<HTMLInputElement>) => void; status: "error" | "default"; error: string; helperText: string; fullWidth: true; }' is not assignable to type 'IntrinsicAttributes & InputProps'.
+  Property 'fullWidth' does not exist on type 'IntrinsicAttributes & InputProps'.
+src/components/features/AuthenticationCard.tsx(55,19): error TS2322: Type '{ username: string; uuid: string; skin_url?: string | undefined; access_token?: string | undefined; session_id?: string | undefined; }' is not assignable to type 'User'.
+  Types of property 'session_id' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+src/hooks/useGameLauncher.ts(124,13): error TS2353: Object literal may only specify known properties, and 'access_token' does not exist in type 'LaunchConfig'.
+src/hooks/useMinecraftInstaller.ts(161,71): error TS2551: Property 'INSTALL_FAILED' does not exist on type 'typeof LauncherErrorCode'. Did you mean 'MC_INSTALL_FAILED'?
+src/utils/errorMessages.ts(1,10): error TS6133: 'LauncherError' is declared but its value is never read.
+src/utils/errorMessages.ts(11,24): error TS2693: 'LauncherError' only refers to a type, but is being used as a value here.

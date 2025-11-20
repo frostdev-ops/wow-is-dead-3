@@ -38,7 +38,7 @@ export function usePolling(config: PollConfig) {
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
         setLastError(err);
-        logger.warn(LogCategory.NETWORK, `Polling failed: ${name}`, err);
+        logger.warn(LogCategory.NETWORK, `Polling failed: ${name}`);
 
         if (exponentialBackoff && retryCount.current < maxRetries) {
           const delay = Math.min(1000 * Math.pow(2, retryCount.current), 30000);

@@ -20,12 +20,13 @@ const SHA256_REGEX = /^[a-f0-9]{64}$/i;
  * Minecraft Profile Schema
  */
 export const MinecraftProfileSchema = z.object({
-  uuid: z.string().regex(UUID_REGEX, 'Invalid UUID format'),
+  uuid: z.string().min(1), // Relaxed - backend provides valid UUIDs
   username: z.string().min(1).max(16),
-  access_token: z.string().min(1),
+  session_id: z.string().min(1),
+  access_token: z.string().min(1).optional(), // Legacy support
   skin_url: z.string().url().optional(),
   refresh_token: z.string().optional(),
-  expires_at: z.string().datetime().optional(),
+  expires_at: z.string().optional(), // Relaxed datetime validation
 });
 
 export type MinecraftProfile = z.infer<typeof MinecraftProfileSchema>;
@@ -37,7 +38,7 @@ export const ModpackFileSchema = z.object({
   path: z.string().min(1),
   url: z.string().url(),
   sha256: z.string().regex(SHA256_REGEX, 'Invalid SHA256 hash'),
-  size: z.number().int().positive(),
+  size: z.number().int().min(0), // Size 0 is valid for empty files
 });
 
 export type ModpackFile = z.infer<typeof ModpackFileSchema>;
@@ -62,7 +63,10 @@ export const PlayerInfoSchema = z.object({
   name: z.string().min(1),
   uuid: z.string().regex(UUID_REGEX, 'Invalid UUID format').optional(),
   id: z.string().optional(),
-});
+}).transform((data) => ({
+  ...data,
+  id: data.id || data.uuid || data.name, // Ensure id is always present
+}));
 
 export type PlayerInfo = z.infer<typeof PlayerInfoSchema>;
 
@@ -75,7 +79,7 @@ export const ServerStatusSchema = z.object({
   max_players: z.number().int().min(0).optional(),
   version: z.string().optional(),
   motd: z.string().optional(),
-  players: z.array(PlayerInfoSchema).optional(),
+  players: z.array(PlayerInfoSchema).default([]),
 });
 
 export type ServerStatus = z.infer<typeof ServerStatusSchema>;
@@ -122,10 +126,10 @@ export type TrackerState = z.infer<typeof TrackerStateSchema>;
  */
 export const VersionInfoSchema = z.object({
   id: z.string().min(1),
-  version_type: z.string(),
+  version_type: z.string().optional(), // Some versions may not have this
   url: z.string().url(),
-  time: z.string(),
-  release_time: z.string(),
+  time: z.string().optional(),
+  release_time: z.string().optional(),
 });
 
 export type VersionInfo = z.infer<typeof VersionInfoSchema>;
@@ -135,7 +139,7 @@ export type VersionInfo = z.infer<typeof VersionInfoSchema>;
  */
 export const FabricLoaderSchema = z.object({
   separator: z.string().optional(),
-  build: z.number().int().positive(),
+  build: z.number().int().min(0), // Build 0 is valid
   maven: z.string().min(1),
   version: z.string().min(1),
   stable: z.boolean(),

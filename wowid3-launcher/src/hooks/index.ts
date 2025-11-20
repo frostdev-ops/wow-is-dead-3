@@ -7,4 +7,5 @@ export { useDiscordPresence } from './useDiscordPresence';
 export { useMinecraftInstaller } from './useMinecraftInstaller';
 export { useAccessibility, useFocusTrap } from './useAccessibility';
 export { useRetry, retry } from './useRetry';
+export { useAudio } from './useAudio';
 export * from './useTauriCommands';

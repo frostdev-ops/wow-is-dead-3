@@ -1,8 +1,10 @@
 import { create } from 'zustand';
+import { LauncherError } from '../types';
 
 export interface PlayerInfo {
   name: string;
-  id: string;
+  id?: string;
+  uuid?: string;
 }
 
 export interface ServerStatus {
@@ -18,12 +20,12 @@ interface ServerState {
   status: ServerStatus;
   isPolling: boolean;
   lastUpdated: Date | null;
-  error: string | null;
+  error: LauncherError | null;
 
   // Actions
   setStatus: (status: ServerStatus) => void;
   setPolling: (polling: boolean) => void;
-  setError: (error: string | null) => void;
+  setError: (error: LauncherError | null) => void;
 }
 
 export const useServerStore = create<ServerState>((set) => ({

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, waitFor, act } from '@testing-library/react';
+import { waitFor, act } from '@testing-library/react';
 import { render } from '../utils/render';
 import LauncherHome from '../../components/LauncherHome';
 import * as tauriCommands from '../../hooks/useTauriCommands';

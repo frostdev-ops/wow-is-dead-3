@@ -9,8 +9,8 @@ declare module 'skin3d' {
     skin: string;
   }
 
-  export interface PlayerPart {
-    name: string;
+  export interface BodyPart {
+    visible: boolean;
     rotation: {
       x: number;
       y: number;
@@ -19,13 +19,16 @@ declare module 'skin3d' {
   }
 
   export interface SkinObject {
-    name: string;
-    children?: PlayerPart[];
+    head: BodyPart;
+    body: BodyPart;
+    leftArm: BodyPart;
+    rightArm: BodyPart;
+    leftLeg: BodyPart;
+    rightLeg: BodyPart;
   }
 
   export interface PlayerObject {
-    name?: string;
-    children?: SkinObject[];
+    skin: SkinObject;
     rotation: {
       x: number;
       y: number;

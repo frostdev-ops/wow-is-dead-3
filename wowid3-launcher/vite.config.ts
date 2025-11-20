@@ -10,6 +10,12 @@ export default defineConfig(async () => ({
 
   build: {
     rollupOptions: {
+      output: {
+        manualChunks: {
+          three: ['three', 'skinview3d'],
+          react: ['react', 'react-dom', 'framer-motion'],
+        },
+      },
       onwarn(warning, warn) {
         // Suppress warnings about unresolved fonts in public folder
         if (warning.message?.includes('minecraftia-regular.ttf')) {

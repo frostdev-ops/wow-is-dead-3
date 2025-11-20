@@ -9,7 +9,7 @@ import {
 import { useSettingsStore } from '../stores/settingsStore';
 import { VersionInfo, FabricLoader, InstallProgress } from '../types/minecraft';
 import { logger, LogCategory } from '../utils/logger';
-import { LauncherError, LauncherErrorCode } from '../types/errors';
+import { LauncherError, LauncherErrorCode } from '../utils/errors';
 
 export interface UseMinecraftInstallerReturn {
   // Version management
@@ -158,7 +158,7 @@ export function useMinecraftInstaller(): UseMinecraftInstallerReturn {
       logger.info(LogCategory.MINECRAFT, 'Installation complete!');
     } catch (err) {
       const errorMessage = String(err);
-      const launcherError = LauncherError.from(err, LauncherErrorCode.INSTALL_FAILED);
+      const launcherError = LauncherError.from(err, LauncherErrorCode.MC_INSTALL_FAILED);
       
       // Handle common errors
       if (errorMessage.includes('Failed to fetch')) {

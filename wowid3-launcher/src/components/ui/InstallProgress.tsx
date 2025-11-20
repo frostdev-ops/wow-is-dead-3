@@ -18,7 +18,7 @@ export interface InstallProgressProps {
   className?: string;
 }
 
-export function InstallProgress({ progress, currentStep, totalSteps, speed, eta, className = '' }: InstallProgressProps) {
+export function InstallProgress({ progress, currentStep, totalSteps: _totalSteps, speed, eta, className = '' }: InstallProgressProps) {
   const percentage = progress.total > 0 ? (progress.current / progress.total) * 100 : 0;
 
   const formatTime = (ms: number) => {
@@ -42,9 +42,9 @@ export function InstallProgress({ progress, currentStep, totalSteps, speed, eta,
       </div>
       
       <ProgressBar 
-        value={percentage} 
+        current={progress.current} 
+        total={progress.total}
         showLabel={false}
-        height="h-2"
         className="mb-1"
       />
       

@@ -166,3 +166,4 @@ export const useDiscordPresence = (
   }, [isPlaying, isConnected, username, uuid, serverAddress, updatePresence]);
 };
 
+

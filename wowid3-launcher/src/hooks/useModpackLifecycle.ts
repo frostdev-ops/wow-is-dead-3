@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useReducer } from 'react';
+import { useCallback, useReducer, useRef } from 'react';
 import { useModpack } from './useModpack';
 import { LauncherError, LauncherErrorCode, retryWithBackoff } from '../utils/errors';
 import { logger, LogCategory } from '../utils/logger';
-import { RETRY_CONFIG, TIMING_DELAYS } from '../config/constants';
+import { RETRY_CONFIG } from '../config/constants';
 
 export enum ModpackInstallPath {
   NOT_INSTALLED = 'NOT_INSTALLED',
@@ -129,7 +129,6 @@ export function useModpackLifecycle(
     latestManifest,
     updateAvailable,
     isDownloading,
-    isBlockedForInstall,
     checkUpdates,
     install,
     verifyAndRepair,
@@ -146,10 +145,22 @@ export function useModpackLifecycle(
     backgroundErrors: [],
   });
 
+  // Use refs to avoid dependency issues in callbacks
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
   /**
    * Determine the current installation path
    */
   const determineInstallPath = useCallback((): ModpackInstallPath => {
+    logger.debug(LogCategory.MODPACK, 'Determining install path', {
+      metadata: {
+        installedVersion: installedVersion || 'null',
+        latestVersion: latestManifest?.version || 'null',
+        updateAvailable
+      }
+    });
+    
     if (!installedVersion) {
       return ModpackInstallPath.NOT_INSTALLED;
     }
@@ -163,8 +174,11 @@ export function useModpackLifecycle(
    * Check for modpack updates with retry logic
    */
   const checkAndInstall = useCallback(async () => {
+    // Use ref to get current state without dependency
+    const currentState = stateRef.current;
+    
     // Guard: Only run once per session after authentication
-    if (state.hasCheckedForModpack) {
+    if (currentState.hasCheckedForModpack) {
       logger.debug(LogCategory.MODPACK, 'Already checked for modpack');
       return;
     }
@@ -177,16 +191,16 @@ export function useModpackLifecycle(
 
     // Exponential backoff
     const now = Date.now();
-    const timeSinceLastAttempt = now - state.lastCheckTime;
+    const timeSinceLastAttempt = now - currentState.lastCheckTime;
     const backoffDelay = Math.min(
-      Math.pow(RETRY_CONFIG.BACKOFF_MULTIPLIER, state.checkAttempts) * RETRY_CONFIG.BASE_DELAY,
+      Math.pow(RETRY_CONFIG.BACKOFF_MULTIPLIER, currentState.checkAttempts) * RETRY_CONFIG.BASE_DELAY,
       RETRY_CONFIG.MAX_DELAY
     );
 
-    if (state.checkAttempts > 0 && timeSinceLastAttempt < backoffDelay) {
+    if (currentState.checkAttempts > 0 && timeSinceLastAttempt < backoffDelay) {
       const remainingWait = Math.ceil((backoffDelay - timeSinceLastAttempt) / 1000);
       logger.info(LogCategory.MODPACK, `Waiting ${remainingWait}s before retry`, {
-        metadata: { attempt: state.checkAttempts + 1 },
+        metadata: { attempt: currentState.checkAttempts + 1 },
       });
       return;
     }
@@ -215,13 +229,10 @@ export function useModpackLifecycle(
       const launcherError = LauncherError.from(error, LauncherErrorCode.NETWORK_TIMEOUT);
       dispatch({ type: 'CHECK_FAILURE', error: launcherError });
       logger.error(LogCategory.MODPACK, 'Failed to check for updates', launcherError, {
-        metadata: { attempt: state.checkAttempts },
+        metadata: { attempt: currentState.checkAttempts },
       });
     }
   }, [
-    state.hasCheckedForModpack,
-    state.checkAttempts,
-    state.lastCheckTime,
     isAuthenticated,
     authLoading,
     isDownloading,
@@ -234,7 +245,9 @@ export function useModpackLifecycle(
    */
   const performInstall = useCallback(
     async (options?: { blockUi?: boolean }) => {
-      if (state.isInstalling) {
+      const currentState = stateRef.current;
+      
+      if (currentState.isInstalling) {
         logger.warn(LogCategory.MODPACK, 'Installation already in progress');
         return;
       }
@@ -255,7 +268,7 @@ export function useModpackLifecycle(
         throw launcherError;
       }
     },
-    [state.isInstalling, install]
+    [install]
   );
 
   /**
@@ -263,7 +276,9 @@ export function useModpackLifecycle(
    */
   const performVerify = useCallback(
     async (options?: { silent?: boolean }) => {
-      if (state.isVerifying) {
+      const currentState = stateRef.current;
+      
+      if (currentState.isVerifying) {
         logger.warn(LogCategory.MODPACK, 'Verification already in progress');
         return;
       }
@@ -293,7 +308,7 @@ export function useModpackLifecycle(
         }
       }
     },
-    [state.isVerifying, verifyAndRepair]
+    [verifyAndRepair]
   );
 
   /**
@@ -309,53 +324,14 @@ export function useModpackLifecycle(
 
   /**
    * Smart installation logic based on modpack state
+   * CRITICAL: This should only run ONCE after initial check completes
    */
-  useEffect(() => {
-    const performInstallLogic = async () => {
-      // Prevent concurrent operations
-      if (state.isInstalling) return;
-
-      // Only run if we've checked and manifest is available
-      if (!state.hasCheckedForModpack) return;
-      if (!latestManifest) return;
-      if (isDownloading || isBlockedForInstall) return;
-
-      const path = determineInstallPath();
-
-      switch (path) {
-        case ModpackInstallPath.NOT_INSTALLED:
-          logger.info(LogCategory.MODPACK, 'No modpack installed - installing');
-          await performInstall({ blockUi: true });
-          break;
-
-        case ModpackInstallPath.UPDATE_AVAILABLE:
-          logger.info(LogCategory.MODPACK, 'Update available - updating');
-          await performInstall({ blockUi: true });
-          break;
-
-        case ModpackInstallPath.UP_TO_DATE:
-          logger.info(LogCategory.MODPACK, 'Modpack up to date - allowing launch');
-          // Schedule background verification
-          setTimeout(() => {
-            performVerify({ silent: true }).catch((err) => {
-              logger.error(LogCategory.MODPACK, 'Background verification failed', err as Error);
-            });
-          }, TIMING_DELAYS.BACKGROUND_VERIFY);
-          break;
-      }
-    };
-
-    performInstallLogic();
-  }, [
-    state.hasCheckedForModpack,
-    state.isInstalling,
-    latestManifest,
-    isDownloading,
-    isBlockedForInstall,
-    determineInstallPath,
-    performInstall,
-    performVerify,
-  ]);
+  /**
+   * Smart installation logic based on modpack state
+   * DISABLED: This automatic install logic causes issues
+   * Install/update should be triggered manually by user clicking Play button
+   */
+  // useEffect removed - install logic now handled by explicit user action in LauncherHome
 
   return {
     state,

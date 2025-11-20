@@ -9,7 +9,7 @@ use modules::fabric_installer::{get_fabric_loaders, get_latest_fabric_loader, Fa
 use modules::game_installer::{install_minecraft, is_version_installed, InstallConfig};
 use modules::server::{ping_server, resolve_player_name, fetch_tracker_status, ServerStatus, TrackerState};
 use modules::stats::{get_player_stats, PlayerStats};
-use modules::updater::{check_for_updates, get_installed_version, install_modpack, verify_and_repair_modpack, has_manifest_changed, Manifest};
+use modules::updater::{check_for_updates, get_installed_version, install_modpack, verify_and_repair_modpack, has_manifest_changed, update_version_file, Manifest};
 use modules::audio::{get_cached_audio, download_and_cache_audio, read_cached_audio_bytes, clear_audio_cache};
 use modules::java_runtime::{get_cached_java, download_and_cache_java};
 use modules::logger::initialize_logger;
@@ -554,6 +554,14 @@ async fn cmd_get_installed_version(game_dir: PathBuf) -> Result<Option<String>, 
 }
 
 #[tauri::command]
+async fn cmd_set_installed_version(game_dir: PathBuf, version: String) -> Result<String, String> {
+    update_version_file(&game_dir, &version)
+        .await
+        .map(|_| format!("Version file updated to {}", version))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn cmd_install_modpack(
     app: AppHandle,
     manifest: Manifest,
@@ -743,6 +751,7 @@ pub fn run() {
             cmd_get_player_stats,
             cmd_check_updates,
             cmd_get_installed_version,
+            cmd_set_installed_version,
             cmd_install_modpack,
             cmd_verify_and_repair_modpack,
             cmd_has_manifest_changed,

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { logger, LogCategory } from '../utils/logger';
+import { LauncherError, LauncherErrorCode } from '../utils/errors';
 import { useAuthUser, useIsAuthenticated, useAuthLoading, useAuthError, useAuthActions } from '../stores/selectors';
 import { getCurrentUser, logout as logoutCommand, refreshToken, getDeviceCode, completeDeviceCodeAuth } from './useTauriCommands';
 import type { DeviceCodeInfo } from './useTauriCommands';
@@ -11,35 +12,59 @@ export const useAuth = () => {
   const error = useAuthError();
   const { setUser, setLoading, setError, logout: logoutStore } = useAuthActions();
 
-  // Check for existing user and refresh token on mount
+  // Check for existing user and refresh token on mount ONCE
   useEffect(() => {
+    let mounted = true;
+    
     const checkUser = async () => {
+      // Guard: Don't run if we already have a user (prevents loop)
+      if (user) {
+        return;
+      }
+      
+      if (!mounted) return;
+      
       try {
         setLoading(true);
         const currentUser = await getCurrentUser();
+        
+        if (!mounted) return;
+        
         if (currentUser) {
           // Try to refresh token to ensure it's still valid
           try {
             const refreshedUser = await refreshToken();
-            if (refreshedUser) {
+            if (mounted && refreshedUser) {
               setUser(refreshedUser);
-            } else {
+            } else if (mounted) {
               setUser(currentUser);
             }
           } catch (refreshErr) {
             // If refresh fails, use the current user anyway
-            setUser(currentUser);
+            if (mounted) {
+              setUser(currentUser);
+            }
           }
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to get user');
+        if (mounted) {
+          const error = LauncherError.from(err, LauncherErrorCode.AUTH_FAILED);
+          setError(error);
+        }
       } finally {
-        setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
     };
 
     checkUser();
-  }, [setUser, setLoading, setError]);
+    
+    return () => {
+      mounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps - only run on mount, user check is inside
 
   const startDeviceCodeAuth = async (): Promise<DeviceCodeInfo> => {
     try {
@@ -52,9 +77,9 @@ export const useAuth = () => {
 
       return deviceCodeInfo;
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to get device code';
-      logger.error(LogCategory.AUTH, 'Device code request failed:', err instanceof Error ? err : new Error(message));
-      setError(message);
+      const error = LauncherError.from(err, LauncherErrorCode.AUTH_FAILED);
+      logger.error(LogCategory.AUTH, 'Device code request failed:', error);
+      setError(error);
       setLoading(false);
       throw err;
     }
@@ -71,9 +96,9 @@ export const useAuth = () => {
       setUser(profile);
       logger.debug(LogCategory.AUTH, 'User set in store');
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Authentication failed';
-      logger.error(LogCategory.AUTH, 'Device code authentication failed:', err instanceof Error ? err : new Error(message));
-      setError(message);
+      const error = LauncherError.from(err, LauncherErrorCode.AUTH_FAILED);
+      logger.error(LogCategory.AUTH, 'Device code authentication failed:', error);
+      setError(error);
       throw err;
     } finally {
       setLoading(false);
@@ -93,9 +118,9 @@ export const useAuth = () => {
       // and calling finishDeviceCodeAuth when ready
       return deviceCodeInfo;
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Authentication failed';
-      logger.error(LogCategory.AUTH, 'Authentication failed:', err instanceof Error ? err : new Error(message));
-      setError(message);
+      const error = LauncherError.from(err, LauncherErrorCode.AUTH_FAILED);
+      logger.error(LogCategory.AUTH, 'Authentication failed:', error);
+      setError(error);
       setLoading(false);
       throw err;
     }
@@ -106,7 +131,8 @@ export const useAuth = () => {
       await logoutCommand();
       logoutStore();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Logout failed');
+      const error = LauncherError.from(err, LauncherErrorCode.AUTH_FAILED);
+      setError(error);
     }
   };
 

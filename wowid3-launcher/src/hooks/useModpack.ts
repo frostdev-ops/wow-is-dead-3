@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useMemo } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { logger, LogCategory } from '../utils/logger';
+import { LauncherError, LauncherErrorCode } from '../utils/errors';
 import { useSettingsStore } from '../stores';
 import {
   useInstalledVersion,
@@ -26,7 +27,7 @@ export const useModpack = () => {
   const isBlockedForInstall = useIsBlockedForInstall();
   const downloadProgress = useDownloadProgress();
   const error = useModpackError();
-  
+
   const {
     setInstalledVersion,
     setLatestManifest,
@@ -39,7 +40,8 @@ export const useModpack = () => {
     reset,
   } = useModpackActions();
 
-  const { gameDirectory, manifestUrl } = useSettingsStore();
+  const gameDirectory = useSettingsStore(state => state.gameDirectory);
+  const manifestUrl = useSettingsStore(state => state.manifestUrl);
 
   // Create rate-limited update checker
   const rateLimitedCheck = useMemo(() => 
@@ -48,35 +50,96 @@ export const useModpack = () => {
 
   // Check installed version on mount
   useEffect(() => {
+    // CRITICAL: This effect must run to load installedVersion from disk
+    logger.info(LogCategory.MODPACK, '🔍 useModpack effect triggered', { 
+      metadata: { gameDirectory: gameDirectory || 'EMPTY' } 
+    });
+    
+    // Don't run if gameDirectory isn't set yet
+    if (!gameDirectory) {
+      logger.warn(LogCategory.MODPACK, '⚠️ Skipping version check - gameDirectory not set');
+      return;
+    }
+    
     const checkInstalled = async () => {
       try {
+        logger.info(LogCategory.MODPACK, '📁 Checking for .wowid3-version file', { 
+          metadata: { gameDirectory } 
+        });
+        
         const version = await getInstalledVersion(gameDirectory);
-        setInstalledVersion(version);
+        
+        logger.info(LogCategory.MODPACK, '✅ Version check complete', { 
+          metadata: { 
+            versionFromDisk: version || 'NULL',
+            versionInStore: installedVersion || 'NULL' 
+          } 
+        });
+        
+        // Only update if we found a version, OR if store is empty
+        // This prevents overwriting a valid version with null
+        if (version) {
+          logger.info(LogCategory.MODPACK, `✓ Modpack ${version} detected on disk`);
+          setInstalledVersion(version);
+        } else if (!installedVersion) {
+          // Only set to null if store is also empty (first load scenario)
+          logger.warn(LogCategory.MODPACK, '⚠️ No .wowid3-version file found');
+          setInstalledVersion(null);
+        } else {
+          // File missing but store has version - keep the store version
+          logger.warn(LogCategory.MODPACK, `⚠️ .wowid3-version file missing, but store has ${installedVersion} - keeping store value`);
+        }
       } catch (err) {
-        logger.error(LogCategory.MODPACK, 'Failed to get installed version:', err instanceof Error ? err : new Error(String(err)));
+        logger.error(LogCategory.MODPACK, '❌ Failed to check installed version', err instanceof Error ? err : new Error(String(err)));
       }
     };
 
     checkInstalled();
-  }, [gameDirectory, setInstalledVersion]);
+  }, [gameDirectory, installedVersion, setInstalledVersion]);
 
   const checkUpdates = useCallback(async () => {
     try {
       setError(null);
+      
+      // First, ensure we have the current installed version from disk
+      // This is critical to avoid detecting "NOT_INSTALLED" when we actually have it
+      logger.debug(LogCategory.MODPACK, 'Re-checking installed version before update check');
+      const currentVersion = await getInstalledVersion(gameDirectory);
+      if (currentVersion) {
+        logger.info(LogCategory.MODPACK, 'Found installed version', { 
+          metadata: { version: currentVersion } 
+        });
+        setInstalledVersion(currentVersion);
+      }
+      
       const manifest = await rateLimitedCheck(manifestUrl);
       setLatestManifest(manifest);
 
-      // Check if update is available
-      if (installedVersion && manifest.version !== installedVersion) {
+      // Check if update is available using the freshly loaded version
+      const versionToCheck = currentVersion || installedVersion;
+      if (versionToCheck && manifest.version !== versionToCheck) {
+        logger.info(LogCategory.MODPACK, 'Update available', {
+          metadata: { 
+            installed: versionToCheck,
+            latest: manifest.version 
+          }
+        });
         setUpdateAvailable(true);
+      } else if (versionToCheck && manifest.version === versionToCheck) {
+        logger.info(LogCategory.MODPACK, 'Modpack is up to date');
+        setUpdateAvailable(false);
+      } else {
+        logger.info(LogCategory.MODPACK, 'No modpack installed');
+        setUpdateAvailable(false); // Not technically an update if nothing is installed
       }
 
       return manifest;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to check for updates');
+      const error = LauncherError.from(err, LauncherErrorCode.MODPACK_MANIFEST_INVALID);
+      setError(error);
       throw err;
     }
-  }, [manifestUrl, installedVersion, setError, setLatestManifest, setUpdateAvailable, rateLimitedCheck]);
+  }, [manifestUrl, installedVersion, gameDirectory, setError, setLatestManifest, setUpdateAvailable, setInstalledVersion, rateLimitedCheck]);
 
   const install = useCallback(async (options?: { blockUi?: boolean }) => {
     if (!latestManifest) {
@@ -95,8 +158,7 @@ export const useModpack = () => {
       }
       setError(null);
 
-      // OPTIMISTIC UPDATE: Update version immediately to feel responsive
-      setInstalledVersion(latestManifest.version);
+      // Don't update installedVersion until validation succeeds to prevent race conditions
       // We keep updateAvailable true until finished to prevent UI flickering if using that to hide buttons
       
       // Listen for download progress events
@@ -156,7 +218,8 @@ export const useModpack = () => {
         unlisten();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Installation failed');
+      const error = LauncherError.from(err, LauncherErrorCode.MODPACK_DOWNLOAD_FAILED);
+      setError(error);
       throw err;
     } finally {
       if (blockUi) {
@@ -220,9 +283,8 @@ export const useModpack = () => {
       }
     } catch (err) {
       if (!silent) {
-        setError(err instanceof Error ? err.message : 'Verification and repair failed');
-      }
-      if (!silent) {
+        const error = LauncherError.from(err, LauncherErrorCode.MODPACK_VERIFICATION_FAILED);
+        setError(error);
         throw err;
       }
     } finally {

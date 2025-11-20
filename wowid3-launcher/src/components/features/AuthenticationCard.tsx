@@ -11,6 +11,7 @@ export interface AuthenticationCardProps {
     uuid: string;
     skin_url?: string;
     access_token?: string;
+    session_id: string;
   };
   minecraftInstalled: boolean;
 }

@@ -1,54 +1,27 @@
 /**
- * Error Types
+ * Error Types Re-export
  *
- * Typed error system for the WOWID3 launcher.
+ * Re-exports error types from utils/errors.ts for use in the types system.
  */
 
-/**
- * Error codes for launcher errors
- */
-export enum LauncherErrorCode {
-  // Network errors
-  NETWORK_ERROR = 'NETWORK_ERROR',
-  NETWORK_TIMEOUT = 'NETWORK_TIMEOUT',
+import {
+  LauncherErrorCode as ErrorCodeEnum,
+  LauncherError as ErrorClass,
+  withErrorHandling,
+  retryWithBackoff,
+} from '../utils/errors';
 
-  // Authentication errors
-  AUTH_FAILED = 'AUTH_FAILED',
-  AUTH_EXPIRED = 'AUTH_EXPIRED',
-  AUTH_CANCELLED = 'AUTH_CANCELLED',
-  AUTH_INVALID_TOKEN = 'AUTH_INVALID_TOKEN',
+export {
+  ErrorCodeEnum as LauncherErrorCode,
+  ErrorClass as LauncherError,
+  withErrorHandling,
+  retryWithBackoff,
+};
 
-  // Installation errors
-  INSTALL_FAILED = 'INSTALL_FAILED',
-  INSTALL_CORRUPTED = 'INSTALL_CORRUPTED',
-  INSTALL_DISK_SPACE = 'INSTALL_DISK_SPACE',
-  INSTALL_PERMISSION_DENIED = 'INSTALL_PERMISSION_DENIED',
-
-  // Modpack errors
-  MODPACK_DOWNLOAD_FAILED = 'MODPACK_DOWNLOAD_FAILED',
-  MODPACK_VERIFICATION_FAILED = 'MODPACK_VERIFICATION_FAILED',
-  MODPACK_HASH_MISMATCH = 'MODPACK_HASH_MISMATCH',
-  MODPACK_MANIFEST_INVALID = 'MODPACK_MANIFEST_INVALID',
-
-  // Server errors
-  SERVER_UNREACHABLE = 'SERVER_UNREACHABLE',
-  SERVER_TIMEOUT = 'SERVER_TIMEOUT',
-
-  // Game launch errors
-  GAME_LAUNCH_FAILED = 'GAME_LAUNCH_FAILED',
-  GAME_ALREADY_RUNNING = 'GAME_ALREADY_RUNNING',
-  GAME_JAVA_NOT_FOUND = 'GAME_JAVA_NOT_FOUND',
-
-  // Configuration errors
-  CONFIG_INVALID = 'CONFIG_INVALID',
-  CONFIG_NOT_FOUND = 'CONFIG_NOT_FOUND',
-
-  // Unknown errors
-  UNKNOWN = 'UNKNOWN',
-}
+export type { LauncherErrorCode as ErrorCode } from '../utils/errors';
 
 /**
- * Error severity levels
+ * Error severity levels for UI display
  */
 export enum ErrorSeverity {
   INFO = 'info',
@@ -58,192 +31,74 @@ export enum ErrorSeverity {
 }
 
 /**
- * Launcher error interface with recovery information
- */
-export interface LauncherError {
-  /** Error code for programmatic handling */
-  code: LauncherErrorCode;
-
-  /** Human-readable error message */
-  message: string;
-
-  /** Error severity */
-  severity: ErrorSeverity;
-
-  /** Whether the error is recoverable */
-  recoverable: boolean;
-
-  /** Whether the operation can be retried */
-  retryable: boolean;
-
-  /** Optional context data */
-  context?: Record<string, unknown>;
-
-  /** Original error if wrapped */
-  cause?: Error;
-
-  /** Timestamp of error */
-  timestamp: number;
-}
-
-/**
- * Create a LauncherError from an error code and message
+ * Create a LauncherError instance
  */
 export function createLauncherError(
-  code: LauncherErrorCode,
+  code: ErrorCodeEnum,
   message: string,
   options?: {
-    severity?: ErrorSeverity;
     recoverable?: boolean;
     retryable?: boolean;
+    userMessage?: string;
+    technicalDetails?: string;
     context?: Record<string, unknown>;
     cause?: Error;
   }
-): LauncherError {
-  return {
-    code,
-    message,
-    severity: options?.severity ?? ErrorSeverity.ERROR,
-    recoverable: options?.recoverable ?? false,
-    retryable: options?.retryable ?? false,
-    context: options?.context,
-    cause: options?.cause,
-    timestamp: Date.now(),
-  };
+): ErrorClass {
+  return new ErrorClass(code, message, options);
 }
 
 /**
- * Parse a string error into a LauncherError
+ * Parse unknown error into LauncherError
  */
-export function parseLauncherError(error: unknown): LauncherError {
-  if (isLauncherError(error)) {
-    return error;
-  }
-
-  const message = error instanceof Error ? error.message : String(error);
-  const cause = error instanceof Error ? error : undefined;
-
-  // Parse common error patterns
-  if (message.includes('network') || message.includes('fetch')) {
-    return createLauncherError(LauncherErrorCode.NETWORK_ERROR, message, {
-      retryable: true,
-      recoverable: true,
-      cause,
-    });
-  }
-
-  if (message.includes('timeout')) {
-    return createLauncherError(LauncherErrorCode.NETWORK_TIMEOUT, message, {
-      retryable: true,
-      recoverable: true,
-      cause,
-    });
-  }
-
-  if (message.includes('auth') || message.includes('token')) {
-    return createLauncherError(LauncherErrorCode.AUTH_FAILED, message, {
-      recoverable: true,
-      cause,
-    });
-  }
-
-  if (message.includes('disk space') || message.includes('No space left')) {
-    return createLauncherError(LauncherErrorCode.INSTALL_DISK_SPACE, message, {
-      severity: ErrorSeverity.CRITICAL,
-      recoverable: false,
-      cause,
-    });
-  }
-
-  if (message.includes('SHA') || message.includes('hash') || message.includes('checksum')) {
-    return createLauncherError(LauncherErrorCode.MODPACK_HASH_MISMATCH, message, {
-      retryable: true,
-      recoverable: true,
-      cause,
-    });
-  }
-
-  if (message.includes('permission') || message.includes('denied')) {
-    return createLauncherError(LauncherErrorCode.INSTALL_PERMISSION_DENIED, message, {
-      severity: ErrorSeverity.CRITICAL,
-      recoverable: false,
-      cause,
-    });
-  }
-
-  // Default to unknown error
-  return createLauncherError(LauncherErrorCode.UNKNOWN, message, {
-    recoverable: false,
-    cause,
-  });
+export function parseLauncherError(
+  error: unknown,
+  defaultCode?: ErrorCodeEnum
+): ErrorClass {
+  return ErrorClass.from(error, defaultCode);
 }
 
 /**
  * Type guard for LauncherError
  */
-export function isLauncherError(error: unknown): error is LauncherError {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    'message' in error &&
-    'severity' in error &&
-    'recoverable' in error &&
-    'retryable' in error &&
-    'timestamp' in error
-  );
+export function isLauncherError(error: unknown): error is ErrorClass {
+  return ErrorClass.isLauncherError(error);
 }
 
 /**
  * Assert that an error is a LauncherError
  */
-export function assertLauncherError(error: unknown): asserts error is LauncherError {
+export function assertLauncherError(error: unknown): asserts error is ErrorClass {
   if (!isLauncherError(error)) {
-    throw new Error('Expected LauncherError');
+    throw new ErrorClass(
+      ErrorCodeEnum.UNKNOWN,
+      'Expected LauncherError but got different error type'
+    );
   }
 }
 
 /**
- * Format a LauncherError for display
+ * Format LauncherError for display
  */
-export function formatLauncherError(error: LauncherError): string {
-  const parts = [`[${error.code}] ${error.message}`];
-
-  if (error.retryable) {
-    parts.push('(Retryable)');
-  }
-
-  if (error.context) {
-    parts.push(`Context: ${JSON.stringify(error.context)}`);
-  }
-
-  return parts.join(' ');
+export function formatLauncherError(error: ErrorClass): string {
+  return error.userMessage || error.message;
 }
 
 /**
  * Get user-friendly error message
  */
-export function getUserFriendlyErrorMessage(error: LauncherError): string {
-  switch (error.code) {
-    case LauncherErrorCode.NETWORK_ERROR:
-      return 'Network error. Check your internet connection.';
-    case LauncherErrorCode.NETWORK_TIMEOUT:
-      return 'Connection timed out. Please try again.';
-    case LauncherErrorCode.AUTH_FAILED:
-      return 'Authentication failed. Please try logging in again.';
-    case LauncherErrorCode.AUTH_EXPIRED:
-      return 'Your session has expired. Please log in again.';
-    case LauncherErrorCode.INSTALL_DISK_SPACE:
-      return 'Insufficient disk space. Need at least 500MB free.';
-    case LauncherErrorCode.INSTALL_PERMISSION_DENIED:
-      return 'Permission denied. Check file permissions or run as administrator.';
-    case LauncherErrorCode.MODPACK_HASH_MISMATCH:
-      return 'Download corrupted. Retrying...';
-    case LauncherErrorCode.SERVER_UNREACHABLE:
-      return 'Server is unreachable. It may be offline.';
-    case LauncherErrorCode.GAME_ALREADY_RUNNING:
-      return 'Game is already running.';
-    default:
-      return error.message;
+export function getUserFriendlyErrorMessage(error: unknown): string {
+  if (isLauncherError(error)) {
+    return formatLauncherError(error);
   }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === 'string') {
+    return error;
+  }
+
+  return 'An unknown error occurred';
 }

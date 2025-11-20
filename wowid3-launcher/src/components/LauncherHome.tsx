@@ -3,11 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth, useModpack, useServer, useDiscord, useMinecraftInstaller, useDiscordPresence } from '../hooks';
 import { useServerTracker } from '../hooks/useServerTracker';
 import { extractBaseUrl } from '../utils/url';
-import { useSettingsStore } from '../stores';
-import { useAudioStore } from '../stores/audioStore';
-import { useUIStore } from '../stores/uiStore';
+import { 
+  useRamAllocation, 
+  useManifestUrl
+} from '../stores/selectors';
 import { useToast } from './ui/ToastContainer';
-import { LoadingSpinner } from './ui/LoadingSpinner';
 import { ProgressBar } from './ui/ProgressBar';
 import { ChangelogViewer } from './ChangelogViewer';
 import { PlayerList } from './PlayerList';
@@ -21,9 +21,7 @@ import { DiscordStatus } from './features/DiscordStatus';
 import { PlayButton, usePlayButtonState } from './features/PlayButton';
 import { useGameLauncher } from '../hooks/useGameLauncher';
 import { useModpackLifecycle } from '../hooks/useModpackLifecycle';
-import { useWindowManager } from '../hooks/useWindowManager';
 import type { DeviceCodeInfo } from '../hooks/useTauriCommands';
-import { logger, LogCategory } from '../utils/logger';
 
 export default function LauncherHome() {
   // Global State
@@ -31,10 +29,8 @@ export default function LauncherHome() {
   const { status } = useServer();
   const ramAllocation = useRamAllocation();
   const manifestUrl = useManifestUrl();
-  const keepLauncherOpen = useKeepLauncherOpen();
   
   const { state: trackerState } = useServerTracker(extractBaseUrl(manifestUrl));
-  const { setShowLogViewer } = useUIActions();
   const { addToast } = useToast();
   const { isConnected: discordConnected, isConnecting: discordConnecting, error: discordError, connect: connectDiscord } = useDiscord();
   const { versionId, isInstalled: minecraftInstalled } = useMinecraftInstaller();
@@ -72,7 +68,6 @@ export default function LauncherHome() {
     clearBackgroundErrors
   } = useModpackLifecycle(isAuthenticated, authLoading);
   
-  const { minimizeWindow, showWindow } = useWindowManager();
 
   // Derived State
   const playButtonState = useMemo(() => usePlayButtonState({
@@ -100,9 +95,10 @@ export default function LauncherHome() {
 
   // 2. Auth Error Toast
   useEffect(() => {
-    if (authError && authError !== lastAuthError.current) {
-      addToast(authError, 'error');
-      lastAuthError.current = authError;
+    const currentErrorMsg = authError?.message || null;
+    if (authError && currentErrorMsg !== lastAuthError.current) {
+      addToast(authError.userMessage || authError.message, 'error');
+      lastAuthError.current = currentErrorMsg;
     } else if (!authError) {
       lastAuthError.current = null;
     }
@@ -125,9 +121,13 @@ export default function LauncherHome() {
   }, [modpackState.error, addToast, clearModpackError]);
 
   // 5. Check updates on mount/auth
+  // Only call once when authentication completes
   useEffect(() => {
-    checkAndInstall();
-  }, [checkAndInstall]);
+    if (isAuthenticated && !authLoading) {
+      checkAndInstall();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, authLoading]); // Intentionally limited dependencies to prevent loop
 
   // Handlers
   const handlePlayClick = useCallback(async () => {
@@ -156,12 +156,12 @@ export default function LauncherHome() {
       return;
     }
 
-    if (minecraftInstalled && versionId && user.access_token) {
+    if (minecraftInstalled && versionId && user.session_id) {
       try {
         await launchGame({
           username: user.username,
           uuid: user.uuid,
-          accessToken: user.access_token,
+          accessToken: user.session_id, // Backend will resolve session_id to token
           versionId: versionId
         });
       } catch (err) {
@@ -204,7 +204,7 @@ export default function LauncherHome() {
           <div className="flex gap-3">
             <ServerStatus 
               status={status} 
-              isLoading={!status && !trackerState.loaded} // Approximate loading state
+              isLoading={!status} // Approximate loading state
             />
             <DiscordStatus 
               isConnected={discordConnected}
@@ -243,7 +243,7 @@ export default function LauncherHome() {
           <AuthenticationCard 
             isAuthenticated={isAuthenticated}
             isLoading={authLoading}
-            user={user}
+            user={user || undefined}
             minecraftInstalled={minecraftInstalled}
           />
 

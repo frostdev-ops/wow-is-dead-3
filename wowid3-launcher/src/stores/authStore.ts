@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { LauncherError } from '../types';
 
 // Session-based profile - tokens are kept in backend only
 export interface MinecraftProfile {
@@ -13,17 +14,17 @@ interface AuthState {
   user: MinecraftProfile | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  error: string | null;
+  error: LauncherError | null;
 
   // Tracking state (previously refs in LauncherHome)
-  lastAuthError: string | null;
+  lastAuthError: LauncherError | null;
   hasShownWelcomeToast: boolean;
 
   // Actions
   setUser: (user: MinecraftProfile | null) => void;
   setLoading: (loading: boolean) => void;
-  setError: (error: string | null) => void;
-  setLastAuthError: (error: string | null) => void;
+  setError: (error: LauncherError | null) => void;
+  setLastAuthError: (error: LauncherError | null) => void;
   setHasShownWelcomeToast: (shown: boolean) => void;
   logout: () => void;
 }
@@ -36,21 +37,11 @@ export const useAuthStore = create<AuthState>((set) => ({
   lastAuthError: null,
   hasShownWelcomeToast: false,
 
-  setUser: (user) => {
-    // Only log non-sensitive information in development
-    if (import.meta.env.DEV && user) {
-      console.log('[Store] setUser called for user:', user.username);
-    }
-    const result = {
-      user,
-      isAuthenticated: user !== null,
-      error: null,
-    };
-    if (import.meta.env.DEV) {
-      console.log('[Store] isAuthenticated will be set to:', result.isAuthenticated);
-    }
-    return set(result);
-  },
+  setUser: (user) => set({
+    user,
+    isAuthenticated: user !== null,
+    error: null,
+  }),
 
   setLoading: (loading) => set({ isLoading: loading }),
 

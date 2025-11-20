@@ -342,7 +342,7 @@ const LogViewerModal: React.FC<LogViewerModalProps> = ({ isOpen, onClose }) => {
       } catch (error) {
         console.error('[LogViewer] Poll #' + pollCount + ': Error polling logs:', error);
       }
-    }, 1000);
+    }, 1000) as any;
   }, [gameDir, checkGameStatus, isScrolledToBottom]);
 
   // Initialize on mount

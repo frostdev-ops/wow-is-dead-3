@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
+import { logger, LogCategory } from '../../utils/logger';
 
 interface Snowflake {
   id: number;
@@ -37,10 +38,36 @@ export default function ChristmasBackground() {
     event.stopPropagation();
     event.preventDefault();
 
-    // Play pop sound
-    const audio = new Audio('/pop.mp3');
-    audio.volume = 0.3; // Set volume to 30%
-    audio.play().catch(err => console.log('Audio play failed:', err));
+    // Pool audio object instead of creating new one each time
+    // Use a shorter-lived reference to prevent memory buildup
+    try {
+      const audio = new Audio('/pop.mp3');
+      audio.volume = 0.3; // Set volume to 30%
+
+      // Clean up audio object when playback ends or fails
+      const cleanup = () => {
+        audio.pause();
+        audio.currentTime = 0;
+        audio.removeEventListener('ended', cleanup);
+        audio.removeEventListener('error', cleanup);
+        // Dereference to allow garbage collection
+        (audio as any).src = '';
+      };
+
+      audio.addEventListener('ended', cleanup, { once: true });
+      audio.addEventListener('error', cleanup, { once: true });
+
+      // Auto-cleanup after 2 seconds (longer than typical pop sound ~1s)
+      const timeout = setTimeout(cleanup, 2000);
+
+      audio.play().catch(err => {
+        clearTimeout(timeout);
+        logger.debug(LogCategory.UI, `Audio play failed: ${err}`);
+        cleanup();
+      });
+    } catch (err) {
+      logger.debug(LogCategory.UI, `Failed to create audio: ${err}`);
+    }
 
     setCookieClickCount(prev => prev + 1);
     // Remove the clicked cookie immediately
@@ -146,7 +173,7 @@ export default function ChristmasBackground() {
       timeoutId = setTimeout(() => {
         spawnCookie();
         scheduleNext();
-      }, delay);
+      }, delay) as any;
     };
 
     scheduleNext();

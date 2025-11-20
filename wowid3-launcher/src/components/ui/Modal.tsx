@@ -18,7 +18,8 @@
 
 import { FC, ReactNode, createContext, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ANIMATION_CONFIG } from '../../config/constants';
+// Animation config for future use
+// import { ANIMATION_CONFIG } from '../../config/constants';
 
 interface ModalContextValue {
   isOpen: boolean;

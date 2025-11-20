@@ -51,7 +51,7 @@ pub async fn check_launcher_update(app: &AppHandle) -> Result<LauncherUpdateInfo
     // Self-update only supported on Windows
     #[cfg(not(target_os = "windows"))]
     {
-        eprintln!("[Launcher Updater] Self-update not supported on this platform");
+        // Platform check logged once - not an error, just informational
         let package_info = app.package_info();
         return Ok(LauncherUpdateInfo {
             available: false,

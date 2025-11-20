@@ -1,6 +1,7 @@
 import { useEffect, useRef, memo } from 'react';
 import { getThreeJs } from '../hooks/useThreeJs';
 import { ModelData, ModelBox, ModelSubmodel, TextureSize, isModelData } from '../types/models';
+import { logger, LogCategory } from '../utils/logger';
 
 const CatModelBase = () => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -15,6 +16,23 @@ const CatModelBase = () => {
     if (!containerRef.current) return;
 
     let mounted = true;
+    let animationId: number | undefined;
+
+    // Mouse tracking for head rotation - defined at effect scope
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!containerRef.current) return;
+
+      const rect = containerRef.current.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+
+      // Calculate normalized mouse position (-1 to 1)
+      const deltaX = e.clientX - centerX;
+      const deltaY = e.clientY - centerY;
+
+      mouseRef.current.x = Math.max(-1, Math.min(1, deltaX / (rect.width / 2)));
+      mouseRef.current.y = Math.max(-1, Math.min(1, deltaY / (rect.height / 2)));
+    };
 
     const initThree = async () => {
       const THREE = await getThreeJs();
@@ -23,20 +41,20 @@ const CatModelBase = () => {
 
       // Set up scene
       const scene = new THREE.Scene();
-      sceneRef.current = scene;
+      sceneRef.current = scene as any;
 
       // Set up camera
       const camera = new THREE.PerspectiveCamera(45, 200 / 300, 0.1, 1000);
       camera.position.set(0, -8, 35); // Position camera at lower angle
       camera.lookAt(0, -5, 0); // Look at where the cat is positioned
-      cameraRef.current = camera;
+      cameraRef.current = camera as any;
 
       // Set up renderer
       const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
       renderer.setSize(400, 600);
       renderer.setClearColor(0x000000, 0); // Transparent background
       containerRef.current.appendChild(renderer.domElement);
-      rendererRef.current = renderer;
+      rendererRef.current = renderer as any;
 
       // Add lighting
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -49,7 +67,7 @@ const CatModelBase = () => {
     // Load texture - randomly select from available cat textures
     const catTextures = ['/tabby2.png', '/tabby3.png', '/ragdoll2.png', '/red2.png'];
     const randomTexture = catTextures[Math.floor(Math.random() * catTextures.length)];
-    console.log('[CatModel] Selected random texture:', randomTexture);
+    logger.debug(LogCategory.UI, 'Selected random texture:', { metadata: { texture: randomTexture } });
 
     const textureLoader = new THREE.TextureLoader();
     textureLoader.load(randomTexture, (texture) => {
@@ -164,32 +182,31 @@ const CatModelBase = () => {
 
             const mesh = new THREE.Mesh(geometry, material);
             mesh.position.set(x + width / 2, y + height / 2, z + depth / 2);
-            return mesh;
+            return mesh as any;
           };
 
           // Parse the body model (simplified - just rendering main parts)
           const bodyModel = modelData.models.find((m) => m.part === 'body');
 
-          console.log('[CatModel] Body model:', bodyModel);
+          logger.debug(LogCategory.UI, 'Body model loaded');
 
           // Create groups for head and body
           const headGroup = new THREE.Group();
-          headGroupRef.current = headGroup;
-          const headMeshes: THREE.Mesh[] = [];
+          headGroupRef.current = headGroup as any;
+          const headMeshes: any[] = [];
 
           const bodyGroup = new THREE.Group();
-          bodyGroupRef.current = bodyGroup;
-          const bodyMeshes: THREE.Mesh[] = [];
+          bodyGroupRef.current = bodyGroup as any;
+          const bodyMeshes: any[] = [];
 
           if (bodyModel && bodyModel.submodels) {
             const bodyRotation = bodyModel.submodels[0];
-            console.log('[CatModel] Body rotation:', bodyRotation);
+            logger.debug(LogCategory.UI, 'Body rotation configured');
 
             if (bodyRotation && bodyRotation.submodels) {
-              console.log('[CatModel] Number of submodels:', bodyRotation.submodels.length);
+              logger.debug(LogCategory.UI, 'Body submodels count', { metadata: { count: bodyRotation.submodels.length } });
 
-              bodyRotation.submodels.forEach((submodel: ModelSubmodel, index: number) => {
-                console.log(`[CatModel] Submodel ${index}:`, submodel.translate, 'boxes:', submodel.boxes?.length);
+              bodyRotation.submodels.forEach((submodel: ModelSubmodel) => {
 
                 if (submodel.boxes) {
                   const translate = submodel.translate || ([0, 0, 0] as [number, number, number]);
@@ -199,19 +216,17 @@ const CatModelBase = () => {
                   const isTail = translate[2] < -10 || (translate[2] < -8 && translate[1] < 2);
                   const isBody = translate[1] <= 6 && !isTail;
 
-                  console.log(`[CatModel] Submodel ${index} translate:`, translate, 'isHead:', isHead, 'isBody:', isBody, 'isTail:', isTail);
-
                   submodel.boxes.forEach((box: ModelBox) => {
                     const mesh = createBox(box, modelData.textureSize);
 
                     // Apply submodel transforms
                     if (submodel.translate) {
-                      mesh.position.add(
+                      (mesh.position as any).add(
                         new THREE.Vector3(
                           submodel.translate[0],
                           submodel.translate[1],
                           submodel.translate[2]
-                        )
+                        ) as any
                       );
                     }
 
@@ -222,7 +237,7 @@ const CatModelBase = () => {
                       bodyMeshes.push(mesh);
                     }
 
-                    catGroup.add(mesh);
+                    (catGroup as any).add(mesh);
                   });
                 }
               });
@@ -253,12 +268,12 @@ const CatModelBase = () => {
               catGroup.remove(mesh);
               // Adjust position to be relative to pivot point
               mesh.position.sub(pivotPoint);
-              headGroup.add(mesh);
+              (headGroup as any).add(mesh);
             });
 
             // Add head group to cat group
-            catGroup.add(headGroup);
-            console.log('[CatModel] Head group created at pivot:', pivotPoint);
+            (catGroup as any).add(headGroup);
+            logger.debug(LogCategory.UI, 'Head group created');
           }
 
           // Calculate body pivot point and reorganize body meshes
@@ -278,19 +293,19 @@ const CatModelBase = () => {
             const pivotPoint = new THREE.Vector3(bodyCenter.x, bodyCenter.y, bodyCenter.z);
 
             // Position the body group at the pivot point
-            bodyGroup.position.copy(pivotPoint);
+            (bodyGroup.position as any).copy(pivotPoint);
 
             // Move body meshes from catGroup to bodyGroup and adjust their positions
             bodyMeshes.forEach(mesh => {
-              catGroup.remove(mesh);
+              (catGroup as any).remove(mesh);
               // Adjust position to be relative to pivot point
-              mesh.position.sub(pivotPoint);
-              bodyGroup.add(mesh);
+              (mesh.position as any).sub(pivotPoint);
+              (bodyGroup as any).add(mesh);
             });
 
             // Add body group to cat group
-            catGroup.add(bodyGroup);
-            console.log('[CatModel] Body group created at pivot:', pivotPoint);
+            (catGroup as any).add(bodyGroup);
+            logger.debug(LogCategory.UI, 'Body group created');
           }
 
           // Scale and position the cat
@@ -301,33 +316,16 @@ const CatModelBase = () => {
           catGroup.rotation.y = Math.PI;
 
           scene.add(catGroup);
-          console.log('[CatModel] Cat model loaded and rendered with breathing animation');
+          logger.debug(LogCategory.UI, 'Cat model loaded with breathing animation');
         })
         .catch((err) => {
-          console.error('[CatModel] Error loading cat model:', err);
+          logger.error(LogCategory.UI, 'Error loading cat model:', err instanceof Error ? err : new Error(String(err)));
         });
     });
-
-    // Mouse tracking for head rotation
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!containerRef.current) return;
-
-      const rect = containerRef.current.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-
-      // Calculate normalized mouse position (-1 to 1)
-      const deltaX = e.clientX - centerX;
-      const deltaY = e.clientY - centerY;
-
-      mouseRef.current.x = Math.max(-1, Math.min(1, deltaX / (rect.width / 2)));
-      mouseRef.current.y = Math.max(-1, Math.min(1, deltaY / (rect.height / 2)));
-    };
 
     window.addEventListener('mousemove', handleMouseMove);
 
     // Animation loop with breathing and gentle swaying
-    let animationId: number;
     let time = 0;
     const animate = () => {
       if (rendererRef.current && sceneRef.current && cameraRef.current) {

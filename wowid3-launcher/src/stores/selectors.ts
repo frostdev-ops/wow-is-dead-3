@@ -10,46 +10,47 @@ import { useSettingsStore } from './settingsStore';
 import { useAudioStore } from './audioStore';
 import { useUIStore } from './uiStore';
 import { useMemo } from 'react';
-import { shallow } from 'zustand/shallow';
-
-// Helper type for actions
-type ActionSelector<T, U> = (state: T) => U;
+import { useShallow } from 'zustand/react/shallow';
 
 // Auth Store Selectors
 export const useAuthUser = () => useAuthStore((state) => state.user);
 export const useIsAuthenticated = () => useAuthStore((state) => state.isAuthenticated);
 export const useAuthLoading = () => useAuthStore((state) => state.isLoading);
 export const useAuthError = () => useAuthStore((state) => state.error);
-export const useAuthActions = () => useAuthStore((state) => ({
-  setUser: state.setUser,
-  setLoading: state.setLoading,
-  setError: state.setError,
-  logout: state.logout,
-}), shallow);
+export const useAuthActions = () => useAuthStore(
+  useShallow((state) => ({
+    setUser: state.setUser,
+    setLoading: state.setLoading,
+    setError: state.setError,
+    logout: state.logout,
+  }))
+);
 
 // Modpack Store Selectors
 export const useInstalledVersion = () => useModpackStore((state) => state.installedVersion);
 export const useLatestManifest = () => useModpackStore((state) => state.latestManifest);
 export const useUpdateAvailable = () => useModpackStore((state) => state.updateAvailable);
 export const useIsDownloading = () => useModpackStore((state) => state.isDownloading);
+export const useIsValidating = () => useModpackStore((state) => state.isValidating);
 export const useIsVerifying = () => useModpackStore((state) => state.isVerifying);
 export const useIsBlockedForInstall = () => useModpackStore((state) => state.isBlockedForInstall);
 export const useDownloadProgress = () => useModpackStore((state) => state.downloadProgress);
 export const useModpackError = () => useModpackStore((state) => state.error);
 
-export const useModpackActions = () => useModpackStore((state) => ({
-  setInstalledVersion: state.setInstalledVersion,
-  setLatestManifest: state.setLatestManifest,
-  setUpdateAvailable: state.setUpdateAvailable,
-  setDownloading: state.setDownloading,
-  setVerifying: state.setVerifying,
-  setBlockedForInstall: state.setBlockedForInstall,
-  setDownloadProgress: state.setDownloadProgress,
-  setError: state.setError,
-  reset: state.reset,
-}), shallow) as Pick<typeof useModpackStore extends { getState: () => infer S } ? S : never, 
-  'setInstalledVersion' | 'setLatestManifest' | 'setUpdateAvailable' | 'setDownloading' | 
-  'setVerifying' | 'setBlockedForInstall' | 'setDownloadProgress' | 'setError' | 'reset'>;
+export const useModpackActions = () => useModpackStore(
+  useShallow((state) => ({
+    setInstalledVersion: state.setInstalledVersion,
+    setLatestManifest: state.setLatestManifest,
+    setUpdateAvailable: state.setUpdateAvailable,
+    setDownloading: state.setDownloading,
+    setValidating: state.setValidating,
+    setVerifying: state.setVerifying,
+    setBlockedForInstall: state.setBlockedForInstall,
+    setDownloadProgress: state.setDownloadProgress,
+    setError: state.setError,
+    reset: state.reset,
+  }))
+);
 
 // Computed selectors that derive state
 export const useModpackStatus = () => {
@@ -71,12 +72,13 @@ export const useServerPlayerCount = () => useServerStore((state) => state.status
 export const useServerMaxPlayers = () => useServerStore((state) => state.status.max_players);
 export const useServerIsPolling = () => useServerStore((state) => state.isPolling);
 export const useServerError = () => useServerStore((state) => state.error);
-export const useServerActions = () => useServerStore((state) => ({
-  setStatus: state.setStatus,
-  setPolling: state.setPolling,
-  setError: state.setError,
-}), shallow) as Pick<typeof useServerStore extends { getState: () => infer S } ? S : never, 
-  'setStatus' | 'setPolling' | 'setError'>;
+export const useServerActions = () => useServerStore(
+  useShallow((state) => ({
+    setStatus: state.setStatus,
+    setPolling: state.setPolling,
+    setError: state.setError,
+  }))
+);
 
 // Settings Store Selectors (commonly used settings)
 export const useRamAllocation = () => useSettingsStore((state) => state.ramAllocation);
@@ -86,36 +88,33 @@ export const useManifestUrl = () => useSettingsStore((state) => state.manifestUr
 export const useServerAddress = () => useSettingsStore((state) => state.serverAddress);
 export const useTheme = () => useSettingsStore((state) => state.theme);
 
-export const useSettingsActions = () => useSettingsStore((state) => ({
-  setRamAllocation: state.setRamAllocation,
-  setGameDirectory: state.setGameDirectory,
-  setKeepLauncherOpen: state.setKeepLauncherOpen,
-  setManifestUrl: state.setManifestUrl,
-  setServerAddress: state.setServerAddress,
-  setTheme: state.setTheme,
-}), shallow);
+export const useSettingsActions = () => useSettingsStore(
+  useShallow((state) => ({
+    setRamAllocation: state.setRamAllocation,
+    setGameDirectory: state.setGameDirectory,
+    setKeepLauncherOpen: state.setKeepLauncherOpen,
+    setManifestUrl: state.setManifestUrl,
+    setServerAddress: state.setServerAddress,
+    setTheme: state.setTheme,
+  }))
+);
 
 // Audio Store Selectors
 export const useIsMuted = () => useAudioStore((state) => state.isMuted);
-export const useVolume = () => useAudioStore((state) => state.volume);
-export const useIsPlaying = () => useAudioStore((state) => state.isPlaying);
-export const useAudioActions = () => useAudioStore((state) => ({
-  setMuted: state.setMuted,
-  setVolume: state.setVolume,
-  setPlaying: state.setPlaying,
-  setWasPaused: state.setWasPaused,
-}), shallow);
+export const useAudioActions = () => useAudioStore(
+  useShallow((state) => ({
+    setMuted: state.setMuted,
+    setWasPaused: state.setWasPaused,
+  }))
+);
 
 // UI Store Selectors
 export const useShowLogViewer = () => useUIStore((state) => state.showLogViewer);
-export const useActiveModal = () => useUIStore((state) => state.activeModal);
-export const useIsLoading = () => useUIStore((state) => state.isLoading);
-export const useLoadingMessage = () => useUIStore((state) => state.loadingMessage);
-export const useUIActions = () => useUIStore((state) => ({
-  setShowLogViewer: state.setShowLogViewer,
-  setActiveModal: state.setActiveModal,
-  setLoading: state.setLoading,
-}), shallow);
+export const useUIActions = () => useUIStore(
+  useShallow((state) => ({
+    setShowLogViewer: state.setShowLogViewer,
+  }))
+);
 
 // Complex computed selectors for play button state
 export const usePlayButtonState = () => {
