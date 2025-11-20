@@ -1,8 +1,15 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, PersistStorage } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
 import { platform } from '@tauri-apps/plugin-os';
 import { homeDir } from '@tauri-apps/api/path';
+import {
+  validateManifestUrl,
+  validateGameDirectory,
+  validateRamAllocation,
+  validateServerAddress,
+} from '../utils/security';
+import { setSecureItem, getSecureItem } from '../utils/secureStorage';
 
 interface SettingsState {
   // Java settings
@@ -48,6 +55,21 @@ interface SettingsState {
   initializeGameDirectory: () => Promise<void>;
 }
 
+// Custom storage with integrity verification
+const secureStorage: PersistStorage<SettingsState> = {
+  getItem: async (name: string): Promise<string | null> => {
+    const data = await getSecureItem<SettingsState>(name);
+    return data ? JSON.stringify(data) : null;
+  },
+  setItem: async (name: string, value: string): Promise<void> => {
+    const data = JSON.parse(value) as SettingsState;
+    await setSecureItem(name, data);
+  },
+  removeItem: (name: string): void => {
+    localStorage.removeItem(name);
+  },
+};
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set, get) => ({
@@ -69,9 +91,27 @@ export const useSettingsStore = create<SettingsState>()(
       musicWasPaused: false, // Track music state
 
       setJavaPath: (path) => set({ javaPath: path }),
-      setRamAllocation: (ram) => set({ ramAllocation: ram }),
-      setGameDirectory: (dir) => set({ gameDirectory: dir }),
-      setServerAddress: (address) => set({ serverAddress: address }),
+      setRamAllocation: (ram) => {
+        if (!validateRamAllocation(ram)) {
+          console.error('[Settings] Invalid RAM allocation:', ram);
+          return;
+        }
+        set({ ramAllocation: ram });
+      },
+      setGameDirectory: (dir) => {
+        if (!validateGameDirectory(dir)) {
+          console.error('[Settings] Invalid game directory:', dir);
+          return;
+        }
+        set({ gameDirectory: dir });
+      },
+      setServerAddress: (address) => {
+        if (!validateServerAddress(address)) {
+          console.error('[Settings] Invalid server address:', address);
+          return;
+        }
+        set({ serverAddress: address });
+      },
       setMinecraftVersion: (version) => set({ minecraftVersion: version }),
       setFabricEnabled: (enabled) => set({ fabricEnabled: enabled }),
       setFabricVersion: (version) => set({ fabricVersion: version }),
@@ -79,7 +119,13 @@ export const useSettingsStore = create<SettingsState>()(
       setPreferStableFabric: (enabled) => set({ preferStableFabric: enabled }),
       setIsMinecraftInstalled: (installed) => set({ isMinecraftInstalled: installed }),
       setTheme: (theme) => set({ theme }),
-      setManifestUrl: (url) => set({ manifestUrl: url }),
+      setManifestUrl: (url) => {
+        if (!validateManifestUrl(url)) {
+          console.error('[Settings] Invalid manifest URL:', url);
+          return;
+        }
+        set({ manifestUrl: url });
+      },
       setKeepLauncherOpen: (keep) => set({ keepLauncherOpen: keep }),
       setMusicWasPaused: (paused) => set({ musicWasPaused: paused }),
 
@@ -136,6 +182,7 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'wowid3-settings', // localStorage key
       version: 1,
+      storage: secureStorage,
       migrate: (persistedState: any, version: number) => {
         // Migration logic for updating old URLs
         if (version === 0) {
@@ -149,6 +196,34 @@ export const useSettingsStore = create<SettingsState>()(
           }
         }
         return persistedState;
+      },
+      // Validate loaded data
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          // Validate manifest URL
+          if (state.manifestUrl && !validateManifestUrl(state.manifestUrl)) {
+            console.warn('[Settings] Invalid manifest URL in storage, resetting to default');
+            state.manifestUrl = 'https://wowid-launcher.frostdev.io/api/manifest/latest';
+          }
+
+          // Validate game directory
+          if (state.gameDirectory && !validateGameDirectory(state.gameDirectory)) {
+            console.warn('[Settings] Invalid game directory in storage, will reset on init');
+            state.gameDirectory = '';
+          }
+
+          // Validate RAM allocation
+          if (state.ramAllocation && !validateRamAllocation(state.ramAllocation)) {
+            console.warn('[Settings] Invalid RAM allocation in storage, resetting to default');
+            state.ramAllocation = 16384; // 16GB default
+          }
+
+          // Validate server address
+          if (state.serverAddress && !validateServerAddress(state.serverAddress)) {
+            console.warn('[Settings] Invalid server address in storage, resetting to default');
+            state.serverAddress = 'mc.frostdev.io:25565';
+          }
+        }
       },
     }
   )

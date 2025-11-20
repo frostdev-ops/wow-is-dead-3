@@ -1,6 +1,12 @@
 import { useEffect } from 'react';
+import { useAccessibility } from '../../hooks/useAccessibility';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
+
+interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
 
 interface ToastProps {
   id: string;
@@ -8,6 +14,7 @@ interface ToastProps {
   type: ToastType;
   duration?: number;
   onClose: (id: string) => void;
+  action?: ToastAction;
 }
 
 export const Toast = ({
@@ -16,8 +23,12 @@ export const Toast = ({
   type,
   duration = 5000,
   onClose,
+  action,
 }: ToastProps) => {
+  const { prefersReducedMotion } = useAccessibility();
+
   useEffect(() => {
+    if (duration === 0) return; // Persistent toast
     const timer = setTimeout(() => onClose(id), duration);
     return () => clearTimeout(timer);
   }, [id, duration, onClose]);
@@ -43,15 +54,37 @@ export const Toast = ({
     warning: '⚠',
   };
 
+  const getAriaLive = () => {
+    return type === 'error' ? 'assertive' : 'polite';
+  };
+
   return (
     <div
-      className={`animate-slide-in flex items-center gap-3 px-4 py-3 rounded border ${bgColors[type]} ${textColors[type]}`}
+      className={`${prefersReducedMotion ? '' : 'animate-slide-in'} flex items-center gap-3 px-4 py-3 rounded border ${bgColors[type]} ${textColors[type]}`}
+      role="alert"
+      aria-live={getAriaLive()}
+      aria-atomic="true"
     >
-      <span className="font-bold">{icons[type]}</span>
-      <span>{message}</span>
+      <span className="font-bold text-lg" aria-hidden="true">
+        {icons[type]}
+      </span>
+      <span className="flex-1">{message}</span>
+      {action && (
+        <button
+          onClick={() => {
+            action.onClick();
+            onClose(id);
+          }}
+          className="px-3 py-1 text-sm font-semibold rounded hover:bg-white hover:bg-opacity-20 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+          aria-label={action.label}
+        >
+          {action.label}
+        </button>
+      )}
       <button
         onClick={() => onClose(id)}
-        className="ml-auto text-lg leading-none hover:opacity-70"
+        className="ml-2 text-xl leading-none hover:opacity-70 focus:outline-none focus-visible:ring-2 focus-visible:ring-white rounded"
+        aria-label="Close notification"
       >
         ×
       </button>

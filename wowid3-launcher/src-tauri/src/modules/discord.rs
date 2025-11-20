@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use discord_rich_presence::activity::Activity;
+use discord_rich_presence::activity::{Activity, Assets, Party, Timestamps};
 use discord_rich_presence::{DiscordIpc, DiscordIpcClient};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -79,21 +79,49 @@ impl DiscordClient {
             match &mut *guard {
                 Some(discord_client) => {
                     // Build the activity using builder pattern
-                    // Activity methods consume self and return the modified Activity
-                    let activity = Activity::new()
-                        .state(&presence.state);
+                    let mut activity = Activity::new().state(&presence.state);
 
                     // Add details if provided
-                    let activity = if let Some(details) = &presence.details {
-                        activity.details(details)
-                    } else {
-                        activity
-                    };
+                    if let Some(details) = &presence.details {
+                        activity = activity.details(details);
+                    }
 
-                    // Note: Assets has private fields, so we can't set them directly.
-                    // The discord-rich-presence library may not expose all functionality we need.
-                    // For now, we'll set what we can. If Images are needed, they would need
-                    // to be added via the library's public API or we'd need to check the docs.
+                    // Add assets (images)
+                    let mut assets = Assets::new();
+                    let mut has_assets = false;
+
+                    if let Some(large_image) = &presence.large_image {
+                        assets = assets.large_image(large_image);
+                        has_assets = true;
+                    }
+                    if let Some(large_text) = &presence.large_image_text {
+                        assets = assets.large_text(large_text);
+                        has_assets = true;
+                    }
+                    if let Some(small_image) = &presence.small_image {
+                        assets = assets.small_image(small_image);
+                        has_assets = true;
+                    }
+                    if let Some(small_text) = &presence.small_image_text {
+                        assets = assets.small_text(small_text);
+                        has_assets = true;
+                    }
+
+                    if has_assets {
+                        activity = activity.assets(assets);
+                    }
+
+                    // Add timestamps
+                    if let Some(start_time) = presence.start_time {
+                        activity = activity.timestamps(Timestamps::new().start(start_time));
+                    } else if let Some(end_time) = presence.end_time {
+                         activity = activity.timestamps(Timestamps::new().end(end_time));
+                    }
+
+                    // Add party info
+                    if let (Some(size), Some(max)) = (presence.party_size, presence.party_max) {
+                        activity = activity.party(Party::new().size([size as i32, max as i32]));
+                    }
 
                     discord_client.set_activity(activity)
                         .map_err(|e| anyhow!("Failed to set Discord activity: {}", e))?;
@@ -184,7 +212,11 @@ pub struct GamePresence {
     pub start_time: Option<i64>,
     /// Unix timestamp when activity ends
     pub end_time: Option<i64>,
-    /// Number of players online (for detailed info)
+    /// Current party size (players online)
+    pub party_size: Option<u32>,
+    /// Max party size (max players)
+    pub party_max: Option<u32>,
+    /// Deprecated: Use party_size instead
     pub player_count: Option<u32>,
 }
 
@@ -199,6 +231,8 @@ impl Default for GamePresence {
             small_image_text: None,
             start_time: None,
             end_time: None,
+            party_size: None,
+            party_max: None,
             player_count: None,
         }
     }
@@ -213,7 +247,7 @@ mod tests {
         let presence = GamePresence::default();
         assert_eq!(presence.state, "Playing WOWID3 Modpack");
         assert_eq!(presence.details, None);
-        assert_eq!(presence.player_count, None);
+        assert_eq!(presence.party_size, None);
     }
 
     #[test]
@@ -227,7 +261,9 @@ mod tests {
             small_image_text: Some("Server Online".to_string()),
             start_time: Some(1700000000),
             end_time: None,
-            player_count: Some(5),
+            party_size: Some(5),
+            party_max: Some(32),
+            player_count: None,
         };
 
         assert_eq!(presence.state, "Playing WOWID3 Modpack");
@@ -235,7 +271,8 @@ mod tests {
             presence.details,
             Some("Server: WOWID3 [5/32 Players]".to_string())
         );
-        assert_eq!(presence.player_count, Some(5));
+        assert_eq!(presence.party_size, Some(5));
+        assert_eq!(presence.party_max, Some(32));
         assert_eq!(presence.large_image, Some("wowid3-logo".to_string()));
     }
 
@@ -280,13 +317,16 @@ mod tests {
             small_image_text: Some("Server Online".to_string()),
             start_time: Some(1700000000),
             end_time: None,
-            player_count: Some(5),
+            party_size: Some(5),
+            party_max: Some(32),
+            player_count: None,
         };
 
         let json = serde_json::to_string(&presence).unwrap();
         assert!(json.contains("Playing WOWID3 Modpack"));
         assert!(json.contains("Server: WOWID3"));
         assert!(json.contains("5"));
+        assert!(json.contains("32"));
     }
 
     #[test]
@@ -301,13 +341,15 @@ mod tests {
             "small_image_text": "Server Online",
             "start_time": 1700000000,
             "end_time": null,
-            "player_count": 5
+            "party_size": 5,
+            "party_max": 32
         }
         "#;
 
         let presence: GamePresence = serde_json::from_str(json).unwrap();
         assert_eq!(presence.state, "Playing WOWID3 Modpack");
-        assert_eq!(presence.player_count, Some(5));
+        assert_eq!(presence.party_size, Some(5));
+        assert_eq!(presence.party_max, Some(32));
     }
 
     #[test]
@@ -321,6 +363,8 @@ mod tests {
             small_image_text: None,
             start_time: None,
             end_time: None,
+            party_size: None,
+            party_max: None,
             player_count: None,
         };
 
@@ -339,7 +383,9 @@ mod tests {
             small_image_text: None,
             start_time: Some(1700000000),
             end_time: Some(1700003600),
-            player_count: Some(10),
+            party_size: None,
+            party_max: None,
+            player_count: None,
         };
 
         assert_eq!(presence.start_time, Some(1700000000));

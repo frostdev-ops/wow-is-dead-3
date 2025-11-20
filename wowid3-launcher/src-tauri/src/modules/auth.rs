@@ -30,12 +30,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration as StdDuration;
+use uuid::Uuid;
 
 use super::logger::{log_auth, log_storage};
 use super::encrypted_storage::{save_encrypted_profile, load_encrypted_profile, delete_encrypted_profile};
 
 const KEYRING_SERVICE: &str = "wowid3-launcher";
 const KEYRING_USER: &str = "minecraft-auth";
+const KEYRING_TOKENS: &str = "minecraft-tokens"; // Separate keyring entry for tokens
 
 // Microsoft OAuth constants
 /// Microsoft Azure AD client ID for Minecraft authentication.
@@ -51,13 +53,21 @@ const MINECRAFT_AUTH_URL: &str = "https://api.minecraftservices.com/launcher/log
 const MINECRAFT_PROFILE_URL: &str = "https://api.minecraftservices.com/minecraft/profile";
 const MINECRAFT_ENTITLEMENTS_URL: &str = "https://api.minecraftservices.com/entitlements/mcstore";
 
+// Internal token storage (not exposed to frontend)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TokenData {
+    pub access_token: String,
+    pub refresh_token: Option<String>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+// Public profile (exposed to frontend - no tokens)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MinecraftProfile {
     pub uuid: String,
     pub username: String,
-    pub access_token: String,
+    pub session_id: String, // Session ID for token lookup
     pub skin_url: Option<String>,
-    pub refresh_token: Option<String>,
     pub expires_at: Option<DateTime<Utc>>,
 }
 
@@ -492,6 +502,46 @@ async fn poll_for_token(device_code: String, interval: u64) -> Result<MicrosoftT
     }
 }
 
+/// Store tokens securely by session_id
+fn store_tokens(session_id: &str, tokens: &TokenData) -> Result<()> {
+    let entry = Entry::new(KEYRING_SERVICE, &format!("{}-{}", KEYRING_TOKENS, session_id))?;
+    let json = serde_json::to_string(tokens)?;
+    entry.set_password(&json)
+        .context("Failed to store tokens in keyring")?;
+    Ok(())
+}
+
+/// Retrieve tokens by session_id
+fn get_tokens(session_id: &str) -> Result<Option<TokenData>> {
+    let entry = Entry::new(KEYRING_SERVICE, &format!("{}-{}", KEYRING_TOKENS, session_id))?;
+    match entry.get_password() {
+        Ok(json) => {
+            let tokens: TokenData = serde_json::from_str(&json)
+                .context("Failed to parse tokens from keyring")?;
+            Ok(Some(tokens))
+        }
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(anyhow!("Failed to get tokens from keyring: {}", e)),
+    }
+}
+
+/// Delete tokens by session_id
+fn delete_tokens(session_id: &str) -> Result<()> {
+    let entry = Entry::new(KEYRING_SERVICE, &format!("{}-{}", KEYRING_TOKENS, session_id))?;
+    match entry.delete_credential() {
+        Ok(_) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()), // Already deleted, that's fine
+        Err(e) => Err(anyhow!("Failed to delete tokens from keyring: {}", e)),
+    }
+}
+
+/// Get access token by session_id (for internal use only)
+pub fn get_access_token_by_session_id(session_id: &str) -> Result<String> {
+    let tokens = get_tokens(session_id)?
+        .ok_or_else(|| anyhow!("No tokens found for session_id"))?;
+    Ok(tokens.access_token)
+}
+
 /// Get device code info for user to complete authentication
 pub async fn get_device_code() -> Result<DeviceCodeInfo> {
     let device_code_response = request_device_code().await?;
@@ -531,15 +581,26 @@ pub async fn complete_device_code_auth(device_code: String, interval: u64) -> Re
     println!("Fetched player profile: {}", profile_response.name);
 
     let expires_at = Utc::now() + Duration::seconds(ms_token.expires_in as i64);
+    
+    // Generate session ID
+    let session_id = Uuid::new_v4().to_string();
 
+    // Store tokens separately
+    let tokens = TokenData {
+        access_token: mc_access_token,
+        refresh_token: ms_token.refresh_token,
+        expires_at: Some(expires_at),
+    };
+    store_tokens(&session_id, &tokens)?;
+
+    // Create profile without tokens (only session_id)
     let profile = MinecraftProfile {
         uuid: profile_response.id,
         username: profile_response.name,
-        access_token: mc_access_token,
+        session_id: session_id.clone(),
         skin_url: profile_response
             .skins
             .and_then(|skins| skins.first().map(|s| s.url.clone())),
-        refresh_token: ms_token.refresh_token,
         expires_at: Some(expires_at),
     };
 
@@ -653,6 +714,19 @@ pub fn save_user_profile(profile: &MinecraftProfile) -> Result<()> {
 pub fn logout() -> Result<()> {
     log_auth("LOGOUT", "Attempting to clear credentials from all storage backends");
 
+    // Get current profile to find session_id
+    let current_profile = get_current_user().ok().flatten();
+    let session_id = current_profile.as_ref().map(|p| p.session_id.clone());
+
+    // Clear tokens by session_id if we have one
+    if let Some(sid) = session_id {
+        if let Err(e) = delete_tokens(&sid) {
+            log_storage("DELETE", "tokens", false, &format!("Failed to delete tokens: {}", e));
+        } else {
+            log_storage("DELETE", "tokens", true, "Tokens cleared");
+        }
+    }
+
     // Clear keyring
     let keyring_result = {
         match Entry::new(KEYRING_SERVICE, KEYRING_USER) {
@@ -712,17 +786,19 @@ fn is_token_expired(expires_at: &Option<DateTime<Utc>>) -> bool {
 
 /// Refresh expired OAuth token
 pub async fn refresh_token() -> Result<MinecraftProfile> {
-    // Get current profile with refresh token
+    // Get current profile
     let current_profile = get_current_user()?
         .ok_or_else(|| anyhow!("No user logged in"))?;
 
-    let refresh_token = current_profile
-        .refresh_token
-        .clone()
+    // Get tokens by session_id
+    let tokens = get_tokens(&current_profile.session_id)?
+        .ok_or_else(|| anyhow!("No tokens found for session"))?;
+
+    let refresh_token = tokens.refresh_token
         .ok_or_else(|| anyhow!("No refresh token available"))?;
 
     // Check if token actually needs refresh
-    if !is_token_expired(&current_profile.expires_at) {
+    if !is_token_expired(&tokens.expires_at) {
         return Ok(current_profile);
     }
 
@@ -771,11 +847,17 @@ pub async fn refresh_token() -> Result<MinecraftProfile> {
 
     println!("Re-authenticated with Minecraft");
 
-    // Update profile with new tokens
+    // Update tokens
     let expires_at = Utc::now() + Duration::seconds(ms_token.expires_in as i64);
-    let updated_profile = MinecraftProfile {
+    let updated_tokens = TokenData {
         access_token: mc_access_token,
-        refresh_token: ms_token.refresh_token.or(current_profile.refresh_token),
+        refresh_token: ms_token.refresh_token.or(Some(refresh_token)),
+        expires_at: Some(expires_at),
+    };
+    store_tokens(&current_profile.session_id, &updated_tokens)?;
+
+    // Update profile (expires_at only, session_id stays the same)
+    let updated_profile = MinecraftProfile {
         expires_at: Some(expires_at),
         ..current_profile
     };
@@ -859,13 +941,23 @@ pub async fn authenticate_from_official_launcher() -> Result<MinecraftProfile> {
 
     println!("Found profile: {}", profile_info.display_name);
 
-    // Create MinecraftProfile from official launcher data
+    // Generate session ID
+    let session_id = Uuid::new_v4().to_string();
+
+    // Store tokens separately
+    let tokens = TokenData {
+        access_token: account.access_token.clone(),
+        refresh_token: None,
+        expires_at: None,
+    };
+    store_tokens(&session_id, &tokens)?;
+
+    // Create MinecraftProfile from official launcher data (no tokens)
     let profile = MinecraftProfile {
         uuid: selected.profile.clone(),
         username: profile_info.display_name.clone(),
-        access_token: account.access_token.clone(),
+        session_id,
         skin_url: None,
-        refresh_token: None,
         expires_at: None,
     };
 

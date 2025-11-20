@@ -1,10 +1,15 @@
 import { useEffect } from 'react';
-import { useAuthStore } from '../stores';
+import { logger, LogCategory } from '../utils/logger';
+import { useAuthUser, useIsAuthenticated, useAuthLoading, useAuthError, useAuthActions } from '../stores/selectors';
 import { getCurrentUser, logout as logoutCommand, refreshToken, getDeviceCode, completeDeviceCodeAuth } from './useTauriCommands';
 import type { DeviceCodeInfo } from './useTauriCommands';
 
 export const useAuth = () => {
-  const { user, isAuthenticated, isLoading, error, setUser, setLoading, setError, logout: logoutStore } = useAuthStore();
+  const user = useAuthUser();
+  const isAuthenticated = useIsAuthenticated();
+  const isLoading = useAuthLoading();
+  const error = useAuthError();
+  const { setUser, setLoading, setError, logout: logoutStore } = useAuthActions();
 
   // Check for existing user and refresh token on mount
   useEffect(() => {
@@ -41,14 +46,14 @@ export const useAuth = () => {
       setLoading(true);
       setError(null);
 
-      console.log('[Auth] Starting device code authentication...');
+      logger.debug(LogCategory.AUTH, 'Starting device code authentication...');
       const deviceCodeInfo = await getDeviceCode();
-      console.log('[Auth] Device code received:', deviceCodeInfo.user_code);
+      logger.debug(LogCategory.AUTH, 'Device code received');
 
       return deviceCodeInfo;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to get device code';
-      console.error('[Auth] Device code request failed:', message, err);
+      logger.error(LogCategory.AUTH, 'Device code request failed:', err instanceof Error ? err : new Error(message));
       setError(message);
       setLoading(false);
       throw err;
@@ -57,27 +62,20 @@ export const useAuth = () => {
 
   const finishDeviceCodeAuth = async (deviceCode: string, interval: number) => {
     try {
-      console.error('[React Auth] ==== STARTING finishDeviceCodeAuth ====');
-      console.error('[React Auth] Device code length:', deviceCode.length, 'Interval:', interval);
-      console.log('[Auth] Completing device code authentication...');
+      logger.debug(LogCategory.AUTH, 'Completing device code authentication...');
 
       const profile = await completeDeviceCodeAuth(deviceCode, interval);
 
-      console.error('[React Auth] ==== RECEIVED PROFILE FROM RUST ====');
-      console.error('[React Auth] Profile:', JSON.stringify(profile, null, 2));
-      console.log('[Auth] Device code authentication successful:', profile);
+      logger.info(LogCategory.AUTH, 'Device code authentication successful');
 
       setUser(profile);
-      console.error('[React Auth] ==== setUser() CALLED ====');
-      console.log('[Auth] User set in store');
+      logger.debug(LogCategory.AUTH, 'User set in store');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Authentication failed';
-      console.error('[React Auth] ==== AUTHENTICATION ERROR ====');
-      console.error('[Auth] Device code authentication failed:', message, err);
+      logger.error(LogCategory.AUTH, 'Device code authentication failed:', err instanceof Error ? err : new Error(message));
       setError(message);
       throw err;
     } finally {
-      console.error('[React Auth] ==== FINALLY BLOCK - setting loading to false ====');
       setLoading(false);
     }
   };
@@ -87,7 +85,7 @@ export const useAuth = () => {
       setLoading(true);
       setError(null);
 
-      console.log('[Auth] Starting Microsoft device code authentication...');
+      logger.info(LogCategory.AUTH, 'Starting Microsoft device code authentication...');
       // Use device code flow
       const deviceCodeInfo = await startDeviceCodeAuth();
 
@@ -96,7 +94,7 @@ export const useAuth = () => {
       return deviceCodeInfo;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Authentication failed';
-      console.error('[Auth] Authentication failed:', message, err);
+      logger.error(LogCategory.AUTH, 'Authentication failed:', err instanceof Error ? err : new Error(message));
       setError(message);
       setLoading(false);
       throw err;

@@ -1,226 +1,154 @@
-import { useState } from 'react';
-import { useSettingsStore } from '../stores';
-import { Button } from './ui/Button';
+import { FC, ChangeEvent, useState, useCallback } from 'react';
+import { useSettingsStore } from '../stores/settingsStore';
 import { Input } from './ui/Input';
-import { Card } from './ui/Card';
-import { useToast } from './ui/ToastContainer';
-import { VersionSelector, InstallProgress } from './installer';
-import { useModpack } from '../hooks/useModpack';
+import { logger, LogCategory } from '../utils/logger';
 
-export default function SettingsScreen() {
-  const { 
-    gameDirectory, 
-    ramAllocation, 
-    serverAddress, 
-    manifestUrl, 
-    keepLauncherOpen, 
-    setGameDirectory, 
-    setRamAllocation, 
-    setServerAddress, 
-    setManifestUrl, 
-    setKeepLauncherOpen 
+// Validation helpers
+const validateGameDirectory = (path: string): { valid: boolean; message?: string } => {
+  if (!path.trim()) return { valid: false, message: 'Game directory is required' };
+  // Basic path validation (platform agnostic-ish)
+  if (path.includes('..')) return { valid: false, message: 'Relative paths not allowed' };
+  return { valid: true };
+};
+
+const validateManifestUrl = (url: string): { valid: boolean; message?: string } => {
+  if (!url.trim()) return { valid: false, message: 'Manifest URL is required' };
+  try {
+    new URL(url);
+    return { valid: true };
+  } catch (e) {
+    return { valid: false, message: 'Invalid URL format' };
+  }
+};
+
+const validateRamAllocationMB = (ram: number): { valid: boolean; message?: string } => {
+  if (ram < 1024) return { valid: false, message: 'Minimum 1GB (1024MB) required' };
+  if (ram > 32768) return { valid: false, message: 'Maximum 32GB (32768MB)' };
+  return { valid: true };
+};
+
+const getRecommendedRam = () => 4096;
+
+export const SettingsScreen: FC = () => {
+  const {
+    gameDirectory,
+    setGameDirectory,
+    manifestUrl,
+    setManifestUrl,
+    ramAllocation,
+    setRamAllocation,
+    keepLauncherOpen,
+    setKeepLauncherOpen,
   } = useSettingsStore();
-  
-  const { addToast } = useToast();
-  const { downloadProgress, error, verifyAndRepair } = useModpack();
 
-  const [isRepairingInProgress, setIsRepairingInProgress] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const handleVerifyAndRepair = async () => {
-    try {
-      setIsRepairingInProgress(true);
-      // silent: false for manual verification - shows progress and toast
-      await verifyAndRepair({ silent: false });
-      addToast('Game files verified and repaired successfully!', 'success');
-    } catch (err) {
-      addToast(err instanceof Error ? err.message : 'Verification and repair failed', 'error');
-    } finally {
-      setIsRepairingInProgress(false);
+  const handleGamePathChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    const newPath = e.target.value;
+    const result = validateGameDirectory(newPath);
+    
+    setErrors(prev => ({
+      ...prev,
+      gamePath: result.message || ''
+    }));
+    
+    if (result.valid) {
+      setGameDirectory(newPath);
     }
-  };
+  }, [setGameDirectory]);
+
+  const handleManifestUrlChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    const newUrl = e.target.value;
+    const result = validateManifestUrl(newUrl);
+    
+    setErrors(prev => ({
+      ...prev,
+      manifestUrl: result.message || ''
+    }));
+    
+    if (result.valid) {
+      setManifestUrl(newUrl);
+    }
+  }, [setManifestUrl]);
+
+  const handleRamChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    const newRam = Number(e.target.value);
+    const result = validateRamAllocationMB(newRam);
+    
+    setErrors(prev => ({
+      ...prev,
+      ram: result.message || ''
+    }));
+    
+    if (result.valid) {
+      setRamAllocation(newRam);
+    }
+  }, [setRamAllocation]);
+
+  const handleKeepLauncherOpenChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    setKeepLauncherOpen(e.target.checked);
+  }, [setKeepLauncherOpen]);
 
   return (
-    <div className="p-6 pt-24 max-w-4xl mx-auto">
-      <h1 className="text-3xl font-bold mb-6" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>Settings</h1>
+    <div className="max-w-2xl mx-auto w-full pt-8 px-4 pb-20">
+      <h1 className="text-2xl font-bold mb-8 text-white" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
+        Launcher Settings
+      </h1>
 
-      <div className="space-y-6">
-        {/* Game Settings */}
-        <Card>
-          <h2 className="text-xl font-bold mb-4" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>Game Settings</h2>
+      <div className="space-y-6 bg-black bg-opacity-40 p-6 rounded-lg backdrop-blur-sm border border-white border-opacity-10">
+        
+        <Input
+          label="Game Directory"
+          value={gameDirectory}
+          onChange={handleGamePathChange}
+          status={errors.gamePath ? 'error' : 'default'}
+          error={errors.gamePath}
+          helper="Path where Minecraft files will be stored"
+          fullWidth
+        />
 
-          {/* Warning Box */}
-          <div
-            className="mb-4 p-3 text-center"
-            style={{
-              backgroundColor: 'rgba(220, 38, 38, 0.2)',
-              border: '1px solid rgba(220, 38, 38, 0.8)',
-              borderRadius: '8px',
-              maxWidth: '400px',
-              marginLeft: 'auto',
-              marginRight: 'auto',
-            }}
+        <Input
+          label="Manifest URL"
+          value={manifestUrl}
+          onChange={handleManifestUrlChange}
+          status={errors.manifestUrl ? 'error' : 'default'}
+          error={errors.manifestUrl}
+          helper="URL to the modpack manifest JSON file"
+          fullWidth
+        />
+
+        <Input
+          label="RAM Allocation (MB)"
+          type="number"
+          value={ramAllocation}
+          onChange={handleRamChange}
+          status={errors.ram ? 'error' : 'default'}
+          error={errors.ram}
+          helper={`Recommended: ${getRecommendedRam()}MB. Allocated to Minecraft Java process.`}
+          fullWidth
+        />
+
+        <div className="flex items-center space-x-3 pt-2">
+          <input
+            id="keepLauncherOpen"
+            type="checkbox"
+            checked={keepLauncherOpen}
+            onChange={handleKeepLauncherOpenChange}
+            className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 bg-gray-700 border-gray-600"
+          />
+          <label 
+            htmlFor="keepLauncherOpen" 
+            className="text-sm font-medium text-gray-200 cursor-pointer"
           >
-            <span
-              className="text-sm"
-              style={{
-                color: '#fca5a5',
-                fontFamily: "'Trebuchet MS', sans-serif",
-              }}
-            >
-              ⚠ Default install location recommended
-            </span>
-          </div>
-
-          <div className="space-y-4">
-            <Input
-              label="Game Directory"
-              value={gameDirectory}
-              onChange={(e) => setGameDirectory(e.target.value)}
-              placeholder="/path/to/game"
-              helperText="Where the game will be installed"
-            />
-            <div>
-              <label className="block text-sm font-semibold mb-2" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
-                RAM Allocation: {ramAllocation}MB
-              </label>
-              <input
-                type="range"
-                min="2048"
-                max="65536"
-                step="512"
-                value={ramAllocation}
-                onChange={(e) => setRamAllocation(parseInt(e.target.value))}
-                className="w-full block"
-                style={{
-                  accentColor: '#FFD700',
-                  width: '100%',
-                  padding: 0,
-                  margin: 0,
-                }}
-              />
-              <p className="text-xs mt-1" style={{ color: '#c6ebdaff' }}>
-                Recommended: 4096-16384MB
-              </p>
-            </div>
-          </div>
-        </Card>
-
-        {/* Server Settings */}
-        <Card>
-          <h2 className="text-xl font-bold mb-4" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>Server Settings</h2>
-          <div className="space-y-4">
-            <Input
-              label="Server Address"
-              value={serverAddress}
-              onChange={(e) => setServerAddress(e.target.value)}
-              placeholder="play.example.com:25565"
-              helperText="Default server to connect to"
-            />
-          </div>
-        </Card>
-
-        {/* Modpack Settings */}
-        <Card>
-          <h2 className="text-xl font-bold mb-4" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>Modpack Settings</h2>
-          <div className="space-y-4">
-            <Input
-              label="Manifest URL"
-              value={manifestUrl}
-              onChange={(e) => setManifestUrl(e.target.value)}
-              placeholder="https://example.com/manifest.json"
-              helperText="URL to the modpack manifest file"
-            />
-          </div>
-        </Card>
-
-        {/* Launcher Behavior */}
-        <Card>
-          <h2 className="text-xl font-bold mb-4" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>Launcher Behavior</h2>
-          <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                id="keepLauncherOpen"
-                checked={keepLauncherOpen}
-                onChange={(e) => setKeepLauncherOpen(e.target.checked)}
-                className="w-5 h-5 rounded cursor-pointer"
-                style={{ accentColor: '#FFD700' }}
-              />
-              <label htmlFor="keepLauncherOpen" className="flex flex-col cursor-pointer">
-                <span className="text-sm font-semibold" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
-                  Keep launcher open during gameplay
-                </span>
-                <span className="text-xs mt-1" style={{ color: '#999' }}>
-                  Shows a live log viewer with game controls instead of minimizing the launcher window
-                </span>
-              </label>
-            </div>
-          </div>
-        </Card>
-
-        {/* Maintenance */}
-        <Card>
-          <h2 className="text-xl font-bold mb-4" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>Maintenance</h2>
-          <div className="space-y-4">
-            <p className="text-sm" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
-              Verify and repair your modpack installation. This will check all files against their checksums and re-download any corrupted or missing files.
-            </p>
-
-            {isRepairingInProgress && (
-              <div className="bg-blue-900 bg-opacity-30 border border-blue-500 rounded p-4 mb-4">
-                <div className="flex items-center gap-2">
-                  <div className="animate-spin h-4 w-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
-                  <span style={{ color: '#c6ebdaff' }}>Verifying and repairing...</span>
-                </div>
-                {downloadProgress && downloadProgress.total > 0 && (
-                  <>
-                    <div className="w-full bg-gray-700 rounded h-2 mt-3 mb-2">
-                      <div
-                        className="bg-blue-500 h-2 rounded transition-all"
-                        style={{
-                          width: `${(downloadProgress.current / downloadProgress.total) * 100}%`,
-                        }}
-                      ></div>
-                    </div>
-                    <p className="text-xs" style={{ color: '#999' }}>
-                      {downloadProgress.current} / {downloadProgress.total} files
-                    </p>
-                  </>
-                )}
-              </div>
-            )}
-
-            {error && (
-              <div className="bg-red-900 bg-opacity-30 border border-red-500 rounded p-3 text-sm" style={{ color: '#fca5a5' }}>
-                {error}
-              </div>
-            )}
-
-            <Button
-              variant="primary"
-              onClick={handleVerifyAndRepair}
-              disabled={isRepairingInProgress}
-            >
-              {isRepairingInProgress ? 'Repairing...' : 'Verify & Repair Files'}
-            </Button>
-          </div>
-        </Card>
-
-        {/* Minecraft Installation */}
-        <div className="space-y-6">
-          <h2 className="text-2xl font-bold" style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}>
-            Minecraft Installation
-          </h2>
-          <p className="text-sm" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
-            Manage your Minecraft installation. Select a version and optionally install with Fabric mod loader.
-          </p>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <VersionSelector />
-            <InstallProgress />
-          </div>
+            Keep launcher open while game is running
+          </label>
         </div>
+        
+      </div>
+      
+      <div className="mt-8 text-center text-xs text-gray-500">
+        <p>WOWID3 Launcher v{import.meta.env.PACKAGE_VERSION || '0.1.0'}</p>
       </div>
     </div>
   );
-}
+};

@@ -1,6 +1,7 @@
 mod modules;
 
 use modules::auth::{authenticate_from_official_launcher, get_current_user, logout, refresh_token, get_device_code, complete_device_code_auth, MinecraftProfile, DeviceCodeInfo};
+use modules::avatar_proxy::{fetch_avatar, AvatarData};
 use modules::discord::{DiscordClient, GamePresence};
 use modules::minecraft::{launch_game, launch_game_with_metadata, analyze_crash, LaunchConfig, stop_game, kill_game, is_game_running};
 use modules::minecraft_version::{list_versions, get_latest_release, get_latest_snapshot, VersionInfo};
@@ -69,6 +70,12 @@ async fn cmd_complete_device_code_auth(device_code: String, interval: u64) -> Re
     }
 
     result.map_err(|e| e.to_string())
+}
+
+// Avatar Proxy Command
+#[tauri::command]
+async fn cmd_fetch_avatar(username: String) -> Result<AvatarData, String> {
+    fetch_avatar(&username).await.map_err(|e| e.to_string())
 }
 
 // Launcher Update Commands
@@ -447,6 +454,8 @@ async fn cmd_discord_set_presence(
             .unwrap()
             .as_secs() as i64),
         end_time: None,
+        party_size: None,
+        party_max: None,
         player_count: None,
     };
     discord.set_presence(&presence).await.map_err(|e| e.to_string())
@@ -457,16 +466,23 @@ async fn cmd_discord_update_presence(
     discord: State<'_, DiscordClient>,
     details: String,
     state: String,
+    large_image: Option<String>,
+    small_image: Option<String>,
+    party_size: Option<u32>,
+    party_max: Option<u32>,
+    start_time: Option<i64>,
 ) -> Result<(), String> {
     let presence = GamePresence {
         state,
         details: Some(details),
-        large_image: Some("minecraft".to_string()),
-        large_image_text: None,
-        small_image: None,
+        large_image: large_image.or(Some("minecraft".to_string())),
+        large_image_text: Some("WOWID3 Modpack".to_string()),
+        small_image,
         small_image_text: None,
-        start_time: None, // Keep existing start time
+        start_time,
         end_time: None,
+        party_size,
+        party_max,
         player_count: None,
     };
     discord.update_presence(&presence).await.map_err(|e| e.to_string())
@@ -711,6 +727,7 @@ pub fn run() {
             cmd_logout,
             cmd_get_device_code,
             cmd_complete_device_code_auth,
+            cmd_fetch_avatar,
             cmd_launch_game,
             cmd_launch_game_with_metadata,
             cmd_list_minecraft_versions,

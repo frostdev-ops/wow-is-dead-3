@@ -1,0 +1,124 @@
+src/__mocks__/@tauri-apps/api/core.ts(13,43): error TS6133: 'args' is declared but its value is never read.
+src/__mocks__/@tauri-apps/api/core.ts(28,43): error TS6133: 'args' is declared but its value is never read.
+src/__mocks__/@tauri-apps/api/event.ts(53,24): error TS2345: Argument of type 'EventCallback<T>' is not assignable to parameter of type 'EventCallback<unknown>'.
+  Type 'unknown' is not assignable to type 'T'.
+    'T' could be instantiated with an arbitrary type which could be unrelated to 'unknown'.
+src/__tests__/components/LauncherHome.test.tsx(2,10): error TS6133: 'screen' is declared but its value is never read.
+src/__tests__/hooks/useModpack.test.ts(6,1): error TS6133: 'mockTauriListen' is declared but its value is never read.
+src/__tests__/hooks/useModpack.test.ts(19,18): error TS6133: 'event' is declared but its value is never read.
+src/__tests__/hooks/useModpack.test.ts(19,25): error TS6133: 'handler' is declared but its value is never read.
+src/__tests__/hooks/useModpack.test.ts(73,63): error TS2345: Argument of type 'undefined' is not assignable to parameter of type 'string'.
+src/__tests__/hooks/useModpack.test.ts(74,71): error TS2345: Argument of type 'undefined' is not assignable to parameter of type 'string'.
+src/__tests__/hooks/useModpack.test.ts(116,64): error TS2345: Argument of type '{ version: string; minecraft_version: string; files: never[]; }' is not assignable to parameter of type 'Manifest'.
+  Type '{ version: string; minecraft_version: string; files: never[]; }' is missing the following properties from type 'Manifest': fabric_loader, changelog
+src/__tests__/stores/authStore.test.ts(121,36): error TS6133: 'setError' is declared but its value is never read.
+src/__tests__/stores/errorStore.test.ts(2,44): error TS6133: 'LauncherError' is declared but its value is never read.
+src/__tests__/stores/errorStore.test.ts(10,23): error TS2693: 'LauncherError' only refers to a type, but is being used as a value here.
+src/__tests__/stores/errorStore.test.ts(15,23): error TS2693: 'LauncherError' only refers to a type, but is being used as a value here.
+src/__tests__/stores/errorStore.test.ts(21,23): error TS2693: 'LauncherError' only refers to a type, but is being used as a value here.
+src/__tests__/stores/errorStore.test.ts(28,24): error TS2693: 'LauncherError' only refers to a type, but is being used as a value here.
+src/__tests__/stores/errorStore.test.ts(41,24): error TS2693: 'LauncherError' only refers to a type, but is being used as a value here.
+src/__tests__/utils/tauri-mock.ts(3,34): error TS6133: 'command' is declared but its value is never read.
+src/__tests__/utils/tauri-mock.ts(7,33): error TS6133: 'eventName' is declared but its value is never read.
+src/__tests__/utils/tauri-mock.ts(7,52): error TS6133: 'handler' is declared but its value is never read.
+src/__tests__/utils/test-utils.tsx(3,1): error TS6133: 'vi' is declared but its value is never read.
+src/components/LauncherHome.optimized.tsx(2,1): error TS6192: All imports in import declaration are unused.
+src/components/LauncherHome.optimized.tsx(18,1): error TS6133: 'UserMenu' is declared but its value is never read.
+src/components/LauncherHome.optimized.tsx(19,1): error TS6133: 'LoadingSpinner' is declared but its value is never read.
+src/components/LauncherHome.optimized.tsx(20,1): error TS6133: 'ProgressBar' is declared but its value is never read.
+src/components/LauncherHome.optimized.tsx(21,1): error TS6133: 'ChangelogViewer' is declared but its value is never read.
+src/components/LauncherHome.optimized.tsx(22,1): error TS6133: 'PlayerList' is declared but its value is never read.
+src/components/LauncherHome.optimized.tsx(24,1): error TS6133: 'DeviceCodeModal' is declared but its value is never read.
+src/components/LauncherHome.optimized.tsx(25,1): error TS6192: All imports in import declaration are unused.
+src/components/LauncherHome.optimized.tsx(39,11): error TS2339: Property 'setMuted' does not exist on type 'unknown'.
+src/components/LauncherHome.optimized.tsx(39,21): error TS2339: Property 'setWasPaused' does not exist on type 'unknown'.
+src/components/LauncherHome.optimized.tsx(40,11): error TS2339: Property 'setShowLogViewer' does not exist on type 'unknown'.
+src/components/LauncherHome.optimized.tsx(49,5): error TS6133: 'latestManifest' is declared but its value is never read.
+src/components/LauncherHome.optimized.tsx(51,5): error TS6133: 'isDownloading' is declared but its value is never read.
+src/components/LauncherHome.optimized.tsx(52,5): error TS6133: 'isBlockedForInstall' is declared but its value is never read.
+src/components/LauncherHome.optimized.tsx(60,9): error TS6133: 'trackerState' is declared but its value is never read.
+src/components/LauncherHome.optimized.tsx(68,10): error TS6133: 'showChangelog' is declared but its value is never read.
+src/components/LauncherHome.optimized.tsx(95,9): error TS6133: 'handleDeviceCodeAuth' is declared but its value is never read.
+src/components/LauncherHome.optimized.tsx(97,11): error TS2554: Expected 2 arguments, but got 1.
+src/components/LauncherHome.optimized.tsx(101,9): error TS6133: 'handleCancelDeviceCode' is declared but its value is never read.
+src/components/LauncherHome.optimized.tsx(157,9): error TS6133: 'handlePlayClick' is declared but its value is never read.
+src/components/LauncherHome.optimized.tsx(182,13): error TS2554: Expected 2 arguments, but got 1.
+src/components/LauncherHome.optimized.tsx(242,9): error TS6133: 'handleShowLogViewer' is declared but its value is never read.
+src/components/LauncherHome.optimized.tsx(247,9): error TS6133: 'serverStatusText' is declared but its value is never read.
+src/components/LauncherHome.optimized.tsx(249,80): error TS2339: Property 'ping' does not exist on type 'ServerStatus'.
+src/components/LauncherHome.optimized.tsx(254,9): error TS6133: 'downloadProgressPercent' is declared but its value is never read.
+src/components/LauncherHome.refactored.tsx(58,9): error TS6133: 'windowManager' is declared but its value is never read.
+src/components/LauncherHome.refactored.tsx(68,26): error TS6133: 'gameDirectory' is declared but its value is never read.
+src/components/LauncherHome.tsx(6,1): error TS6133: 'useSettingsStore' is declared but its value is never read.
+src/components/LauncherHome.tsx(7,1): error TS6133: 'useAudioStore' is declared but its value is never read.
+src/components/LauncherHome.tsx(8,1): error TS6133: 'useUIStore' is declared but its value is never read.
+src/components/LauncherHome.tsx(10,1): error TS6133: 'LoadingSpinner' is declared but its value is never read.
+src/components/LauncherHome.tsx(26,1): error TS6192: All imports in import declaration are unused.
+src/components/LauncherHome.tsx(32,25): error TS2552: Cannot find name 'useRamAllocation'. Did you mean 'ramAllocation'?
+src/components/LauncherHome.tsx(33,23): error TS2552: Cannot find name 'useManifestUrl'. Did you mean 'manifestUrl'?
+src/components/LauncherHome.tsx(34,9): error TS6133: 'keepLauncherOpen' is declared but its value is never read.
+src/components/LauncherHome.tsx(34,28): error TS2552: Cannot find name 'useKeepLauncherOpen'. Did you mean 'keepLauncherOpen'?
+src/components/LauncherHome.tsx(37,9): error TS6133: 'setShowLogViewer' is declared but its value is never read.
+src/components/LauncherHome.tsx(37,32): error TS2304: Cannot find name 'useUIActions'.
+src/components/LauncherHome.tsx(75,9): error TS6198: All destructured elements are unused.
+src/components/LauncherHome.tsx(159,49): error TS2339: Property 'access_token' does not exist on type 'MinecraftProfile'.
+src/components/LauncherHome.tsx(164,29): error TS2339: Property 'access_token' does not exist on type 'MinecraftProfile'.
+src/components/LauncherHome.tsx(207,38): error TS18047: 'trackerState' is possibly 'null'.
+src/components/LauncherHome.tsx(207,51): error TS2339: Property 'loaded' does not exist on type 'TrackerState'.
+src/components/LauncherHome.tsx(246,13): error TS2322: Type 'MinecraftProfile | null' is not assignable to type '{ username: string; uuid: string; skin_url?: string | undefined; access_token?: string | undefined; } | undefined'.
+  Type 'null' is not assignable to type '{ username: string; uuid: string; skin_url?: string | undefined; access_token?: string | undefined; } | undefined'.
+src/components/LogViewerModal.tsx(303,5): error TS2322: Type 'Timeout' is not assignable to type 'number'.
+src/components/SettingsScreen.tsx(4,1): error TS6192: All imports in import declaration are unused.
+src/components/SettingsScreen.tsx(106,11): error TS2322: Type '{ label: string; value: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void; status: "error" | "default"; error: string; helper: string; fullWidth: true; }' is not assignable to type 'IntrinsicAttributes & InputProps'.
+  Property 'helper' does not exist on type 'IntrinsicAttributes & InputProps'.
+src/components/SettingsScreen.tsx(116,11): error TS2322: Type '{ label: string; value: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void; status: "error" | "default"; error: string; helper: string; fullWidth: true; }' is not assignable to type 'IntrinsicAttributes & InputProps'.
+  Property 'helper' does not exist on type 'IntrinsicAttributes & InputProps'.
+src/components/SettingsScreen.tsx(127,11): error TS2322: Type '{ label: string; type: "number"; value: number; onChange: (e: ChangeEvent<HTMLInputElement>) => void; status: "error" | "default"; error: string; helper: string; fullWidth: true; }' is not assignable to type 'IntrinsicAttributes & InputProps'.
+  Property 'helper' does not exist on type 'IntrinsicAttributes & InputProps'.
+src/components/features/AuthenticationCard.tsx(54,19): error TS2741: Property 'session_id' is missing in type '{ username: string; uuid: string; skin_url?: string | undefined; access_token?: string | undefined; }' but required in type 'User'.
+src/components/theme/ChristmasBackground.tsx(146,7): error TS2322: Type 'Timeout' is not assignable to type 'number'.
+src/components/ui/InstallProgress.tsx(21,58): error TS6133: 'totalSteps' is declared but its value is never read.
+src/components/ui/InstallProgress.tsx(45,9): error TS2322: Type '{ value: number; showLabel: false; height: string; className: string; }' is not assignable to type 'IntrinsicAttributes & ProgressBarProps'.
+  Property 'value' does not exist on type 'IntrinsicAttributes & ProgressBarProps'.
+src/components/ui/Modal.tsx(21,1): error TS6133: 'ANIMATION_CONFIG' is declared but its value is never read.
+src/hooks/useAuth.ts(12,11): error TS2339: Property 'setUser' does not exist on type 'unknown'.
+src/hooks/useAuth.ts(12,20): error TS2339: Property 'setLoading' does not exist on type 'unknown'.
+src/hooks/useAuth.ts(12,32): error TS2339: Property 'setError' does not exist on type 'unknown'.
+src/hooks/useAuth.ts(12,42): error TS2339: Property 'logout' does not exist on type 'unknown'.
+src/hooks/useGameLauncher.ts(124,13): error TS2353: Object literal may only specify known properties, and 'access_token' does not exist in type 'LaunchConfig'.
+src/hooks/useMinecraftInstaller.ts(12,10): error TS6133: 'LauncherError' is declared but its value is never read.
+src/hooks/useMinecraftInstaller.ts(161,29): error TS2693: 'LauncherError' only refers to a type, but is being used as a value here.
+src/hooks/useModpackLifecycle.ts(1,10): error TS6133: 'useState' is declared but its value is never read.
+src/hooks/usePolling.ts(41,69): error TS2559: Type 'Error' has no properties in common with type 'LogContext'.
+src/hooks/usePollingManager.ts(140,35): error TS6133: 'key' is declared but its value is never read.
+src/stores/selectors.ts(16,6): error TS6196: 'ActionSelector' is declared but never used.
+src/stores/selectors.ts(28,5): error TS2554: Expected 0-1 arguments, but got 2.
+src/stores/selectors.ts(50,5): error TS2554: Expected 0-1 arguments, but got 2.
+src/stores/selectors.ts(78,5): error TS2554: Expected 0-1 arguments, but got 2.
+src/stores/selectors.ts(96,5): error TS2554: Expected 0-1 arguments, but got 2.
+src/stores/selectors.ts(100,63): error TS2339: Property 'volume' does not exist on type 'AudioStoreState'.
+src/stores/selectors.ts(101,66): error TS2339: Property 'isPlaying' does not exist on type 'AudioStoreState'.
+src/stores/selectors.ts(104,20): error TS2339: Property 'setVolume' does not exist on type 'AudioStoreState'.
+src/stores/selectors.ts(105,21): error TS2339: Property 'setPlaying' does not exist on type 'AudioStoreState'.
+src/stores/selectors.ts(107,5): error TS2554: Expected 0-1 arguments, but got 2.
+src/stores/selectors.ts(111,65): error TS2339: Property 'activeModal' does not exist on type 'UIState'.
+src/stores/selectors.ts(112,63): error TS2339: Property 'isLoading' does not exist on type 'UIState'.
+src/stores/selectors.ts(113,68): error TS2339: Property 'loadingMessage' does not exist on type 'UIState'.
+src/stores/selectors.ts(116,25): error TS2339: Property 'setActiveModal' does not exist on type 'UIState'.
+src/stores/selectors.ts(117,21): error TS2339: Property 'setLoading' does not exist on type 'UIState'.
+src/stores/selectors.ts(118,5): error TS2554: Expected 0-1 arguments, but got 2.
+src/stores/settingsStore.ts(60,3): error TS2322: Type '(name: string) => Promise<string | null>' is not assignable to type '(name: string) => StorageValue<SettingsState> | Promise<StorageValue<SettingsState> | null> | null'.
+  Type 'Promise<string | null>' is not assignable to type 'StorageValue<SettingsState> | Promise<StorageValue<SettingsState> | null> | null'.
+    Type 'Promise<string | null>' is not assignable to type 'Promise<StorageValue<SettingsState> | null>'.
+      Type 'string | null' is not assignable to type 'StorageValue<SettingsState> | null'.
+        Type 'string' is not assignable to type 'StorageValue<SettingsState>'.
+src/stores/settingsStore.ts(64,3): error TS2322: Type '(name: string, value: string) => Promise<void>' is not assignable to type '(name: string, value: StorageValue<SettingsState>) => unknown'.
+  Types of parameters 'value' and 'value' are incompatible.
+    Type 'StorageValue<SettingsState>' is not assignable to type 'string'.
+src/types/tauri.ts(7,23): error TS6133: 'Milliseconds' is declared but its value is never read.
+src/utils/errorMessages.ts(1,10): error TS6133: 'LauncherError' is declared but its value is never read.
+src/utils/errorMessages.ts(11,24): error TS2693: 'LauncherError' only refers to a type, but is being used as a value here.
+src/utils/errors.ts(69,20): error TS2554: Expected 0-1 arguments, but got 2.
+src/utils/logger.ts(56,12): error TS2678: Type '"warn"' is not comparable to type '"debug" | "info"'.
+src/utils/logger.ts(58,12): error TS2678: Type '"error"' is not comparable to type '"debug" | "info"'.
+src/utils/logger.ts(179,54): error TS18048: 'filter.level' is possibly 'undefined'.

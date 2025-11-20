@@ -11,6 +11,7 @@ use sysinfo::{System, Pid, ProcessesToUpdate};
 use super::game_installer::get_installed_version;
 use super::library_manager;
 use super::minecraft_version::{Argument, ArgumentValue};
+use super::auth::get_access_token_by_session_id;
 
 // Global game process ID tracker
 lazy_static::lazy_static! {
@@ -24,7 +25,7 @@ pub struct LaunchConfig {
     pub game_dir: PathBuf,
     pub username: String,
     pub uuid: String,
-    pub access_token: String,
+    pub session_id: String, // Session ID for token lookup
 }
 
 /// Launch Minecraft with version metadata (new system)
@@ -66,6 +67,10 @@ pub async fn launch_game_with_metadata(
         &features,
     )?;
 
+    // Lookup access token from session_id
+    let access_token = get_access_token_by_session_id(&config.session_id)
+        .context("Failed to retrieve access token from session_id")?;
+
     // Prepare argument substitution map
     // Note: Since working directory will be set to game_dir, use relative paths
     let mut arg_map = HashMap::new();
@@ -75,7 +80,7 @@ pub async fn launch_game_with_metadata(
     arg_map.insert("assets_root".to_string(), "assets".to_string()); // Relative to game_dir
     arg_map.insert("assets_index_name".to_string(), version_meta.asset_index.id.clone());
     arg_map.insert("auth_uuid".to_string(), config.uuid.clone());
-    arg_map.insert("auth_access_token".to_string(), config.access_token.clone());
+    arg_map.insert("auth_access_token".to_string(), access_token);
     arg_map.insert("user_type".to_string(), "msa".to_string());
     arg_map.insert("version_type".to_string(), version_meta.version_type.clone());
     arg_map.insert("natives_directory".to_string(), "natives".to_string()); // Relative to game_dir
@@ -381,6 +386,10 @@ fn substitute_argument(arg: &str, arg_map: &HashMap<String, String>) -> String {
 
 /// Launch Minecraft with the specified configuration (legacy function)
 pub async fn launch_game(config: LaunchConfig) -> Result<Child> {
+    // Lookup access token from session_id
+    let access_token = get_access_token_by_session_id(&config.session_id)
+        .context("Failed to retrieve access token from session_id")?;
+
     let java_path = config
         .java_path
         .unwrap_or_else(|| get_bundled_java_path());
@@ -431,7 +440,7 @@ pub async fn launch_game(config: LaunchConfig) -> Result<Child> {
 
     // Game arguments
     cmd.arg("--accessToken")
-        .arg(&config.access_token)
+        .arg(&access_token)
         .arg("--uuid")
         .arg(&config.uuid)
         .arg("--username")

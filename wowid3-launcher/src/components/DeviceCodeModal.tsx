@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { DeviceCodeInfo } from '../hooks/useTauriCommands';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { FocusTrap } from './ui/FocusTrap';
 
 interface DeviceCodeModalProps {
   deviceCodeInfo: DeviceCodeInfo;
@@ -45,17 +46,25 @@ export default function DeviceCodeModal({ deviceCodeInfo, onCancel }: DeviceCode
   };
 
   return createPortal(
-    <div className="fixed inset-0 flex items-center justify-center" style={{ zIndex: 2147483647, backgroundColor: 'rgba(0, 0, 0, 0.95)' }}>
-      <div className="p-8 max-w-md w-full" style={{
+    <div
+      className="fixed inset-0 flex items-center justify-center"
+      style={{ zIndex: 2147483647, backgroundColor: 'rgba(0, 0, 0, 0.95)' }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="device-code-title"
+      aria-describedby="device-code-description"
+    >
+      <FocusTrap isActive={true} onEscape={onCancel}>
+        <div className="p-8 max-w-md w-full" style={{
         backgroundColor: 'rgba(0, 0, 0, 0.85)',
         backdropFilter: 'blur(12px)',
         border: '2px solid rgba(255, 255, 255, 0.3)',
         borderRadius: '0',
         boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.5)',
       }}>
-        <h2 className="text-2xl font-bold text-white mb-4" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>Microsoft Authentication</h2>
+        <h2 id="device-code-title" className="text-2xl font-bold text-white mb-4" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>Microsoft Authentication</h2>
 
-        <div className="p-6 mb-6" style={{
+        <div id="device-code-description" className="p-6 mb-6" style={{
           backgroundColor: 'rgba(0, 0, 0, 0.7)',
           border: '1px solid rgba(255, 255, 255, 0.2)',
           borderRadius: '0',
@@ -74,7 +83,7 @@ export default function DeviceCodeModal({ deviceCodeInfo, onCancel }: DeviceCode
 
           <button
             onClick={handleOpenBrowser}
-            className="w-full font-semibold py-2 px-4 mb-4 transition-colors"
+            className="w-full font-semibold py-2 px-4 mb-4 transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-400"
             style={{
               backgroundColor: 'rgba(59, 130, 246, 0.3)',
               border: '2px solid rgba(59, 130, 246, 0.6)',
@@ -84,6 +93,7 @@ export default function DeviceCodeModal({ deviceCodeInfo, onCancel }: DeviceCode
             }}
             onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.4)'}
             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.3)'}
+            aria-label="Open verification URL in browser"
           >
             Open in Browser
           </button>
@@ -102,7 +112,7 @@ export default function DeviceCodeModal({ deviceCodeInfo, onCancel }: DeviceCode
 
           <button
             onClick={handleCopyCode}
-            className="w-full font-semibold py-2 px-4 transition-colors"
+            className="w-full font-semibold py-2 px-4 transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-green-400"
             style={{
               backgroundColor: 'rgba(34, 197, 94, 0.3)',
               border: '2px solid rgba(34, 197, 94, 0.6)',
@@ -112,6 +122,7 @@ export default function DeviceCodeModal({ deviceCodeInfo, onCancel }: DeviceCode
             }}
             onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(34, 197, 94, 0.4)'}
             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(34, 197, 94, 0.3)'}
+            aria-label="Copy authentication code to clipboard"
           >
             Copy Code
           </button>
@@ -123,7 +134,7 @@ export default function DeviceCodeModal({ deviceCodeInfo, onCancel }: DeviceCode
           </div>
           <button
             onClick={onCancel}
-            className="font-semibold py-2 px-4 transition-colors"
+            className="font-semibold py-2 px-4 transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-red-400"
             style={{
               backgroundColor: 'rgba(220, 38, 38, 0.3)',
               border: '2px solid rgba(220, 38, 38, 0.6)',
@@ -133,6 +144,7 @@ export default function DeviceCodeModal({ deviceCodeInfo, onCancel }: DeviceCode
             }}
             onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(220, 38, 38, 0.4)'}
             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(220, 38, 38, 0.3)'}
+            aria-label="Cancel authentication"
           >
             Cancel
           </button>
@@ -140,11 +152,12 @@ export default function DeviceCodeModal({ deviceCodeInfo, onCancel }: DeviceCode
 
         <div className="mt-4 text-center">
           <p className="text-gray-400 text-sm" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>Waiting for you to complete authentication...</p>
-          <div className="flex justify-center mt-2">
-            <div className="animate-spin rounded-full h-6 w-6" style={{ borderBottom: '2px solid #FFD700' }}></div>
+          <div className="flex justify-center mt-2" role="status" aria-label="Authenticating">
+            <div className="animate-spin rounded-full h-6 w-6" style={{ borderBottom: '2px solid #FFD700' }} aria-hidden="true"></div>
           </div>
         </div>
       </div>
+      </FocusTrap>
     </div>,
     document.body
   );

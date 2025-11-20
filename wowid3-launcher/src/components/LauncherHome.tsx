@@ -1,62 +1,104 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAuth, useModpack, useServer, useDiscord, useMinecraftInstaller } from '../hooks';
+import { useAuth, useModpack, useServer, useDiscord, useMinecraftInstaller, useDiscordPresence } from '../hooks';
 import { useServerTracker } from '../hooks/useServerTracker';
-import { launchGameWithMetadata, isGameRunning } from '../hooks/useTauriCommands';
 import { extractBaseUrl } from '../utils/url';
 import { useSettingsStore } from '../stores';
 import { useAudioStore } from '../stores/audioStore';
 import { useUIStore } from '../stores/uiStore';
-import { UserMenu } from './UserMenu';
+import { useToast } from './ui/ToastContainer';
 import { LoadingSpinner } from './ui/LoadingSpinner';
 import { ProgressBar } from './ui/ProgressBar';
 import { ChangelogViewer } from './ChangelogViewer';
 import { PlayerList } from './PlayerList';
-import { useToast } from './ui/ToastContainer';
 import DeviceCodeModal from './DeviceCodeModal';
-import { SkinViewerComponent } from './SkinViewer';
-import { CatModel } from './CatModel';
+import { SkinViewerWithSuspense, CatModelWithSuspense } from './LazyComponents';
 import { MinecraftSetup } from './MinecraftSetup';
+import { AuthenticationCard } from './features/AuthenticationCard';
+import { ModpackStatus } from './features/ModpackStatus';
+import { ServerStatus, ServerMOTD } from './features/ServerStatus';
+import { DiscordStatus } from './features/DiscordStatus';
+import { PlayButton, usePlayButtonState } from './features/PlayButton';
+import { useGameLauncher } from '../hooks/useGameLauncher';
+import { useModpackLifecycle } from '../hooks/useModpackLifecycle';
+import { useWindowManager } from '../hooks/useWindowManager';
 import type { DeviceCodeInfo } from '../hooks/useTauriCommands';
-import { listen } from '@tauri-apps/api/event';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { logger, LogCategory } from '../utils/logger';
 
 export default function LauncherHome() {
+  // Global State
   const { user, isAuthenticated, login, finishDeviceCodeAuth, isLoading: authLoading, error: authError } = useAuth();
-  const { installedVersion, latestManifest, updateAvailable, isDownloading, isBlockedForInstall, downloadProgress, checkUpdates, install, verifyAndRepair, error: modpackError } = useModpack();
   const { status } = useServer();
-  const { ramAllocation, gameDirectory, keepLauncherOpen, manifestUrl } = useSettingsStore();
+  const ramAllocation = useRamAllocation();
+  const manifestUrl = useManifestUrl();
+  const keepLauncherOpen = useKeepLauncherOpen();
+  
   const { state: trackerState } = useServerTracker(extractBaseUrl(manifestUrl));
-  const { setMuted, setWasPaused } = useAudioStore();
-  const { setShowLogViewer } = useUIStore();
+  const { setShowLogViewer } = useUIActions();
   const { addToast } = useToast();
-  const { isConnected: discordConnected, isConnecting: discordConnecting, error: discordError, setPresence, clearPresence, connect: connectDiscord } = useDiscord();
+  const { isConnected: discordConnected, isConnecting: discordConnecting, error: discordError, connect: connectDiscord } = useDiscord();
   const { versionId, isInstalled: minecraftInstalled } = useMinecraftInstaller();
-  const [isLaunching, setIsLaunching] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
+  
+  // Modpack Store (direct access for UI that hasn't been refactored yet)
+  const { 
+    installedVersion, 
+    latestManifest, 
+    updateAvailable, 
+    isDownloading, 
+    isBlockedForInstall, 
+    downloadProgress 
+  } = useModpack();
+
+  // Local State
   const [showChangelog, setShowChangelog] = useState(false);
   const [deviceCodeInfo, setDeviceCodeInfo] = useState<DeviceCodeInfo | null>(null);
-  const hasCheckedForModpack = useRef(false);
-  const modpackCheckRetries = useRef(0);
-  const lastCheckAttempt = useRef<number>(0);
-  const isInstallingRef = useRef(false);
-  const hasShownWelcomeToast = useRef(false);
   const lastAuthError = useRef<string | null>(null);
-  const lastModpackError = useRef<string | null>(null);
 
-  // Debug logging for auth state
-  useEffect(() => {
-    console.log('[UI State] Auth state changed:', {
-      isAuthenticated,
-      user: user?.username,
-      authLoading,
-      isLaunching,
-      isDownloading,
-      updateAvailable,
-    });
-  }, [isAuthenticated, user, authLoading, isLaunching, isDownloading, updateAvailable]);
+  // Feature Hooks
+  const { 
+    isLaunching, 
+    isPlaying, 
+    error: launchError, 
+    launchGame, 
+    clearError: clearLaunchError 
+  } = useGameLauncher();
 
-  // Display auth errors as toasts (only when error changes)
+  const { 
+    state: modpackState, 
+    checkAndInstall, 
+    performInstall,
+    performVerify,
+    clearError: clearModpackError,
+    clearBackgroundErrors
+  } = useModpackLifecycle(isAuthenticated, authLoading);
+  
+  const { minimizeWindow, showWindow } = useWindowManager();
+
+  // Derived State
+  const playButtonState = useMemo(() => usePlayButtonState({
+    authLoading,
+    isLaunching,
+    isPlaying,
+    isBlockedForInstall,
+    isDownloading,
+    isAuthenticated,
+    updateAvailable
+  }), [
+    authLoading,
+    isLaunching,
+    isPlaying,
+    isBlockedForInstall,
+    isDownloading,
+    isAuthenticated,
+    updateAvailable
+  ]);
+
+  // Effects
+
+  // 1. Discord Presence
+  useDiscordPresence(isPlaying, user?.username, user?.uuid);
+
+  // 2. Auth Error Toast
   useEffect(() => {
     if (authError && authError !== lastAuthError.current) {
       addToast(authError, 'error');
@@ -64,332 +106,84 @@ export default function LauncherHome() {
     } else if (!authError) {
       lastAuthError.current = null;
     }
-  }, [authError]);
+  }, [authError, addToast]);
 
-  // Display modpack errors as toasts (only when error changes)
+  // 3. Launch Error Toast
   useEffect(() => {
-    if (modpackError && modpackError !== lastModpackError.current) {
-      addToast(modpackError, 'error');
-      lastModpackError.current = modpackError;
-    } else if (!modpackError) {
-      lastModpackError.current = null;
+    if (launchError) {
+      addToast(launchError.message, 'error');
+      clearLaunchError();
     }
-  }, [modpackError]);
+  }, [launchError, addToast, clearLaunchError]);
 
-  // Display success feedback when user logs in (once per session)
+  // 4. Modpack Error Toast
   useEffect(() => {
-    if (isAuthenticated && user && !authLoading && !hasShownWelcomeToast.current) {
-      addToast(`Welcome back, ${user.username}!`, 'success');
-      hasShownWelcomeToast.current = true;
+    if (modpackState.error) {
+      addToast(modpackState.error.message, 'error');
+      clearModpackError();
     }
-    // Reset the flag when user logs out
-    if (!isAuthenticated) {
-      hasShownWelcomeToast.current = false;
-    }
-  }, [isAuthenticated, user, authLoading]);
+  }, [modpackState.error, addToast, clearModpackError]);
 
-  // Auto-check for updates, verify files, and install modpack after authentication
+  // 5. Check updates on mount/auth
   useEffect(() => {
-    const checkAndInstall = async () => {
-      // Guard: Only run once per session after authentication
-      if (hasCheckedForModpack.current) {
-        return; // Silent skip, already checked successfully
-      }
-
-      // Guard: Wait for auth to complete
-      if (!isAuthenticated || authLoading || isDownloading) {
-        return; // Silent skip, waiting for auth
-      }
-
-      // Exponential backoff: Check if we should wait before retrying
-      const now = Date.now();
-      const timeSinceLastAttempt = now - lastCheckAttempt.current;
-      const backoffDelay = Math.min(Math.pow(2, modpackCheckRetries.current) * 1000, 60000); // Max 60 seconds
-
-      if (modpackCheckRetries.current > 0 && timeSinceLastAttempt < backoffDelay) {
-        const remainingWait = Math.ceil((backoffDelay - timeSinceLastAttempt) / 1000);
-        console.log(`[Modpack] Waiting ${remainingWait}s before retry (attempt ${modpackCheckRetries.current + 1})`);
-        return;
-      }
-
-      console.log('[Modpack] Checking for updates...');
-      lastCheckAttempt.current = now;
-
-      try {
-        await checkUpdates();
-        console.log('[Modpack] Manifest fetched successfully');
-        hasCheckedForModpack.current = true;
-        modpackCheckRetries.current = 0; // Reset retry counter on success
-
-      } catch (err) {
-        modpackCheckRetries.current += 1;
-        const nextRetryDelay = Math.min(Math.pow(2, modpackCheckRetries.current) * 1000, 60000);
-        console.error(
-          `[Modpack] Failed to check for updates (attempt ${modpackCheckRetries.current}):`,
-          err instanceof Error ? err.message : err
-        );
-        console.log(`[Modpack] Will retry in ${nextRetryDelay / 1000}s`);
-
-        // Don't show toast for network errors on auto-check, just log them
-        // The user can manually check from settings if needed
-      }
-    };
-
     checkAndInstall();
-  }, [isAuthenticated, authLoading, isDownloading, checkUpdates]);
+  }, [checkAndInstall]);
 
-  // Smart installation logic: Block only when necessary, async verify/cleanup after
-  useEffect(() => {
-    const performInstallLogic = async () => {
-      // Prevent concurrent operations
-      if (isInstallingRef.current) return;
-
-      // Only run if we've checked and manifest is available
-      if (!hasCheckedForModpack.current) return;
-      if (!latestManifest) return;
-      if (isDownloading || isBlockedForInstall) return; // Don't interfere with manual operations
-
-      // THREE-PATH LOGIC:
-
-      // PATH A: Modpack NOT installed (first time)
-      if (!installedVersion) {
-        console.log('[Modpack] PATH A: No modpack installed - blocking launch, installing...');
-        isInstallingRef.current = true;
-        try {
-          addToast('Installing modpack (required for first launch)...', 'info');
-          await install({ blockUi: true });
-          addToast('Modpack installed successfully!', 'success');
-          console.log('[Modpack] PATH A: Install complete, launch is now enabled');
-        } catch (err) {
-          console.error('[Modpack] PATH A: Install failed:', err);
-          addToast(`Installation failed: ${err}`, 'error');
-        } finally {
-          isInstallingRef.current = false;
-        }
-        return;
-      }
-
-      // PATH B: Modpack needs update
-      if (updateAvailable && installedVersion !== latestManifest.version) {
-        console.log('[Modpack] PATH B: Update available - blocking launch, updating...');
-        console.log('[Modpack] Installed:', installedVersion, 'Latest:', latestManifest.version);
-        isInstallingRef.current = true;
-        try {
-          addToast('Updating modpack (required to launch)...', 'info');
-          await install({ blockUi: true });
-          addToast('Modpack updated successfully!', 'success');
-          console.log('[Modpack] PATH B: Update complete, launching background verify/cleanup...');
-          // Background verify will run automatically via the background verification effect
-        } catch (err) {
-          console.error('[Modpack] PATH B: Update failed:', err);
-          addToast(`Update failed: ${err}`, 'error');
-        } finally {
-          isInstallingRef.current = false;
-        }
-        return;
-      }
-
-      // PATH C: Modpack installed and on correct version
-      if (installedVersion === latestManifest.version) {
-        console.log('[Modpack] PATH C: Modpack correct version - allowing launch, async verify/cleanup...');
-        // User can launch immediately, background verification will run
-        // This is handled by the background verification effect below
-      }
-    };
-
-    performInstallLogic();
-  }, [latestManifest, installedVersion, updateAvailable, isDownloading, isBlockedForInstall]);
-
-  // Background file integrity check (non-blocking)
-  useEffect(() => {
-    const backgroundVerify = async () => {
-      // Only run if we have a manifest and are on the latest version
-      if (!latestManifest) return;
-      if (!installedVersion) return;
-      if (updateAvailable) return;
-      if (isDownloading) return;
-      if (!hasCheckedForModpack.current) return;
-
-      console.log('[Background] Starting background file check...');
-
-      // Run verification in background without blocking UI
-      // silent: true means no UI blocking, no toast shown, just repair files silently
-      verifyAndRepair({ silent: true })
-        .catch((err) => {
-          console.error('[Background] File check failed:', err);
-          // Silent failure - user can manually verify if needed
-        });
-    };
-
-    // Run background check 5 seconds after everything is ready (non-blocking)
-    const timer = setTimeout(backgroundVerify, 5000);
-    return () => clearTimeout(timer);
-  }, [latestManifest, installedVersion, updateAvailable, isDownloading, hasCheckedForModpack.current]);
-
-  // Listen for Minecraft events
-  useEffect(() => {
-    const unlistenLog = listen<{level: string; message: string}>('minecraft-log', (event) => {
-      console.log(`[Minecraft ${event.payload.level}]`, event.payload.message);
-
-      // Show important errors as toasts
-      if (event.payload.level === 'error') {
-        addToast(`Game Error: ${event.payload.message}`, 'error');
-      }
-    });
-
-    const unlistenExit = listen<{exit_code: number; crashed: boolean}>('minecraft-exit', async (event) => {
-      console.log('[Minecraft] Process exited with code:', event.payload.exit_code);
-      setIsLaunching(false);
-      setIsPlaying(false);
-
-      // Close log viewer (but keep it visible if keepLauncherOpen is true, for debugging)
-      if (!keepLauncherOpen) {
-        setShowLogViewer(false);
-
-        // Show the launcher window again after game exits
-        try {
-          console.log('[Window] Showing launcher window after game exit...');
-          const appWindow = await getCurrentWindow();
-          await appWindow.show();
-          console.log('[Window] Window shown successfully');
-        } catch (error) {
-          console.error('[Window] Failed to show window:', error);
-        }
-      }
-
-      // Keep music muted after game closes (until launcher is closed and reopened)
-
-      // Clear Discord presence when game exits
-      if (discordConnected) {
-        clearPresence().catch(console.error);
-      }
-
-      if (event.payload.crashed) {
-        addToast(`Game crashed with exit code ${event.payload.exit_code}`, 'error');
-      } else {
-        addToast('Game closed', 'info');
-      }
-    });
-
-    const unlistenCrash = listen<{message: string}>('minecraft-crash', (event) => {
-      console.log('[Minecraft] Crash analysis:', event.payload.message);
-      addToast(event.payload.message, 'error');
-    });
-
-    return () => {
-      unlistenLog.then(f => f());
-      unlistenExit.then(f => f());
-      unlistenCrash.then(f => f());
-    };
-  }, [discordConnected, clearPresence]);
-
-  // Check if game is already running on mount
-  useEffect(() => {
-    isGameRunning().then(setIsPlaying);
-  }, []);
-
-  const handlePlayClick = async () => {
-    console.log('[UI] Play button clicked. isAuthenticated:', isAuthenticated, 'user:', user);
+  // Handlers
+  const handlePlayClick = useCallback(async () => {
     if (!isAuthenticated || !user) {
-      console.log('[UI] Not authenticated, starting login...');
       try {
         const deviceCode = await login();
         if (deviceCode) {
           setDeviceCodeInfo(deviceCode);
-          // Start polling for authentication completion
-          finishDeviceCodeAuth(deviceCode.device_code, deviceCode.interval)
-            .then(() => {
-              setDeviceCodeInfo(null);
-              addToast('Authentication successful!', 'success');
-            })
-            .catch((err) => {
-              setDeviceCodeInfo(null);
-              console.error('[UI] Device code auth failed:', err);
-            });
+          await finishDeviceCodeAuth(deviceCode.device_code, deviceCode.interval);
+          setDeviceCodeInfo(null);
+          addToast('Authentication successful!', 'success');
         }
       } catch (err) {
-        console.error('[UI] Failed to start device code auth:', err);
+        setDeviceCodeInfo(null);
+        addToast(`Authentication failed: ${err}`, 'error');
       }
-      return;
-    }
-
-    // Check if Minecraft is installed (shouldn't happen with new UI, but just in case)
-    if (!minecraftInstalled || !versionId) {
-      console.log('[UI] Minecraft not installed. versionId:', versionId, 'minecraftInstalled:', minecraftInstalled);
       return;
     }
 
     if (updateAvailable) {
-      await install();
+      try {
+        await performInstall({ blockUi: true });
+      } catch (err) {
+        // Error handled by hook state
+      }
+      return;
     }
 
-    try {
-      setIsLaunching(true);
-
-      // Pause and mute background music
-      const audioElements = document.querySelectorAll('audio');
-      let wasPaused = false;
-      audioElements.forEach((audio) => {
-        if (!audio.paused) {
-          wasPaused = true;
-          audio.pause();
-        }
-      });
-
-      // Use audioStore to manage mute state
-      setWasPaused(wasPaused);
-      setMuted(true);
-
-      // Handle window and log viewer based on setting
-      if (!keepLauncherOpen) {
-        // Minimize the launcher window
-        try {
-          console.log('[Window] Attempting to minimize launcher window...');
-          const appWindow = await getCurrentWindow();
-          await appWindow.minimize();
-          console.log('[Window] Window minimized successfully');
-        } catch (error) {
-          console.error('[Window] Failed to minimize window:', error);
-          addToast('Failed to minimize launcher window', 'error');
-        }
-      } else {
-        // Show log viewer instead
-        console.log('[Window] Keeping launcher open, showing log viewer');
-        setShowLogViewer(true);
+    if (minecraftInstalled && versionId && user.access_token) {
+      try {
+        await launchGame({
+          username: user.username,
+          uuid: user.uuid,
+          accessToken: user.access_token,
+          versionId: versionId
+        });
+      } catch (err) {
+        // Error handled by hook state
       }
-
-      // Set Discord presence when launching
-      if (discordConnected) {
-        await setPresence(
-          `Playing WOWID3`,
-          `${status.online ? `${status.player_count}/${status.max_players} players online` : 'Server offline'}`,
-          'minecraft'
-        );
-      }
-
-      console.log('[UI] Launching Minecraft with version:', versionId);
-      await launchGameWithMetadata({
-        ram_mb: ramAllocation,
-        game_dir: gameDirectory,
-        username: user.username,
-        uuid: user.uuid,
-        access_token: user.access_token,
-      }, versionId);
-
-      // Note: isLaunching is now cleared by minecraft-exit event, but we clear it here to switch to "Playing" state
-      // Discord presence is also cleared by minecraft-exit event
-      setIsLaunching(false);
-      setIsPlaying(true);
-    } catch (error) {
-      console.error('Failed to launch game:', error);
-      addToast(`Failed to launch game: ${error}`, 'error');
-      setIsLaunching(false);
     }
-  };
+  }, [
+    isAuthenticated, 
+    user, 
+    login, 
+    finishDeviceCodeAuth, 
+    addToast, 
+    updateAvailable, 
+    performInstall, 
+    minecraftInstalled, 
+    versionId, 
+    launchGame
+  ]);
 
   return (
     <div className="flex flex-col items-center justify-center h-full pt-32 p-0">
-        {/* Logo Section */}
+      {/* Logo Section */}
       <div className="text-center max-w-2xl mx-auto w-full pb-8 flex items-center justify-center">
         <img
           src="/logo.png"
@@ -399,261 +193,185 @@ export default function LauncherHome() {
       </div>
 
       {/* Server MOTD */}
-      {status.motd && (
-        <div className="max-w-2xl mx-auto w-full px-4 mb-6 text-center">
-          <style>{`
-            @keyframes motd-glow {
-              0%, 100% {
-                text-shadow: 0 0 5px #FFD700, 0 0 10px #FFD700;
-              }
-              50% {
-                text-shadow: 0 0 15px #FFD700, 0 0 25px #FFD700;
-              }
-            }
-            .motd-text {
-              color: #FFD700;
-              animation: motd-glow 2s ease-in-out infinite;
-            }
-          `}</style>
-          <p className="text-sm motd-text" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
-            MOTD: {status.motd}
-          </p>
-        </div>
-      )}
+      <ServerMOTD motd={status?.motd} />
 
       {/* Main Layout Container */}
       <div className="w-full relative flex justify-center px-4">
         {/* Content Card */}
         <div className="card max-w-2xl w-full space-y-2">
 
-        {/* Server Status & Discord */}
-        <div className="flex gap-3">
-          {/* Server Status */}
-          {status ? (
-            <div className="flex-1 flex items-center justify-between p-4 rounded-lg" style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)', border: `1px solid ${status.online ? '#16a34a' : '#dc2626'}` }}>
-              <div className="flex items-center space-x-3">
-                <div
-                  className={`w-3 h-3 rounded-full ${
-                    status.online ? 'bg-green-500 animate-pulse' : 'bg-red-500'
-                  }`}
-                />
-                <span className="text-white text-sm" style={{ fontFamily: "'Trebuchet MS', sans-serif", fontWeight: 'bold' }}>
-                  {status.online
-                    ? `${status.player_count || 0}/${status.max_players || 0} players online`
-                    : 'Server Offline'}
-                </span>
+          {/* Server Status & Discord */}
+          <div className="flex gap-3">
+            <ServerStatus 
+              status={status} 
+              isLoading={!status && !trackerState.loaded} // Approximate loading state
+            />
+            <DiscordStatus 
+              isConnected={discordConnected}
+              isConnecting={discordConnecting}
+              error={discordError}
+              onReconnect={connectDiscord}
+            />
+          </div>
+
+          {/* Background Errors */}
+          {modpackState.backgroundErrors && modpackState.backgroundErrors.length > 0 && (
+            <div className="bg-yellow-900/20 border border-yellow-600 rounded p-3 mb-2">
+              <div className="flex justify-between items-center">
+                <p className="text-yellow-200 text-sm font-semibold" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
+                  {modpackState.backgroundErrors.length} background operation(s) failed
+                </p>
+                <div className="flex space-x-2">
+                  <button 
+                    onClick={() => performVerify({ silent: false })}
+                    className="text-xs bg-yellow-700 hover:bg-yellow-600 text-white px-2 py-1 rounded transition-colors"
+                  >
+                    Repair Now
+                  </button>
+                  <button 
+                    onClick={clearBackgroundErrors}
+                    className="text-xs text-yellow-400 hover:text-yellow-200 px-2 py-1"
+                  >
+                    Dismiss
+                  </button>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="flex-1 p-4 bg-black bg-opacity-20 flex justify-center">
-              <LoadingSpinner size="sm" message="Checking server..." />
             </div>
           )}
 
-          {/* Discord Status */}
-          <div className="flex-1 flex items-center justify-between p-4 rounded-lg" style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)', border: `1px solid ${discordConnected ? '#16a34a' : '#dc2626'}` }}>
-            <div className="flex items-center space-x-3 flex-1">
-              <div
-                className={`w-3 h-3 rounded-full ${
-                  discordConnected ? 'bg-green-500 animate-pulse' : 'bg-slate-600'
-                }`}
-              />
-              <div className="flex-1">
-                <span className="text-white text-sm" style={{ fontFamily: "'Trebuchet MS', sans-serif", fontWeight: 'bold' }}>
-                  {discordConnected ? 'Discord Connected' : 'Discord Disconnected'}
-                </span>
-                {discordError && !discordConnected && (
-                  <p className="text-xs text-slate-400 mt-1">{discordError}</p>
-                )}
-              </div>
-            </div>
-            {!discordConnected && (
-              <button
-                onClick={connectDiscord}
-                disabled={discordConnecting}
-                className="ml-4 px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded transition-colors whitespace-nowrap"
-              >
-                {discordConnecting ? 'Connecting...' : 'Reconnect'}
-              </button>
-            )}
-          </div>
-        </div>
+          {/* Authentication Card */}
+          <AuthenticationCard 
+            isAuthenticated={isAuthenticated}
+            isLoading={authLoading}
+            user={user}
+            minecraftInstalled={minecraftInstalled}
+          />
 
-        {/* User Info or Login Prompt */}
-        {isAuthenticated && user ? (
-          <div className="flex items-center justify-between px-5 py-6 pt-5 mt-4 border border-christmas-gold border-opacity-30 rounded-lg" style={{ backgroundImage: 'linear-gradient(to right, rgba(77, 130, 110, 0.65) 0%, rgba(0, 0, 0, 0.5) 50%, rgba(70, 130, 180, 0.65) 100%)' }}>
-            <div className="flex items-center space-x-4">
-              <img
-                src={`https://mc-heads.net/avatar/${user.username}`}
-                alt={user.username}
-                className="w-14 h-14 shadow-lg"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-              <div>
-                <p className="text-white font-bold text-lg">{user.username}</p>
-                <p className="text-sm text-christmas-gold">Authenticated</p>
-              </div>
-            </div>
-            <UserMenu user={user} />
-          </div>
-        ) : authLoading ? (
-          <div className="p-4 bg-black bg-opacity-20 rounded-lg flex justify-center border border-slate-600 border-opacity-30">
-            <LoadingSpinner size="md" message="Authenticating with Microsoft..." />
-          </div>
-        ) : minecraftInstalled ? (
-          <div className="p-4 rounded-lg text-center border border-opacity-50" style={{ backgroundColor: 'rgba(8, 91, 46, 0.8)', borderColor: '#cdf1e1ff' }}>
-            <p className="font-semibold mb-1" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif", fontWeight: 'bold' }}>Login Required</p>
-            <p className="text-sm" style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif", fontWeight: 'bold' }}>Click "Login" to authenticate with your Microsoft account</p>
-          </div>
-        ) : null}
-
-        {/* Minecraft Installation or Play Section - Animated */}
-        <AnimatePresence mode="wait">
-          {!minecraftInstalled ? (
-            /* Show installation UI when Minecraft is not installed */
-            <motion.div
-              key="minecraft-setup"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.4, ease: "easeInOut" }}
-              className="mt-6"
-            >
-              <MinecraftSetup />
-            </motion.div>
-          ) : (
-            /* Show normal play flow when Minecraft is installed */
-            <motion.div
-              key="play-section"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.4, ease: "easeInOut" }}
-            >
-              {/* Update Badge or Download Progress */}
-              {isDownloading && downloadProgress ? (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.3 }}
-                  className="p-4"
-                  style={{
-                    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-                    backdropFilter: 'blur(12px)',
-                    border: '1px solid rgba(255, 215, 0, 0.3)',
-                    borderRadius: '0',
-                  }}
-                >
-                  <p className="text-white font-semibold mb-3" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>Installing Update...</p>
-                  <ProgressBar
-                    current={downloadProgress.current}
-                    total={downloadProgress.total}
-                    showLabel={true}
-                    showPercentage={true}
-                  />
-                </motion.div>
-              ) : updateAvailable ? (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.3 }}
-                  style={{
-                    backgroundColor: 'rgba(79, 195, 247, 0.15)',
-                    border: '1px solid rgba(79, 195, 247, 0.5)',
-                  }}
-                  className="p-4 rounded-lg"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-semibold" style={{ color: '#4FC3F7', fontFamily: "'Trebuchet MS', sans-serif" }}>
-                        ❄️ New Release!
-                      </p>
-                      <p className="text-sm text-gray-300 mt-1" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
-                        Version {latestManifest?.version} is ready to install
-                      </p>
-                    </div>
-                    {latestManifest && (
-                      <button
-                        onClick={() => setShowChangelog(true)}
-                        style={{
-                          backgroundColor: 'rgba(79, 195, 247, 0.2)',
-                          color: '#4FC3F7',
-                          border: '1px solid rgba(79, 195, 247, 0.4)',
-                          fontFamily: "'Trebuchet MS', sans-serif",
-                        }}
-                        className="px-3 py-2 text-sm rounded transition-colors whitespace-nowrap ml-4 hover:bg-opacity-50"
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(79, 195, 247, 0.3)'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(79, 195, 247, 0.2)'}
-                      >
-                        View Changes
-                      </button>
-                    )}
-                  </div>
-                </motion.div>
-              ) : null}
-
-              {/* Changelog Viewer Modal */}
-              {latestManifest && (
-                <ChangelogViewer
-                  currentVersion={installedVersion || 'Unknown'}
-                  manifest={latestManifest}
-                  isOpen={showChangelog}
-                  onClose={() => setShowChangelog(false)}
-                />
-              )}
-
-              {/* Device Code Modal */}
-              {deviceCodeInfo && (
-                <DeviceCodeModal
-                  deviceCodeInfo={deviceCodeInfo}
-                  onCancel={() => setDeviceCodeInfo(null)}
-                />
-              )}
-
-              {/* Play Button */}
+          {/* Minecraft Installation or Play Section - Animated */}
+          <AnimatePresence mode="wait">
+            {!minecraftInstalled ? (
+              /* Show installation UI when Minecraft is not installed */
               <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.4, delay: 0.1, ease: "easeOut" }}
-                className="flex justify-center mt-6"
+                key="minecraft-setup"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.4, ease: "easeInOut" }}
+                className="mt-6"
               >
-                <motion.button
-                  onClick={handlePlayClick}
-                  disabled={isLaunching || isDownloading || isBlockedForInstall || authLoading || isPlaying}
-                  className="btn-primary text-2xl py-8 px-16 disabled:opacity-50 disabled:cursor-not-allowed btn-gradient-border"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  transition={{ type: "spring", stiffness: 400, damping: 17 }}
-                >
-                  {authLoading && 'Authenticating...'}
-                  {!authLoading && isLaunching && 'Launching...'}
-                  {!authLoading && !isLaunching && isPlaying && 'Playing!'}
-                  {!authLoading && isBlockedForInstall && 'Installing/Updating...'}
-                  {!authLoading && isDownloading && 'Updating...'}
-                  {!authLoading && !isLaunching && !isDownloading && !isBlockedForInstall && !isPlaying && !isAuthenticated && 'Login'}
-                  {!authLoading && !isLaunching && !isDownloading && !isBlockedForInstall && !isPlaying && isAuthenticated && updateAvailable && 'Update'}
-                  {!authLoading && !isLaunching && !isDownloading && !isBlockedForInstall && !isPlaying && isAuthenticated && !updateAvailable && 'PLAY'}
-                </motion.button>
+                <MinecraftSetup />
               </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            ) : (
+              /* Show normal play flow when Minecraft is installed */
+              <motion.div
+                key="play-section"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.4, ease: "easeInOut" }}
+              >
+                {/* Update Badge or Download Progress */}
+                {isDownloading && downloadProgress ? (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.3 }}
+                    className="p-4"
+                    style={{
+                      backgroundColor: 'rgba(0, 0, 0, 0.4)',
+                      backdropFilter: 'blur(12px)',
+                      border: '1px solid rgba(255, 215, 0, 0.3)',
+                      borderRadius: '0',
+                    }}
+                  >
+                    <p className="text-white font-semibold mb-3" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>Installing Update...</p>
+                    <ProgressBar
+                      current={downloadProgress.current}
+                      total={downloadProgress.total}
+                      showLabel={true}
+                      showPercentage={true}
+                    />
+                  </motion.div>
+                ) : updateAvailable ? (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.3 }}
+                    style={{
+                      backgroundColor: 'rgba(79, 195, 247, 0.15)',
+                      border: '1px solid rgba(79, 195, 247, 0.5)',
+                    }}
+                    className="p-4 rounded-lg"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-semibold" style={{ color: '#4FC3F7', fontFamily: "'Trebuchet MS', sans-serif" }}>
+                          ❄️ New Release!
+                        </p>
+                        <p className="text-sm text-gray-300 mt-1" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
+                          Version {latestManifest?.version} is ready to install
+                        </p>
+                      </div>
+                      {latestManifest && (
+                        <button
+                          onClick={() => setShowChangelog(true)}
+                          style={{
+                            backgroundColor: 'rgba(79, 195, 247, 0.2)',
+                            color: '#4FC3F7',
+                            border: '1px solid rgba(79, 195, 247, 0.4)',
+                            fontFamily: "'Trebuchet MS', sans-serif",
+                          }}
+                          className="px-3 py-2 text-sm rounded transition-colors whitespace-nowrap ml-4 hover:bg-opacity-50"
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(79, 195, 247, 0.3)'}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(79, 195, 247, 0.2)'}
+                        >
+                          View Changes
+                        </button>
+                      )}
+                    </div>
+                  </motion.div>
+                ) : null}
 
-        {/* Player List */}
-        <PlayerList status={status} trackerState={trackerState} />
+                {/* Changelog Viewer Modal */}
+                {latestManifest && (
+                  <ChangelogViewer
+                    currentVersion={installedVersion || 'Unknown'}
+                    manifest={latestManifest}
+                    isOpen={showChangelog}
+                    onClose={() => setShowChangelog(false)}
+                  />
+                )}
+
+                {/* Device Code Modal */}
+                {deviceCodeInfo && (
+                  <DeviceCodeModal
+                    deviceCodeInfo={deviceCodeInfo}
+                    onCancel={() => setDeviceCodeInfo(null)}
+                  />
+                )}
+
+                {/* Play Button */}
+                <PlayButton 
+                  state={playButtonState}
+                  onClick={handlePlayClick}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Player List */}
+          <PlayerList status={status} trackerState={trackerState} />
         </div>
 
-        {/* Cat Model - Left side */}
+        {/* Cat Model - Left side - Lazy loaded */}
         <div className="absolute left-[calc(50%-730px)] top-[-80px]">
-          <CatModel />
+          <CatModelWithSuspense />
         </div>
 
-        {/* 3D Skin Viewer - Right side - Only show when authenticated */}
+        {/* 3D Skin Viewer - Right side - Only show when authenticated - Lazy loaded */}
         {isAuthenticated && user && (
           <div className="absolute left-[calc(50%+380px)] top-[-80px]">
-            <SkinViewerComponent
+            <SkinViewerWithSuspense
               username={user.username}
               uuid={user.uuid}
               skinUrl={user.skin_url}
@@ -662,56 +380,16 @@ export default function LauncherHome() {
         )}
       </div>
 
-      {/* Quick Stats Card */}
-      <div className="max-w-2xl w-full mt-4" style={{
-        backgroundColor: 'rgba(0, 0, 0, 0.4)',
-        backdropFilter: 'blur(12px)',
-        borderRadius: '0',
-        padding: '1.5rem',
-        border: `1px solid ${installedVersion && minecraftInstalled ? '#16a34a' : '#dc2626'}`,
-        boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.25)'
-      }}>
-        {/* Version Info */}
-        <div className="flex justify-between text-sm pb-4 opacity-100" style={{ fontFamily: "'Trebuchet MS', sans-serif", fontWeight: 'bold', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
-          <div>
-            <span className="text-white">Modpack: </span>
-            <span className="ml-2" style={{ color: installedVersion ? '#16a34a' : '#dc2626' }}>
-              {installedVersion || 'Not installed'}
-            </span>
-          </div>
-          <div>
-            <span className="text-white">Minecraft: </span>
-            <span className="ml-2" style={{ color: minecraftInstalled ? '#16a34a' : '#dc2626' }}>
-              {minecraftInstalled ? (versionId || 'Installed') : 'Not installed'}
-            </span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-4 pt-4">
-          <div className="text-center">
-            <p className="text-2xl font-bold" style={{ color: installedVersion ? '#16a34a' : '#dc2626' }}>
-              {installedVersion && latestManifest
-                ? (latestManifest.files.filter((f: any) => f.path?.endsWith('.jar')).length || 0)
-                : 0}
-            </p>
-            <p className="text-xs text-gray-400">Mods Installed</p>
-          </div>
-          <div className="text-center">
-            <p className="text-2xl font-bold" style={{ color: installedVersion ? '#16a34a' : '#dc2626' }}>
-              {installedVersion && latestManifest && installedVersion === latestManifest.version
-                ? latestManifest.minecraft_version
-                : 'N/A'}
-            </p>
-            <p className="text-xs text-gray-400">MC Version</p>
-          </div>
-          <div className="text-center">
-            <p className="text-2xl font-bold" style={{ color: installedVersion ? '#16a34a' : '#dc2626' }}>
-              {Math.round(ramAllocation / 1024)}GB
-            </p>
-            <p className="text-xs text-gray-400">Allocated RAM</p>
-          </div>
-        </div>
-      </div>
+      {/* Modpack Status Card */}
+      <ModpackStatus 
+        installedVersion={installedVersion}
+        latestManifest={latestManifest}
+        minecraftInstalled={minecraftInstalled}
+        versionId={versionId}
+        isDownloading={isDownloading}
+        isBlockedForInstall={isBlockedForInstall}
+        ramAllocation={ramAllocation}
+      />
     </div>
   );
 }

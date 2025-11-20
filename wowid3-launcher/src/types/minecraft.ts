@@ -28,7 +28,7 @@ export interface LaunchConfig {
   game_dir: string;         // Game directory path
   username: string;         // Minecraft username
   uuid: string;             // Player UUID
-  access_token: string;     // Minecraft access token
+  session_id: string;       // Session ID for backend token lookup
 }
 
 export interface InstallProgress {

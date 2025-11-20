@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMinecraftInstaller } from '../hooks';
 import { Card } from './ui/Card';
+import { InstallProgress } from './ui/InstallProgress';
 import { INSTALL_STEP_LABELS } from '../types/minecraft';
 
 export function MinecraftSetup() {
@@ -18,14 +19,9 @@ export function MinecraftSetup() {
     await install();
   };
 
-  // Calculate progress percentage
-  const progressPercentage =
-    installProgress && installProgress.total > 0
-      ? Math.round((installProgress.current / installProgress.total) * 100)
-      : 0;
-
-  // Format bytes to MB
-  const formatMB = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1);
+  const getStepLabel = (step: string, message?: string) => {
+    return INSTALL_STEP_LABELS[step as keyof typeof INSTALL_STEP_LABELS] || message || step;
+  };
 
   return (
     <div className="w-full max-w-2xl mx-auto">
@@ -80,58 +76,16 @@ export function MinecraftSetup() {
               transition={{ duration: 0.3 }}
               className="mb-6"
             >
-              <div className="mb-2 flex items-center justify-between">
-                <motion.span
-                  key={installProgress.step}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="text-sm font-semibold"
-                  style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}
-                >
-                  {INSTALL_STEP_LABELS[installProgress.step as keyof typeof INSTALL_STEP_LABELS] ||
-                    installProgress.message}
-                </motion.span>
-                <motion.span
-                  animate={{ scale: [1, 1.05, 1] }}
-                  transition={{ duration: 0.5, repeat: Infinity }}
-                  className="text-sm font-semibold"
-                  style={{ color: '#FFD700', fontFamily: "'Trebuchet MS', sans-serif" }}
-                >
-                  {progressPercentage}%
-                </motion.span>
-              </div>
-
-              {/* Progress Bar */}
-              <div
-                className="w-full h-4 overflow-hidden mb-2"
-                style={{
-                  backgroundColor: 'rgba(0, 0, 0, 0.3)',
-                  border: '1px solid rgba(255, 215, 0, 0.3)',
-                  borderRadius: '8px',
+              <InstallProgress
+                progress={{
+                    ...installProgress,
+                    total_bytes: installProgress.total_bytes,
+                    current_bytes: installProgress.current_bytes
                 }}
-              >
-                <motion.div
-                  className="h-full"
-                  style={{
-                    background: 'repeating-linear-gradient(45deg, #ffffff, #ffffff 10px, #ff0000 10px, #ff0000 20px)',
-                  }}
-                  initial={{ width: 0 }}
-                  animate={{ width: `${progressPercentage}%` }}
-                  transition={{ duration: 0.5, ease: "easeOut" }}
-                />
-              </div>
-
-              {/* Progress Details */}
-              <div className="flex items-center justify-between text-xs">
-                <span style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
-                  {installProgress.current} / {installProgress.total} files
-                </span>
-                <span style={{ color: '#c6ebdaff', fontFamily: "'Trebuchet MS', sans-serif" }}>
-                  {formatMB(installProgress.current_bytes)} MB / {formatMB(installProgress.total_bytes)} MB
-                </span>
-              </div>
-
+                currentStep={getStepLabel(installProgress.step, installProgress.message)}
+                totalSteps={100} // Approximate or calculated if available
+              />
+              
               {/* Special note for assets */}
               <AnimatePresence>
                 {installProgress.step === 'assets' && (

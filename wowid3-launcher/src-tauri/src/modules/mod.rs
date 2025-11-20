@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod avatar_proxy;
 pub mod discord;
 pub mod download_manager;
 pub mod minecraft;

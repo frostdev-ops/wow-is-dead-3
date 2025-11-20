@@ -8,6 +8,8 @@ import {
 } from './useTauriCommands';
 import { useSettingsStore } from '../stores/settingsStore';
 import { VersionInfo, FabricLoader, InstallProgress } from '../types/minecraft';
+import { logger, LogCategory } from '../utils/logger';
+import { LauncherError, LauncherErrorCode } from '../types/errors';
 
 export interface UseMinecraftInstallerReturn {
   // Version management
@@ -44,8 +46,8 @@ export interface UseMinecraftInstallerReturn {
 export function useMinecraftInstaller(): UseMinecraftInstallerReturn {
   const {
     gameDirectory,
-    minecraftVersion,
-    fabricEnabled: settingsFabricEnabled,
+    minecraftVersion, // Store is the single source of truth
+    fabricEnabled,
     fabricVersion,
     preferStableFabric,
     isMinecraftInstalled,
@@ -57,25 +59,22 @@ export function useMinecraftInstaller(): UseMinecraftInstallerReturn {
 
   // Version state
   const [versions, setVersions] = useState<VersionInfo[]>([]);
-  const [selectedVersion, setSelectedVersionState] = useState<string | null>(minecraftVersion);
   const [isLoadingVersions, setIsLoadingVersions] = useState(false);
 
   // Fabric state
-  const [fabricEnabled, setFabricEnabledState] = useState(settingsFabricEnabled);
   const [fabricLoaders, setFabricLoaders] = useState<FabricLoader[]>([]);
-  const [selectedFabricLoader, setSelectedFabricLoaderState] = useState<string | null>(fabricVersion);
   const [isLoadingFabric, setIsLoadingFabric] = useState(false);
 
-  // Installation state (isInstalled is now from store)
+  // Installation state
   const [isInstalling, setIsInstalling] = useState(false);
   const [installProgress, setInstallProgress] = useState<InstallProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Computed version ID
-  const versionId = selectedVersion
-    ? fabricEnabled && selectedFabricLoader
-      ? `fabric-loader-${selectedFabricLoader}-${selectedVersion}`
-      : selectedVersion
+  const versionId = minecraftVersion
+    ? fabricEnabled && fabricVersion
+      ? `fabric-loader-${fabricVersion}-${minecraftVersion}`
+      : minecraftVersion
     : null;
 
   // Load Minecraft versions (for display/reference only)
@@ -86,18 +85,15 @@ export function useMinecraftInstaller(): UseMinecraftInstallerReturn {
 
       const versionList = await listMinecraftVersions('release');
       setVersions(versionList);
-
-      // Note: Version is now preset from settingsStore defaults (1.20.1)
-      // No auto-selection needed as versions are driven by modpack requirements
     } catch (err) {
       setError(`Failed to load Minecraft versions: ${err}`);
-      console.error('[MinecraftInstaller] Failed to load versions:', err);
+      logger.error(LogCategory.MINECRAFT, 'Failed to load versions', err as Error);
     } finally {
       setIsLoadingVersions(false);
     }
   }, []);
 
-  // Load Fabric loaders for a specific game version (for display/reference only)
+  // Load Fabric loaders for a specific game version
   const loadFabricLoaders = useCallback(async (gameVersion: string) => {
     try {
       setIsLoadingFabric(true);
@@ -111,12 +107,9 @@ export function useMinecraftInstaller(): UseMinecraftInstallerReturn {
         : loaders;
 
       setFabricLoaders(filteredLoaders);
-
-      // Note: Fabric loader version is now preset from settingsStore defaults (0.17.3)
-      // No auto-selection needed as versions are driven by modpack requirements
     } catch (err) {
       setError(`Failed to load Fabric loaders: ${err}`);
-      console.error('[MinecraftInstaller] Failed to load Fabric loaders:', err);
+      logger.error(LogCategory.MINECRAFT, 'Failed to load Fabric loaders', err as Error);
     } finally {
       setIsLoadingFabric(false);
     }
@@ -130,7 +123,7 @@ export function useMinecraftInstaller(): UseMinecraftInstallerReturn {
         setIsMinecraftInstalled(installed);
         return installed;
       } catch (err) {
-        console.error('[MinecraftInstaller] Failed to check installation:', err);
+        logger.error(LogCategory.MINECRAFT, 'Failed to check installation', err as Error);
         return false;
       }
     },
@@ -139,7 +132,7 @@ export function useMinecraftInstaller(): UseMinecraftInstallerReturn {
 
   // Install Minecraft
   const install = useCallback(async () => {
-    if (!selectedVersion) {
+    if (!minecraftVersion) {
       setError('No Minecraft version selected');
       return;
     }
@@ -150,8 +143,8 @@ export function useMinecraftInstaller(): UseMinecraftInstallerReturn {
       setInstallProgress(null);
 
       const config = {
-        game_version: selectedVersion,
-        fabric_version: fabricEnabled ? selectedFabricLoader || undefined : undefined,
+        game_version: minecraftVersion,
+        fabric_version: fabricEnabled ? fabricVersion || undefined : undefined,
         game_dir: gameDirectory,
       };
 
@@ -162,10 +155,11 @@ export function useMinecraftInstaller(): UseMinecraftInstallerReturn {
         await checkInstalled(versionId);
       }
 
-      console.log('[MinecraftInstaller] Installation complete!');
+      logger.info(LogCategory.MINECRAFT, 'Installation complete!');
     } catch (err) {
       const errorMessage = String(err);
-
+      const launcherError = LauncherError.from(err, LauncherErrorCode.INSTALL_FAILED);
+      
       // Handle common errors
       if (errorMessage.includes('Failed to fetch')) {
         setError('Network error. Check your internet connection.');
@@ -173,88 +167,52 @@ export function useMinecraftInstaller(): UseMinecraftInstallerReturn {
         setError('Insufficient disk space. Need ~500MB free.');
       } else if (errorMessage.includes('SHA1 mismatch')) {
         setError('Download corrupted. Please try again.');
-      } else if (errorMessage.includes('not found in manifest')) {
-        setError('Minecraft version not available.');
       } else {
         setError(`Installation failed: ${errorMessage}`);
       }
 
-      console.error('[MinecraftInstaller] Installation failed:', err);
+      logger.error(LogCategory.MINECRAFT, 'Installation failed', launcherError);
     } finally {
       setIsInstalling(false);
       setInstallProgress(null);
     }
-  }, [selectedVersion, fabricEnabled, selectedFabricLoader, gameDirectory, versionId, checkInstalled]);
+  }, [minecraftVersion, fabricEnabled, fabricVersion, gameDirectory, versionId, checkInstalled]);
 
-  // Set selected version (with persistence)
+  // Actions (Pure setters now)
   const setSelectedVersion = useCallback(
     (version: string) => {
-      setSelectedVersionState(version);
       setMinecraftVersion(version);
-
-      // Load Fabric loaders if Fabric is enabled
-      if (fabricEnabled) {
-        loadFabricLoaders(version);
-      }
-
-      // Check if this version is installed
-      const verId = fabricEnabled && selectedFabricLoader
-        ? `fabric-loader-${selectedFabricLoader}-${version}`
-        : version;
-      checkInstalled(verId);
     },
-    [fabricEnabled, selectedFabricLoader, setMinecraftVersion, loadFabricLoaders, checkInstalled]
+    [setMinecraftVersion]
   );
 
-  // Set Fabric enabled (with persistence)
   const setFabricEnabled = useCallback(
     (enabled: boolean) => {
-      setFabricEnabledState(enabled);
       setSettingsFabricEnabled(enabled);
-
-      // Load Fabric loaders if enabled and version is selected
-      if (enabled && selectedVersion) {
-        loadFabricLoaders(selectedVersion);
-      }
-
-      // Re-check installation status
-      if (selectedVersion) {
-        const verId = enabled && selectedFabricLoader
-          ? `fabric-loader-${selectedFabricLoader}-${selectedVersion}`
-          : selectedVersion;
-        checkInstalled(verId);
-      }
     },
-    [selectedVersion, selectedFabricLoader, setSettingsFabricEnabled, loadFabricLoaders, checkInstalled]
+    [setSettingsFabricEnabled]
   );
 
-  // Set selected Fabric loader (with persistence)
   const setSelectedFabricLoader = useCallback(
     (version: string) => {
-      setSelectedFabricLoaderState(version);
       setFabricVersion(version);
-
-      // Re-check installation status
-      if (selectedVersion) {
-        const verId = `fabric-loader-${version}-${selectedVersion}`;
-        checkInstalled(verId);
-      }
     },
-    [selectedVersion, setFabricVersion, checkInstalled]
+    [setFabricVersion]
   );
 
   const clearError = useCallback(() => {
     setError(null);
   }, []);
 
-  // Listen for installation progress events
+  // Side Effects
+
+  // 1. Listen for installation progress
   useEffect(() => {
     let unlisten: UnlistenFn | null = null;
 
     const setupListener = async () => {
       unlisten = await listen<InstallProgress>('minecraft-install-progress', (event) => {
         setInstallProgress(event.payload);
-        console.log(`[MinecraftInstaller] Progress: ${event.payload.step} - ${event.payload.message}`);
       });
     };
 
@@ -267,22 +225,29 @@ export function useMinecraftInstaller(): UseMinecraftInstallerReturn {
     };
   }, []);
 
-  // Auto-load versions on mount
+  // 2. Auto-load versions on mount
   useEffect(() => {
     loadVersions();
-  }, []);
+  }, [loadVersions]);
 
-  // Auto-check installation status when version changes
+  // 3. Load Fabric loaders when version or fabric enabled state changes
+  useEffect(() => {
+    if (fabricEnabled && minecraftVersion) {
+      loadFabricLoaders(minecraftVersion);
+    }
+  }, [minecraftVersion, fabricEnabled, loadFabricLoaders]);
+
+  // 4. Check installation status when versionId changes
   useEffect(() => {
     if (versionId) {
       checkInstalled(versionId);
     }
-  }, [versionId]);
+  }, [versionId, checkInstalled]);
 
   return {
     // Version management
     versions,
-    selectedVersion,
+    selectedVersion: minecraftVersion,
     setSelectedVersion,
     isLoadingVersions,
 
@@ -290,7 +255,7 @@ export function useMinecraftInstaller(): UseMinecraftInstallerReturn {
     fabricEnabled,
     setFabricEnabled,
     fabricLoaders,
-    selectedFabricLoader,
+    selectedFabricLoader: fabricVersion,
     setSelectedFabricLoader,
     isLoadingFabric,
 

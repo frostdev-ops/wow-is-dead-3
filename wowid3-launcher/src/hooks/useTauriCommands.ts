@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { MinecraftProfile, Manifest, ServerStatus } from '../stores';
+import { deduplicator } from '../utils/deduplication';
 import {
   VersionInfo,
   FabricLoader,
@@ -25,6 +26,11 @@ export interface LauncherUpdateInfo {
     mandatory: boolean;
     download_url: string;
     sha256: string;
+}
+
+export interface AvatarData {
+    data: string;  // Base64 encoded image data
+    content_type: string;
 }
 
 // Authentication commands
@@ -56,6 +62,10 @@ export const completeDeviceCodeAuth = async (deviceCode: string, interval: numbe
   return await invoke<MinecraftProfile>('cmd_complete_device_code_auth', { deviceCode, interval });
 };
 
+export const fetchAvatar = async (username: string): Promise<AvatarData> => {
+  return await invoke<AvatarData>('cmd_fetch_avatar', { username });
+};
+
 // Minecraft launch commands
 export const launchGame = async (config: LaunchConfig): Promise<string> => {
   return await invoke<string>('cmd_launch_game', { config });
@@ -63,16 +73,24 @@ export const launchGame = async (config: LaunchConfig): Promise<string> => {
 
 // Server status commands
 export const pingServer = async (address: string): Promise<ServerStatus> => {
-  return await invoke<ServerStatus>('cmd_ping_server', { address });
+  return await deduplicator.execute(`pingServer:${address}`, () => 
+    invoke<ServerStatus>('cmd_ping_server', { address })
+  );
 };
 
 export const resolvePlayerName = async (uuid: string): Promise<string> => {
   return await invoke<string>('cmd_resolve_player_name', { uuid });
 };
 
+export const getDetailedServerStatus = async (baseUrl: string): Promise<any> => {
+  return await invoke<any>('cmd_get_detailed_server_status', { baseUrl });
+};
+
 // Modpack update commands
 export const checkForUpdates = async (manifestUrl: string): Promise<Manifest> => {
-  return await invoke<Manifest>('cmd_check_updates', { manifestUrl });
+  return await deduplicator.execute(`checkForUpdates:${manifestUrl}`, () => 
+    invoke<Manifest>('cmd_check_updates', { manifestUrl })
+  );
 };
 
 export const getInstalledVersion = async (gameDir: string): Promise<string | null> => {
@@ -109,8 +127,24 @@ export const discordSetPresence = async (details: string, state: string, largeIm
   return await invoke<void>('cmd_discord_set_presence', { details, state, large_image: largeImage });
 };
 
-export const discordUpdatePresence = async (details: string, state: string): Promise<void> => {
-  return await invoke<void>('cmd_discord_update_presence', { details, state });
+export const discordUpdatePresence = async (
+  details: string,
+  state: string,
+  largeImage?: string,
+  smallImage?: string,
+  partySize?: number,
+  partyMax?: number,
+  startTime?: number
+): Promise<void> => {
+  return await invoke<void>('cmd_discord_update_presence', {
+    details,
+    state,
+    large_image: largeImage,
+    small_image: smallImage,
+    party_size: partySize,
+    party_max: partyMax,
+    start_time: startTime
+  });
 };
 
 export const discordClearPresence = async (): Promise<void> => {

@@ -3,5 +3,8 @@ export { useModpack } from './useModpack';
 export { useServer } from './useServer';
 export { useTheme } from './useTheme';
 export { useDiscord } from './useDiscord';
+export { useDiscordPresence } from './useDiscordPresence';
 export { useMinecraftInstaller } from './useMinecraftInstaller';
+export { useAccessibility, useFocusTrap } from './useAccessibility';
+export { useRetry, retry } from './useRetry';
 export * from './useTauriCommands';

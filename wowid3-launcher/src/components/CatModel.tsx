@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
-import * as THREE from 'three';
+import { useEffect, useRef, memo } from 'react';
+import { getThreeJs } from '../hooks/useThreeJs';
+import { ModelData, ModelBox, ModelSubmodel, TextureSize, isModelData } from '../types/models';
 
-export const CatModel = () => {
+const CatModelBase = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -13,30 +14,37 @@ export const CatModel = () => {
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // Set up scene
-    const scene = new THREE.Scene();
-    sceneRef.current = scene;
+    let mounted = true;
 
-    // Set up camera
-    const camera = new THREE.PerspectiveCamera(45, 200 / 300, 0.1, 1000);
-    camera.position.set(0, -8, 35); // Position camera at lower angle
-    camera.lookAt(0, -5, 0); // Look at where the cat is positioned
-    cameraRef.current = camera;
+    const initThree = async () => {
+      const THREE = await getThreeJs();
+      
+      if (!mounted || !containerRef.current) return;
 
-    // Set up renderer
-    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-    renderer.setSize(400, 600);
-    renderer.setClearColor(0x000000, 0); // Transparent background
-    containerRef.current.appendChild(renderer.domElement);
-    rendererRef.current = renderer;
+      // Set up scene
+      const scene = new THREE.Scene();
+      sceneRef.current = scene;
 
-    // Add lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambientLight);
+      // Set up camera
+      const camera = new THREE.PerspectiveCamera(45, 200 / 300, 0.1, 1000);
+      camera.position.set(0, -8, 35); // Position camera at lower angle
+      camera.lookAt(0, -5, 0); // Look at where the cat is positioned
+      cameraRef.current = camera;
 
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(5, 10, 5);
-    scene.add(directionalLight);
+      // Set up renderer
+      const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+      renderer.setSize(400, 600);
+      renderer.setClearColor(0x000000, 0); // Transparent background
+      containerRef.current.appendChild(renderer.domElement);
+      rendererRef.current = renderer;
+
+      // Add lighting
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+      scene.add(ambientLight);
+
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      directionalLight.position.set(5, 10, 5);
+      scene.add(directionalLight);
 
     // Load texture - randomly select from available cat textures
     const catTextures = ['/tabby2.png', '/tabby3.png', '/ragdoll2.png', '/red2.png'];
@@ -51,11 +59,15 @@ export const CatModel = () => {
       // Load and parse the cat model
       fetch('/cat.jem')
         .then((res) => res.json())
-        .then((modelData) => {
+        .then((data: unknown) => {
+          if (!isModelData(data)) {
+            throw new Error('Invalid model data structure');
+          }
+          const modelData: ModelData = data;
           const catGroup = new THREE.Group();
 
           // Function to create a box from model data with proper Minecraft UV mapping
-          const createBox = (boxData: any, textureSize: number[]) => {
+          const createBox = (boxData: ModelBox, textureSize: TextureSize): THREE.Mesh => {
             const [x, y, z, width, height, depth] = boxData.coordinates;
             const [u, v] = boxData.textureOffset;
 
@@ -156,7 +168,7 @@ export const CatModel = () => {
           };
 
           // Parse the body model (simplified - just rendering main parts)
-          const bodyModel = modelData.models.find((m: any) => m.part === 'body');
+          const bodyModel = modelData.models.find((m) => m.part === 'body');
 
           console.log('[CatModel] Body model:', bodyModel);
 
@@ -176,11 +188,11 @@ export const CatModel = () => {
             if (bodyRotation && bodyRotation.submodels) {
               console.log('[CatModel] Number of submodels:', bodyRotation.submodels.length);
 
-              bodyRotation.submodels.forEach((submodel: any, index: number) => {
+              bodyRotation.submodels.forEach((submodel: ModelSubmodel, index: number) => {
                 console.log(`[CatModel] Submodel ${index}:`, submodel.translate, 'boxes:', submodel.boxes?.length);
 
                 if (submodel.boxes) {
-                  const translate = submodel.translate || [0, 0, 0];
+                  const translate = submodel.translate || ([0, 0, 0] as [number, number, number]);
                   const isHead = translate[1] > 6; // Head is at highest Y position
                   // Body includes neck, torso, and legs (everything below head, excluding tail)
                   // Tail is typically at the far back (Z < -10) or has specific position
@@ -189,7 +201,7 @@ export const CatModel = () => {
 
                   console.log(`[CatModel] Submodel ${index} translate:`, translate, 'isHead:', isHead, 'isBody:', isBody, 'isTail:', isTail);
 
-                  submodel.boxes.forEach((box: any) => {
+                  submodel.boxes.forEach((box: ModelBox) => {
                     const mesh = createBox(box, modelData.textureSize);
 
                     // Apply submodel transforms
@@ -359,9 +371,13 @@ export const CatModel = () => {
       animationId = requestAnimationFrame(animate);
     };
 
-    animate();
+      animate();
+    };
+
+    initThree();
 
     return () => {
+      mounted = false;
       window.removeEventListener('mousemove', handleMouseMove);
       if (animationId) cancelAnimationFrame(animationId);
       if (rendererRef.current) {
@@ -381,3 +397,6 @@ export const CatModel = () => {
     />
   );
 };
+
+// Export memoized component - CatModel has no props so it will never re-render
+export const CatModel = memo(CatModelBase);

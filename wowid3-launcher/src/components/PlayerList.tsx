@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { ServerStatus, PlayerInfo } from '../stores/serverStore';
 import { Card } from './ui/Card';
 import { resolvePlayerName } from '../hooks/useTauriCommands';
@@ -9,7 +9,7 @@ interface PlayerListProps {
   trackerState?: TrackerState | null;
 }
 
-const PlayerItem = ({ player }: { player: PlayerInfo | PlayerExt }) => {
+const PlayerItem = memo(({ player }: { player: PlayerInfo | PlayerExt }) => {
   const [imgError, setImgError] = useState(false);
   const [displayName, setDisplayName] = useState(player.name);
 
@@ -88,9 +88,9 @@ const PlayerItem = ({ player }: { player: PlayerInfo | PlayerExt }) => {
       )}
     </div>
   );
-};
+});
 
-export const PlayerList = ({ status, trackerState }: PlayerListProps) => {
+const PlayerListBase = ({ status, trackerState }: PlayerListProps) => {
   // Prefer detailed tracker state if available and valid
   const players = trackerState?.online_players?.length 
     ? trackerState.online_players 
@@ -128,3 +128,12 @@ export const PlayerList = ({ status, trackerState }: PlayerListProps) => {
     </Card>
   );
 };
+
+// Export memoized PlayerList - only re-renders when status or trackerState changes
+export const PlayerList = memo(PlayerListBase, (prevProps, nextProps) => {
+  // Custom comparison for optimal performance
+  return (
+    prevProps.status === nextProps.status &&
+    prevProps.trackerState === nextProps.trackerState
+  );
+});

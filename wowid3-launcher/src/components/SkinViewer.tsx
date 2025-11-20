@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { View } from 'skin3d';
+import { useEffect, useRef, memo } from 'react';
+import { View, PlayerPart, SkinObject } from 'skin3d';
 
 interface SkinViewerComponentProps {
   username: string;
@@ -7,9 +7,10 @@ interface SkinViewerComponentProps {
   skinUrl?: string;
 }
 
-export const SkinViewerComponent = ({ username, uuid, skinUrl }: SkinViewerComponentProps) => {
+// Memoized SkinViewer component to prevent unnecessary Three.js re-renders
+const SkinViewerComponentBase = ({ username, uuid, skinUrl }: SkinViewerComponentProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const viewerRef = useRef<any>(null);
+  const viewerRef = useRef<View | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -55,7 +56,9 @@ export const SkinViewerComponent = ({ username, uuid, skinUrl }: SkinViewerCompo
         }
 
         // Find the skin object (contains the actual body parts)
-        const skinObject = viewer.playerObject.children?.find((c: any) => c.name === 'skin');
+        const skinObject = viewer.playerObject.children?.find(
+          (c): c is SkinObject => c.name === 'skin'
+        );
         console.log('[SkinViewer] Found skinObject:', skinObject);
 
         if (!skinObject) {
@@ -67,7 +70,7 @@ export const SkinViewerComponent = ({ username, uuid, skinUrl }: SkinViewerCompo
         console.log('[SkinViewer] Skin children:', skinObject.children);
 
         // Access body parts from skin object
-        skinObject.children?.forEach((part: any) => {
+        skinObject.children?.forEach((part: PlayerPart) => {
           console.log('[SkinViewer] Body part:', part.name, part);
 
           // Rotate legs for sitting (backward bend) and spread apart
@@ -143,8 +146,12 @@ export const SkinViewerComponent = ({ username, uuid, skinUrl }: SkinViewerCompo
       const animate = () => {
         if (viewer && viewer.playerObject) {
           // Find the skin and head objects
-          const skinObject = viewer.playerObject.children?.find((c: any) => c.name === 'skin');
-          const head = skinObject?.children?.find((c: any) => c.name === 'head');
+          const skinObject = viewer.playerObject.children?.find(
+            (c): c is SkinObject => c.name === 'skin'
+          );
+          const head = skinObject?.children?.find(
+            (c): c is PlayerPart => c.name === 'head'
+          );
 
           if (head) {
             // Rotate head to follow mouse (fast response)
@@ -197,3 +204,13 @@ export const SkinViewerComponent = ({ username, uuid, skinUrl }: SkinViewerCompo
     />
   );
 };
+
+// Export memoized component - only re-renders when props change
+export const SkinViewerComponent = memo(SkinViewerComponentBase, (prevProps, nextProps) => {
+  // Custom comparison function for optimal performance
+  return (
+    prevProps.username === nextProps.username &&
+    prevProps.uuid === nextProps.uuid &&
+    prevProps.skinUrl === nextProps.skinUrl
+  );
+});

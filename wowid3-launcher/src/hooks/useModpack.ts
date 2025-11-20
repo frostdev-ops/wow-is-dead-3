@@ -1,18 +1,33 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useMemo } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { useModpackStore, useSettingsStore } from '../stores';
-import { checkForUpdates, getInstalledVersion, installModpack, verifyAndRepairModpack, hasManifestChanged } from './useTauriCommands';
+import { logger, LogCategory } from '../utils/logger';
+import { useSettingsStore } from '../stores';
+import {
+  useInstalledVersion,
+  useLatestManifest,
+  useUpdateAvailable,
+  useIsDownloading,
+  useIsVerifying,
+  useIsBlockedForInstall,
+  useDownloadProgress,
+  useModpackError,
+  useModpackActions
+} from '../stores/selectors';
+import { checkForUpdates, getInstalledVersion, installModpack, verifyAndRepairModpack } from './useTauriCommands';
+import { createRateLimiter } from '../utils/rateLimit';
+import { POLLING_CONFIG } from '../config/polling';
 
 export const useModpack = () => {
+  const installedVersion = useInstalledVersion();
+  const latestManifest = useLatestManifest();
+  const updateAvailable = useUpdateAvailable();
+  const isDownloading = useIsDownloading();
+  const isVerifying = useIsVerifying();
+  const isBlockedForInstall = useIsBlockedForInstall();
+  const downloadProgress = useDownloadProgress();
+  const error = useModpackError();
+  
   const {
-    installedVersion,
-    latestManifest,
-    updateAvailable,
-    isDownloading,
-    isVerifying,
-    isBlockedForInstall,
-    downloadProgress,
-    error,
     setInstalledVersion,
     setLatestManifest,
     setUpdateAvailable,
@@ -22,9 +37,14 @@ export const useModpack = () => {
     setDownloadProgress,
     setError,
     reset,
-  } = useModpackStore();
+  } = useModpackActions();
 
   const { gameDirectory, manifestUrl } = useSettingsStore();
+
+  // Create rate-limited update checker
+  const rateLimitedCheck = useMemo(() => 
+    createRateLimiter(POLLING_CONFIG.MANIFEST_CHECK_INTERVAL)(checkForUpdates),
+  []);
 
   // Check installed version on mount
   useEffect(() => {
@@ -33,62 +53,17 @@ export const useModpack = () => {
         const version = await getInstalledVersion(gameDirectory);
         setInstalledVersion(version);
       } catch (err) {
-        console.error('Failed to get installed version:', err);
+        logger.error(LogCategory.MODPACK, 'Failed to get installed version:', err instanceof Error ? err : new Error(String(err)));
       }
     };
 
     checkInstalled();
   }, [gameDirectory, setInstalledVersion]);
 
-  // Poll for updates every 5 minutes
-  useEffect(() => {
-    const pollForUpdates = async () => {
-      try {
-        console.log('[Modpack] Polling for updates...');
-        const manifest = await checkForUpdates(manifestUrl);
-        setLatestManifest(manifest);
-
-        // Check if update is available
-        const versionChanged = installedVersion && manifest.version !== installedVersion;
-
-        // Also check if manifest has changed (file hashes changed even if version same)
-        let manifestHasChanged = false;
-        if (installedVersion && !versionChanged) {
-          try {
-            manifestHasChanged = await hasManifestChanged(manifest, gameDirectory);
-          } catch (err) {
-            console.warn('[Modpack] Could not check manifest changes:', err);
-          }
-        }
-
-        if (versionChanged || manifestHasChanged) {
-          if (versionChanged) {
-            console.log('[Modpack] Update available:', manifest.version);
-          } else {
-            console.log('[Modpack] Manifest changed (files updated)');
-          }
-          setUpdateAvailable(true);
-        } else {
-          setUpdateAvailable(false);
-        }
-      } catch (err) {
-        console.error('[Modpack] Update check failed:', err);
-      }
-    };
-
-    // Check immediately on mount
-    pollForUpdates();
-
-    // Then poll every 5 minutes
-    const interval = setInterval(pollForUpdates, 5 * 60 * 1000); // 5 minutes
-
-    return () => clearInterval(interval);
-  }, [manifestUrl, installedVersion, gameDirectory, setLatestManifest, setUpdateAvailable]);
-
   const checkUpdates = useCallback(async () => {
     try {
       setError(null);
-      const manifest = await checkForUpdates(manifestUrl);
+      const manifest = await rateLimitedCheck(manifestUrl);
       setLatestManifest(manifest);
 
       // Check if update is available
@@ -101,7 +76,7 @@ export const useModpack = () => {
       setError(err instanceof Error ? err.message : 'Failed to check for updates');
       throw err;
     }
-  }, [manifestUrl, installedVersion, setError, setLatestManifest, setUpdateAvailable]);
+  }, [manifestUrl, installedVersion, setError, setLatestManifest, setUpdateAvailable, rateLimitedCheck]);
 
   const install = useCallback(async (options?: { blockUi?: boolean }) => {
     if (!latestManifest) {
@@ -109,6 +84,7 @@ export const useModpack = () => {
     }
 
     const blockUi = options?.blockUi ?? false;
+    const previousVersion = installedVersion; // Capture for rollback
 
     try {
       // Use blocking state for required installs, downloading state for user-initiated installs
@@ -119,6 +95,10 @@ export const useModpack = () => {
       }
       setError(null);
 
+      // OPTIMISTIC UPDATE: Update version immediately to feel responsive
+      setInstalledVersion(latestManifest.version);
+      // We keep updateAvailable true until finished to prevent UI flickering if using that to hide buttons
+      
       // Listen for download progress events
       const unlisten = await listen<{
         current: number;
@@ -136,20 +116,41 @@ export const useModpack = () => {
       try {
         await installModpack(latestManifest, gameDirectory);
 
-        setInstalledVersion(latestManifest.version);
+        // Validate installation before updating state
+        try {
+          const actualVersion = await getInstalledVersion(gameDirectory);
+          if (actualVersion !== latestManifest.version) {
+            throw new Error(
+              `Installation validation failed: expected ${latestManifest.version}, got ${actualVersion}`
+            );
+          }
+          logger.info(LogCategory.MODPACK, 'Installation validated successfully');
+        } catch (validationErr) {
+          logger.error(LogCategory.MODPACK, 'Installation validation failed:', validationErr instanceof Error ? validationErr : new Error(String(validationErr)));
+          throw new Error(
+            `Installation completed but validation failed: ${validationErr instanceof Error ? validationErr.message : 'unknown error'}`
+          );
+        }
+
+        // Confirm update success
         setUpdateAvailable(false);
 
         // After install, run async verification and cleanup (silent, non-blocking)
         // Don't await this - let it run in background
         verifyAndRepairModpack(latestManifest, gameDirectory)
           .then(() => {
-            console.log('[Install] Post-install verification complete');
+            logger.info(LogCategory.MODPACK, 'Post-install verification complete');
           })
           .catch((err) => {
-            console.error('[Install] Post-install verification failed:', err);
+            logger.error(LogCategory.MODPACK, 'Post-install verification failed:', err instanceof Error ? err : new Error(String(err)));
           });
 
         reset();
+      } catch (err) {
+        // ROLLBACK on failure
+        setInstalledVersion(previousVersion);
+        setUpdateAvailable(true);
+        throw err;
       } finally {
         // Clean up event listener
         unlisten();
@@ -164,7 +165,7 @@ export const useModpack = () => {
         setDownloading(false);
       }
     }
-  }, [latestManifest, gameDirectory, setBlockedForInstall, setDownloading, setError, setDownloadProgress, setInstalledVersion, setUpdateAvailable, reset]);
+  }, [latestManifest, gameDirectory, installedVersion, setBlockedForInstall, setDownloading, setError, setDownloadProgress, setInstalledVersion, setUpdateAvailable, reset]);
 
   const verifyAndRepair = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
@@ -182,7 +183,7 @@ export const useModpack = () => {
       }
 
       // First fetch the latest manifest
-      const manifest = await checkForUpdates(manifestUrl);
+      const manifest = await rateLimitedCheck(manifestUrl);
 
       if (!silent) {
         setLatestManifest(manifest);
@@ -209,7 +210,7 @@ export const useModpack = () => {
       try {
         await verifyAndRepairModpack(manifest, gameDirectory);
         if (!silent) {
-          console.log('[Modpack] Verification and repair complete');
+          logger.info(LogCategory.MODPACK, 'Verification and repair complete');
         }
       } finally {
         // Clean up event listener
@@ -231,7 +232,7 @@ export const useModpack = () => {
         setDownloading(false);
       }
     }
-  }, [manifestUrl, gameDirectory, setDownloading, setVerifying, setError, setLatestManifest, setDownloadProgress]);
+  }, [manifestUrl, gameDirectory, setDownloading, setVerifying, setError, setLatestManifest, setDownloadProgress, rateLimitedCheck]);
 
   return {
     installedVersion,

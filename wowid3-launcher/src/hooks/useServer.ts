@@ -1,15 +1,24 @@
-import { useEffect, useRef } from 'react';
-import { useServerStore, useSettingsStore } from '../stores';
+import { useMemo } from 'react';
+import { useServerStatus, useServerIsPolling, useServerError, useServerActions, useServerAddress } from '../stores/selectors';
 import { pingServer } from './useTauriCommands';
+import { createRateLimiter } from '../utils/rateLimit';
+import { POLLING_CONFIG } from '../config/polling';
 
 export const useServer = () => {
-  const { status, isPolling, error, setStatus, setPolling, setError } = useServerStore();
-  const { serverAddress } = useSettingsStore();
-  const intervalRef = useRef<number | null>(null);
+  const status = useServerStatus();
+  const isPolling = useServerIsPolling();
+  const error = useServerError();
+  const { setStatus, setError } = useServerActions();
+  const serverAddress = useServerAddress();
+
+  // Rate limited ping
+  const rateLimitedPing = useMemo(() => 
+    createRateLimiter(POLLING_CONFIG.SERVER_STATUS_INTERVAL / 2)(pingServer), 
+  []);
 
   const ping = async () => {
     try {
-      const serverStatus = await pingServer(serverAddress);
+      const serverStatus = await rateLimitedPing(serverAddress);
       setStatus(serverStatus);
       setError(null);
     } catch (err) {
@@ -17,43 +26,10 @@ export const useServer = () => {
     }
   };
 
-  const startPolling = (intervalSeconds: number = 30) => {
-    if (intervalRef.current) {
-      return; // Already polling
-    }
-
-    setPolling(true);
-
-    // Ping immediately
-    ping();
-
-    // Then poll on interval
-    intervalRef.current = setInterval(() => {
-      ping();
-    }, intervalSeconds * 1000);
-  };
-
-  const stopPolling = () => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-      setPolling(false);
-    }
-  };
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      stopPolling();
-    };
-  }, []);
-
   return {
     status,
     isPolling,
     error,
     ping,
-    startPolling,
-    stopPolling,
   };
 };

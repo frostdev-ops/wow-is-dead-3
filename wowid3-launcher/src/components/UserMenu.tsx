@@ -5,7 +5,7 @@ import { useToast } from './ui/ToastContainer';
 interface User {
   username: string;
   uuid: string;
-  access_token: string;
+  session_id: string;
 }
 
 interface UserMenuProps {

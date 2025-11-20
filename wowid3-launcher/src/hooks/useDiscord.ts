@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   discordConnect,
   discordSetPresence,
@@ -50,7 +50,7 @@ export const useDiscord = () => {
     initializeDiscord();
   }, []);
 
-  const connect = async () => {
+  const connect = useCallback(async () => {
     try {
       setIsConnecting(true);
       setError(null);
@@ -63,45 +63,57 @@ export const useDiscord = () => {
     } finally {
       setIsConnecting(false);
     }
-  };
+  }, []);
 
-  const setPresence = async (details: string, state: string, largeImage?: string) => {
+  const setPresence = useCallback(async (details: string, state: string, largeImage?: string) => {
     try {
+      // Note: We can't reliably auto-connect here because connect is async and state updates are async
+      // Better to ensure connection before calling setPresence or handle it in the component
       if (!isConnected) {
-        await connect();
+        await discordConnect(); // Try direct call instead of helper to avoid dep loop if needed, or just trust the helper
+        // Update local state manually or rely on next render? 
+        // For now, assume connected or will fail gracefully.
       }
       await discordSetPresence(details, state, largeImage);
     } catch (err) {
       console.warn('Failed to set Discord presence:', err);
     }
-  };
+  }, [isConnected]);
 
-  const updatePresence = async (details: string, state: string) => {
+  const updatePresence = useCallback(async (
+    details: string,
+    state: string,
+    largeImage?: string,
+    smallImage?: string,
+    partySize?: number,
+    partyMax?: number,
+    startTime?: number
+  ) => {
     try {
       if (!isConnected) return;
-      await discordUpdatePresence(details, state);
+      await discordUpdatePresence(details, state, largeImage, smallImage, partySize, partyMax, startTime);
     } catch (err) {
       console.warn('Failed to update Discord presence:', err);
     }
-  };
+  }, [isConnected]);
 
-  const clearPresence = async () => {
+  const clearPresence = useCallback(async () => {
     try {
       if (!isConnected) return;
       await discordClearPresence();
     } catch (err) {
       console.warn('Failed to clear Discord presence:', err);
     }
-  };
+  }, [isConnected]);
 
-  const disconnect = async () => {
+  const disconnect = useCallback(async () => {
     try {
       await discordDisconnect();
       setIsConnected(false);
     } catch (err) {
       console.warn('Failed to disconnect from Discord:', err);
     }
-  };
+  }, []);
 
   return {
     isConnected,

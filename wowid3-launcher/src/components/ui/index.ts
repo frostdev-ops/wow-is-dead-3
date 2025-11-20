@@ -5,6 +5,8 @@ import { Input } from './Input';
 import { LoadingSpinner } from './LoadingSpinner';
 import { Toast } from './Toast';
 import { ToastProvider, useToast } from './ToastContainer';
+import { FocusTrap } from './FocusTrap';
+import { EmptyState } from './EmptyState';
 
 export {
   Button,
@@ -15,5 +17,7 @@ export {
   Toast,
   ToastProvider,
   useToast,
+  FocusTrap,
+  EmptyState,
 };
 
