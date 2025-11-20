@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "WOWID3Launcher",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "identifier": "com.wowid3.launcher",
   "build": {
     "beforeDevCommand": "npm run dev",
