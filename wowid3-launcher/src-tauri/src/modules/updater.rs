@@ -306,8 +306,14 @@ async fn cleanup_extra_files(manifest: &Manifest, game_dir: &PathBuf) -> Result<
                 continue;
             }
             
-            // CRITICAL: Never delete launcher meta files
-            if relative_path == ".wowid3-version" || relative_path == ".wowid3-manifest-hash" {
+            // CRITICAL: Never delete launcher meta files and base Minecraft installation
+            if relative_path == ".wowid3-version"
+                || relative_path == ".wowid3-manifest-hash"
+                || relative_path.starts_with("versions/")  // Protect Minecraft base installation
+                || relative_path.starts_with(".cache/")    // Protect caches
+                || relative_path.starts_with("assets/")    // Protect Minecraft assets
+                || relative_path.starts_with("libraries/") // Protect Minecraft libraries
+            {
                 kept_count += 1;
                 continue;
             }

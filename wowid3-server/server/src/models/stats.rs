@@ -23,15 +23,18 @@ pub struct PlayerStats {
     pub damage_dealt: f64,
     #[serde(default)]
     pub damage_taken: f64,
-    
+
+    #[serde(default)]
+    pub deaths: u64,
+
     #[serde(default)]
     pub dimensions_visited: Vec<String>,
     #[serde(default)]
     pub biomes_visited: Vec<String>,
-    
+
     #[serde(default)]
     pub playtime_seconds: u64,
-    
+
     // Aggregate totals for quick access
     #[serde(default)]
     pub total_blocks_broken: u64,
@@ -61,6 +64,7 @@ pub enum StatEvent {
     ItemGathered { item_id: String, count: u64 },
     DamageDealt { amount: f64 },
     DamageTaken { amount: f64 },
+    PlayerDeath,
     DimensionVisited { dimension_id: String },
     BiomeVisited { biome_id: String },
     Playtime { seconds: u64 },

@@ -35,6 +35,15 @@ fi
 
 chmod +x "$ROOT_DIR/src-tauri/wowid3-launcher.sh"
 
+# Check if .env.wayland exists and source it for Wayland compatibility
+if [[ -f "$ROOT_DIR/.env.wayland" ]]; then
+  echo "Sourcing .env.wayland for Wayland compatibility..."
+  # shellcheck disable=SC1091
+  source "$ROOT_DIR/.env.wayland"
+else
+  echo "Warning: .env.wayland not found. Build may have Wayland compatibility issues." >&2
+fi
+
 echo "Building Linux AppImage..."
 # Build AppImage - if it fails due to icon mismatch, fix AppDir and manually bundle
 LOG_FILE="/tmp/tauri-build-$$.log"

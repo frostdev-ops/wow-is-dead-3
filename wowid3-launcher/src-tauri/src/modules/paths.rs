@@ -4,35 +4,107 @@ use tauri::Manager;
 
 /// Get the default game directory path for the current OS
 ///
-/// - Windows: %LOCALAPPDATA%\wowid3-launcher\game
-/// - Linux: ~/.local/share/wowid3-launcher/game
+/// Uses explicit home directory resolution to avoid AppImage sandbox issues.
+/// - Windows: %USERPROFILE%\.wowid3\game
+/// - Linux: $HOME/.wowid3/game (or $XDG_DATA_HOME/wowid3-launcher/game if XDG_DATA_HOME is set)
 /// - macOS: ~/Library/Application Support/wowid3-launcher/game
-pub fn get_default_game_directory(app: &tauri::AppHandle) -> Result<PathBuf> {
-    let app_data_dir = app
-        .path()
-        .app_local_data_dir()
-        .context("Failed to get app local data directory")?;
+pub fn get_default_game_directory(_app: &tauri::AppHandle) -> Result<PathBuf> {
+    // Use explicit home directory to avoid AppImage temp path issues
+    let base_dir = get_persistent_data_dir()?;
+    let game_dir = base_dir.join("game");
 
-    let game_dir = app_data_dir.join("game");
+    // Debug logging for path resolution (especially helpful for AppImage debugging)
+    #[cfg(debug_assertions)]
+    {
+        eprintln!("[Paths] Base directory: {:?}", base_dir);
+        eprintln!("[Paths] Game directory: {:?}", game_dir);
+    }
+
+    // In release mode, log only if RUST_LOG is set
+    #[cfg(not(debug_assertions))]
+    {
+        if std::env::var("RUST_LOG").is_ok() {
+            eprintln!("[Paths] Base directory: {:?}", base_dir);
+            eprintln!("[Paths] Game directory: {:?}", game_dir);
+        }
+    }
 
     Ok(game_dir)
+}
+
+/// Get the persistent data directory that works across all environments (including AppImage)
+///
+/// This function explicitly uses HOME or XDG_DATA_HOME to avoid AppImage sandbox temp directories.
+///
+/// Returns:
+/// - Linux: $HOME/.wowid3 (or $XDG_DATA_HOME/wowid3-launcher if XDG_DATA_HOME is set)
+/// - macOS: ~/Library/Application Support/wowid3-launcher
+/// - Windows: %USERPROFILE%\.wowid3
+pub fn get_persistent_data_dir() -> Result<PathBuf> {
+    #[cfg(target_os = "linux")]
+    {
+        // On Linux, prefer XDG_DATA_HOME if set, otherwise use HOME
+        if let Ok(xdg_data) = std::env::var("XDG_DATA_HOME") {
+            let path = PathBuf::from(xdg_data).join("wowid3-launcher");
+            return Ok(path);
+        }
+
+        if let Ok(home) = std::env::var("HOME") {
+            // Use ~/.wowid3 for simpler path
+            let path = PathBuf::from(home).join(".wowid3");
+            return Ok(path);
+        }
+
+        anyhow::bail!("Could not determine home directory (HOME not set)");
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(home) = std::env::var("HOME") {
+            let path = PathBuf::from(home)
+                .join("Library")
+                .join("Application Support")
+                .join("wowid3-launcher");
+            return Ok(path);
+        }
+
+        anyhow::bail!("Could not determine home directory (HOME not set)");
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(userprofile) = std::env::var("USERPROFILE") {
+            let path = PathBuf::from(userprofile).join(".wowid3");
+            return Ok(path);
+        }
+
+        if let Ok(homepath) = std::env::var("HOMEPATH") {
+            if let Ok(homedrive) = std::env::var("HOMEDRIVE") {
+                let path = PathBuf::from(format!("{}{}", homedrive, homepath)).join(".wowid3");
+                return Ok(path);
+            }
+        }
+
+        anyhow::bail!("Could not determine user profile directory");
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        anyhow::bail!("Unsupported operating system");
+    }
 }
 
 /// Resolve a game directory path to an absolute path
 ///
 /// If the path is already absolute, return it as-is.
-/// If it's relative, resolve it relative to the app local data directory.
-pub fn resolve_game_directory(app: &tauri::AppHandle, path: &PathBuf) -> Result<PathBuf> {
+/// If it's relative, resolve it relative to the persistent data directory.
+pub fn resolve_game_directory(_app: &tauri::AppHandle, path: &PathBuf) -> Result<PathBuf> {
     if path.is_absolute() {
         Ok(path.clone())
     } else {
-        // Relative paths are resolved relative to app local data dir
-        let app_data_dir = app
-            .path()
-            .app_local_data_dir()
-            .context("Failed to get app local data directory")?;
-
-        Ok(app_data_dir.join(path))
+        // Relative paths are resolved relative to persistent data dir
+        let base_dir = get_persistent_data_dir()?;
+        Ok(base_dir.join(path))
     }
 }
 

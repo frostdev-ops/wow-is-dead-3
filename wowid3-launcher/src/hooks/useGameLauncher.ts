@@ -200,31 +200,31 @@ export function useGameLauncher(): UseGameLauncherReturn {
 
     const setupListeners = async () => {
       try {
-        // Listen for log events
+      // Listen for log events
         const unlistenLog = await listen<MinecraftLogEvent>('minecraft-log', (event) => {
-          logger.debug(LogCategory.MINECRAFT, event.payload.message, {
-            metadata: { level: event.payload.level },
-          });
-
-          if (event.payload.level === 'error') {
-            logger.error(LogCategory.MINECRAFT, `Game error: ${event.payload.message}`);
-          }
+        logger.debug(LogCategory.MINECRAFT, event.payload.message, {
+          metadata: { level: event.payload.level },
         });
 
-        // Listen for exit events
+        if (event.payload.level === 'error') {
+          logger.error(LogCategory.MINECRAFT, `Game error: ${event.payload.message}`);
+        }
+      });
+
+      // Listen for exit events
         const unlistenExit = await listen<MinecraftExitEvent>('minecraft-exit', (event) => {
-          handleGameExit(event.payload.exit_code, event.payload.crashed);
-        });
+        handleGameExit(event.payload.exit_code, event.payload.crashed);
+      });
 
-        // Listen for crash events
+      // Listen for crash events
         const unlistenCrash = await listen<MinecraftCrashEvent>('minecraft-crash', (event) => {
-          logger.error(LogCategory.MINECRAFT, `Game crash: ${event.payload.message}`);
-          setError(
-            new LauncherError(LauncherErrorCode.MC_LAUNCH_FAILED, event.payload.message)
-          );
-        });
+        logger.error(LogCategory.MINECRAFT, `Game crash: ${event.payload.message}`);
+        setError(
+          new LauncherError(LauncherErrorCode.MC_LAUNCH_FAILED, event.payload.message)
+        );
+      });
 
-        unlisteners = [unlistenLog, unlistenExit, unlistenCrash];
+      unlisteners = [unlistenLog, unlistenExit, unlistenCrash];
       } catch (err) {
         logger.error(LogCategory.MINECRAFT, 'Failed to setup event listeners:', err instanceof Error ? err : new Error(String(err)));
       }

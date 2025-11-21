@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 /// 3. Copy the "Application ID" from General Information
 /// 4. Go to Rich Presence → Art Assets and upload a Minecraft icon (name it "minecraft")
 /// 5. Replace the placeholder below with your real Application ID
-const DISCORD_APP_ID: &str = "1234567890123456789"; // TODO: Replace with real Discord App ID
+const DISCORD_APP_ID: &str = "1251233593062068315";
 
 /// Discord RPC client manager
 #[derive(Clone)]

@@ -1,4 +1,5 @@
 import { useState, useEffect, memo } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { ServerStatus, PlayerInfo } from '../stores/serverStore';
 import { Card } from './ui/Card';
 import { resolvePlayerName } from '../hooks/useTauriCommands';
@@ -9,9 +10,15 @@ interface PlayerListProps {
   trackerState?: TrackerState | null;
 }
 
+interface AvatarData {
+  data: string;
+  content_type: string;
+}
+
 const PlayerItem = memo(({ player }: { player: PlayerInfo | PlayerExt }) => {
   const [imgError, setImgError] = useState(false);
   const [displayName, setDisplayName] = useState(player.name);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   // Use ID for skin if available, otherwise fallback to name
   // @ts-ignore - uuid vs id property difference
@@ -24,8 +31,72 @@ const PlayerItem = memo(({ player }: { player: PlayerInfo | PlayerExt }) => {
   const dimension = (player as PlayerExt).dimension;
   const position = (player as PlayerExt).position;
 
+  // Fetch avatar using Tauri backend (bypasses CSP in production)
   useEffect(() => {
-    // If the name is "Anonymous Player" and we have an ID, try to resolve the real name
+    let mounted = true;
+
+    const fetchAvatar = async () => {
+      try {
+        // Fetch skin from backend
+        const data = await invoke<AvatarData>('cmd_fetch_avatar', {
+          username: skinIdentifier
+        });
+
+        if (!mounted) return;
+
+        // Convert to data URI
+        const fullSkinDataUri = `data:${data.content_type};base64,${data.data}`;
+
+        // Load and crop to just the head
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+
+        img.onload = () => {
+          if (!mounted) return;
+
+          // Create canvas to extract head (8x8 face from skin)
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+
+          if (!ctx) {
+            setImgError(true);
+            return;
+          }
+
+          // Scale up for crisp rendering
+          const scale = 8;
+          canvas.width = 8 * scale;
+          canvas.height = 8 * scale;
+          ctx.imageSmoothingEnabled = false;
+
+          // Extract face (8x8 at position 8,8 in the 64x64 skin)
+          ctx.drawImage(img, 8, 8, 8, 8, 0, 0, 8 * scale, 8 * scale);
+
+          const headDataUri = canvas.toDataURL('image/png');
+          setAvatarUrl(headDataUri);
+        };
+
+        img.onerror = () => {
+          if (mounted) setImgError(true);
+        };
+
+        img.src = fullSkinDataUri;
+
+      } catch (error) {
+        console.error('[PlayerList] Failed to fetch avatar:', error);
+        if (mounted) setImgError(true);
+      }
+    };
+
+    fetchAvatar();
+
+    return () => {
+      mounted = false;
+    };
+  }, [skinIdentifier]);
+
+  // Resolve player name
+  useEffect(() => {
     if (player.name === 'Anonymous Player' && id) {
       resolvePlayerName(id)
         .then((name) => {
@@ -54,11 +125,12 @@ const PlayerItem = memo(({ player }: { player: PlayerInfo | PlayerExt }) => {
   return (
     <div className="group relative flex items-center gap-2 p-2 bg-slate-700 rounded hover:bg-slate-600 transition-colors">
       <div className="w-8 h-8 rounded overflow-hidden flex-shrink-0 bg-slate-800">
-        {!imgError ? (
+        {!imgError && avatarUrl ? (
           <img
-            src={`https://minotar.net/helm/${skinIdentifier}/64.png`}
+            src={avatarUrl}
             alt={displayName}
             className="w-full h-full object-cover"
+            style={{ imageRendering: 'pixelated' }}
             onError={() => setImgError(true)}
           />
         ) : (

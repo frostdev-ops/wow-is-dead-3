@@ -36,13 +36,14 @@ export default function LauncherHome() {
   const { versionId, isInstalled: minecraftInstalled } = useMinecraftInstaller();
   
   // Modpack Store (direct access for UI that hasn't been refactored yet)
-  const { 
-    installedVersion, 
-    latestManifest, 
-    updateAvailable, 
-    isDownloading, 
-    isBlockedForInstall, 
-    downloadProgress 
+  const {
+    installedVersion,
+    latestManifest,
+    updateAvailable,
+    isDownloading,
+    isBlockedForInstall,
+    downloadProgress,
+    checkUpdates
   } = useModpack();
 
   // Local State
@@ -147,13 +148,64 @@ export default function LauncherHome() {
       return;
     }
 
-    if (updateAvailable) {
-      try {
-        await performInstall({ blockUi: true });
-      } catch (err) {
-        // Error handled by hook state
+    // LAUNCHER VERSION CHECK: Block launch if launcher itself is outdated
+    try {
+      console.log('[Play] Checking launcher version...');
+      const { checkLauncherUpdate } = await import('../hooks/useTauriCommands');
+      const launcherUpdate = await checkLauncherUpdate();
+
+      console.log('[Play] Launcher update check:', launcherUpdate);
+
+      // If update is available and mandatory, BLOCK launch
+      if (launcherUpdate.available && launcherUpdate.mandatory) {
+        console.error('[Play] ✗ Launcher update is MANDATORY! Current version outdated.');
+        addToast(
+          `Launcher update required! Version ${launcherUpdate.version} is available. Please restart to update.`,
+          'error'
+        );
+        return; // BLOCK launch - launcher must be updated
       }
-      return;
+
+      // If update is available but not mandatory, warn but allow launch
+      if (launcherUpdate.available) {
+        console.warn('[Play] ⚠ Launcher update available (optional):', launcherUpdate.version);
+        addToast(
+          `Launcher update ${launcherUpdate.version} available (optional)`,
+          'info'
+        );
+      } else {
+        console.log('[Play] ✓ Launcher is up to date');
+      }
+    } catch (err) {
+      console.error('[Play] Launcher version check failed:', err);
+      // Don't block launch if check fails - server might not have launcher manifest yet
+      console.warn('[Play] ⚠ Continuing without launcher version check');
+    }
+
+    // MODPACK VERSION CHECK: Simple caveman-style "do numbers match?" check before EVERY launch
+    try {
+      console.log('[Play] Checking modpack version...');
+      const serverManifest = await checkUpdates();
+      const myVersion = installedVersion;
+      const serverVersion = serverManifest.version;
+
+      console.log('[Play] Modpack version check:', { myVersion, serverVersion });
+
+      // Simple number comparison - do they match?
+      if (myVersion !== serverVersion) {
+        console.log('[Play] Modpack version mismatch detected! Forcing update...');
+        addToast(`Modpack update required: ${myVersion || 'none'} → ${serverVersion}`, 'info');
+
+        // FORCE update - block launch until updated
+        await performInstall({ blockUi: true });
+        return;
+      }
+
+      console.log('[Play] ✓ Modpack versions match, proceeding with launch');
+    } catch (err) {
+      console.error('[Play] Modpack version check failed:', err);
+      addToast(`Failed to verify modpack version: ${err}`, 'error');
+      return; // Don't launch if we can't verify version
     }
 
     if (minecraftInstalled && versionId && user.session_id) {
@@ -169,15 +221,16 @@ export default function LauncherHome() {
       }
     }
   }, [
-    isAuthenticated, 
-    user, 
-    login, 
-    finishDeviceCodeAuth, 
-    addToast, 
-    updateAvailable, 
-    performInstall, 
-    minecraftInstalled, 
-    versionId, 
+    isAuthenticated,
+    user,
+    login,
+    finishDeviceCodeAuth,
+    addToast,
+    checkUpdates,
+    installedVersion,
+    performInstall,
+    minecraftInstalled,
+    versionId,
     launchGame
   ]);
 

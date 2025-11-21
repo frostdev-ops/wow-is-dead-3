@@ -10,7 +10,6 @@ export interface AuthenticationCardProps {
     username: string;
     uuid: string;
     skin_url?: string;
-    access_token?: string;
     session_id: string;
   };
   minecraftInstalled: boolean;
@@ -44,7 +43,7 @@ export const AuthenticationCard: FC<AuthenticationCardProps> = ({
         <div className="flex items-center space-x-4">
           <SecureAvatar
             username={user.username}
-            className="w-14 h-14 shadow-lg"
+            className="w-14 h-14 shadow-lg rounded"
             alt={user.username}
           />
           <div>

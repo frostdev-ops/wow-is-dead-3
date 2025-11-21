@@ -33,7 +33,11 @@ use std::time::Duration as StdDuration;
 use uuid::Uuid;
 
 use super::logger::{log_auth, log_storage};
-use super::encrypted_storage::{save_encrypted_profile, load_encrypted_profile, delete_encrypted_profile};
+use super::encrypted_storage::{
+    save_encrypted_profile, load_encrypted_profile, delete_encrypted_profile,
+    save_encrypted_tokens, load_encrypted_tokens, delete_encrypted_tokens,
+    TokenData,
+};
 
 const KEYRING_SERVICE: &str = "wowid3-launcher";
 const KEYRING_USER: &str = "minecraft-auth";
@@ -52,14 +56,6 @@ const XSTS_AUTH_URL: &str = "https://xsts.auth.xboxlive.com/xsts/authorize";
 const MINECRAFT_AUTH_URL: &str = "https://api.minecraftservices.com/launcher/login";
 const MINECRAFT_PROFILE_URL: &str = "https://api.minecraftservices.com/minecraft/profile";
 const MINECRAFT_ENTITLEMENTS_URL: &str = "https://api.minecraftservices.com/entitlements/mcstore";
-
-// Internal token storage (not exposed to frontend)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct TokenData {
-    pub access_token: String,
-    pub refresh_token: Option<String>,
-    pub expires_at: Option<DateTime<Utc>>,
-}
 
 // Public profile (exposed to frontend - no tokens)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -504,42 +500,257 @@ async fn poll_for_token(device_code: String, interval: u64) -> Result<MicrosoftT
 
 /// Store tokens securely by session_id
 fn store_tokens(session_id: &str, tokens: &TokenData) -> Result<()> {
-    let entry = Entry::new(KEYRING_SERVICE, &format!("{}-{}", KEYRING_TOKENS, session_id))?;
-    let json = serde_json::to_string(tokens)?;
-    entry.set_password(&json)
-        .context("Failed to store tokens in keyring")?;
-    Ok(())
-}
+    eprintln!("[AUTH] 🔐 store_tokens() called");
+    eprintln!("[AUTH]   session_id: {}", session_id);
+    eprintln!("[AUTH]   access_token length: {} bytes", tokens.access_token.len());
+    eprintln!("[AUTH]   has_refresh_token: {}", tokens.refresh_token.is_some());
 
-/// Retrieve tokens by session_id
-fn get_tokens(session_id: &str) -> Result<Option<TokenData>> {
-    let entry = Entry::new(KEYRING_SERVICE, &format!("{}-{}", KEYRING_TOKENS, session_id))?;
-    match entry.get_password() {
-        Ok(json) => {
-            let tokens: TokenData = serde_json::from_str(&json)
-                .context("Failed to parse tokens from keyring")?;
-            Ok(Some(tokens))
+    let keyring_key = format!("{}-{}", KEYRING_TOKENS, session_id);
+    eprintln!("[AUTH]   keyring_key: {}", keyring_key);
+    eprintln!("[AUTH]   keyring_service: {}", KEYRING_SERVICE);
+
+    let entry = match Entry::new(KEYRING_SERVICE, &keyring_key) {
+        Ok(e) => {
+            eprintln!("[AUTH]   ✓ Created keyring entry");
+            e
         }
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(anyhow!("Failed to get tokens from keyring: {}", e)),
+        Err(e) => {
+            eprintln!("[AUTH]   ✗ Failed to create keyring entry: {}", e);
+            return Err(anyhow!("Failed to create keyring entry: {}", e));
+        }
+    };
+
+    let json = match serde_json::to_string(tokens) {
+        Ok(j) => {
+            eprintln!("[AUTH]   ✓ Serialized tokens to JSON ({} bytes)", j.len());
+            j
+        }
+        Err(e) => {
+            eprintln!("[AUTH]   ✗ Failed to serialize tokens: {}", e);
+            return Err(anyhow!("Failed to serialize tokens: {}", e));
+        }
+    };
+
+    let keyring_result = match entry.set_password(&json) {
+        Ok(_) => {
+            eprintln!("[AUTH]   ✓ Successfully stored tokens in keyring");
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("[AUTH]   ✗ Failed to set password in keyring: {}", e);
+            Err(e)
+        }
+    };
+
+    // Always also save to encrypted file as primary fallback
+    eprintln!("[AUTH]   Saving tokens to encrypted file as backup...");
+    let encrypted_result = save_encrypted_tokens(session_id, tokens);
+
+    // Success if either storage method succeeds (just like profiles)
+    match (keyring_result, &encrypted_result) {
+        (Ok(_), _) => {
+            eprintln!("[AUTH]   ✓ Tokens stored successfully via keyring");
+            log_auth("TOKEN_STORE", &format!("Stored tokens for session (via keyring): {}", session_id));
+            Ok(())
+        }
+        (Err(_), Ok(_)) => {
+            eprintln!("[AUTH]   ✓ Tokens stored successfully via encrypted file (keyring failed, using fallback)");
+            log_auth("TOKEN_STORE", &format!("Stored tokens for session (via encrypted file): {}", session_id));
+            Ok(())
+        }
+        (Err(k_err), Err(e_err)) => {
+            eprintln!("[AUTH]   ✗ Failed to store tokens in both keyring and encrypted file");
+            eprintln!("[AUTH]      keyring error: {}", k_err);
+            eprintln!("[AUTH]      encrypted file error: {}", e_err);
+            log_auth("TOKEN_STORE_FAILED", &format!("Keyring: {}, Encrypted: {}", k_err, e_err));
+            Err(anyhow!("Failed to store tokens to both backends: keyring={}, encrypted={}", k_err, e_err))
+        }
     }
 }
 
-/// Delete tokens by session_id
+/// Retrieve tokens by session_id (try keyring first, then encrypted file)
+fn get_tokens(session_id: &str) -> Result<Option<TokenData>> {
+    eprintln!("[AUTH] 🔓 get_tokens() called");
+    eprintln!("[AUTH]   session_id: {}", session_id);
+
+    let keyring_key = format!("{}-{}", KEYRING_TOKENS, session_id);
+    eprintln!("[AUTH]   keyring_key: {}", keyring_key);
+    eprintln!("[AUTH]   keyring_service: {}", KEYRING_SERVICE);
+
+    let entry = match Entry::new(KEYRING_SERVICE, &keyring_key) {
+        Ok(e) => {
+            eprintln!("[AUTH]   ✓ Created keyring entry for retrieval");
+            e
+        }
+        Err(e) => {
+            eprintln!("[AUTH]   ✗ Failed to create keyring entry: {}", e);
+            eprintln!("[AUTH]   Falling back to encrypted file storage...");
+            // Try encrypted file instead
+            return match load_encrypted_tokens(session_id) {
+                Ok(Some(tokens)) => {
+                    eprintln!("[AUTH]   ✓ Successfully retrieved tokens from encrypted file");
+                    log_auth("TOKEN_RETRIEVE", &format!("Retrieved tokens from encrypted file for session: {}", session_id));
+                    Ok(Some(tokens))
+                }
+                Ok(None) => {
+                    eprintln!("[AUTH]   ✗ No tokens in encrypted file either");
+                    log_auth("TOKEN_RETRIEVE_NOT_FOUND", &format!("No tokens for session: {}", session_id));
+                    Ok(None)
+                }
+                Err(e) => {
+                    eprintln!("[AUTH]   ✗ Error loading tokens from encrypted file: {}", e);
+                    log_auth("TOKEN_RETRIEVE_ERROR", &format!("Encrypted file error: {}", e));
+                    Err(anyhow!("Failed to get tokens from encrypted file: {}", e))
+                }
+            };
+        }
+    };
+
+    match entry.get_password() {
+        Ok(json) => {
+            eprintln!("[AUTH]   ✓ Retrieved password from keyring ({} bytes)", json.len());
+            match serde_json::from_str(&json) {
+                Ok(tokens) => {
+                    eprintln!("[AUTH]   ✓ Successfully deserialized tokens from keyring");
+                    log_auth("TOKEN_RETRIEVE", &format!("Retrieved tokens from keyring for session: {}", session_id));
+                    Ok(Some(tokens))
+                }
+                Err(e) => {
+                    eprintln!("[AUTH]   ✗ Failed to parse tokens from JSON: {}", e);
+                    eprintln!("[AUTH]   Trying encrypted file as fallback...");
+                    // Try encrypted file if JSON parsing fails
+                    match load_encrypted_tokens(session_id) {
+                        Ok(Some(tokens)) => {
+                            eprintln!("[AUTH]   ✓ Successfully retrieved tokens from encrypted file");
+                            Ok(Some(tokens))
+                        }
+                        Ok(None) => Ok(None),
+                        Err(e2) => {
+                            eprintln!("[AUTH]   ✗ Encrypted file also failed: {}", e2);
+                            Err(anyhow!("Failed to parse tokens from keyring and encrypted file: keyring={}, encrypted={}", e, e2))
+                        }
+                    }
+                }
+            }
+        }
+        Err(keyring::Error::NoEntry) => {
+            eprintln!("[AUTH]   ✗ No entry found in keyring, trying encrypted file...");
+            // Try encrypted file as fallback
+            match load_encrypted_tokens(session_id) {
+                Ok(Some(tokens)) => {
+                    eprintln!("[AUTH]   ✓ Successfully retrieved tokens from encrypted file");
+                    log_auth("TOKEN_RETRIEVE", &format!("Retrieved tokens from encrypted file (keyring had no entry) for session: {}", session_id));
+                    Ok(Some(tokens))
+                }
+                Ok(None) => {
+                    eprintln!("[AUTH]   ✗ No entry found in encrypted file either");
+                    log_auth("TOKEN_RETRIEVE_NOT_FOUND", &format!("No tokens for session: {}", session_id));
+                    Ok(None)
+                }
+                Err(e) => {
+                    eprintln!("[AUTH]   ✗ Error retrieving from encrypted file: {}", e);
+                    log_auth("TOKEN_RETRIEVE_ERROR", &format!("Encrypted file error: {}", e));
+                    Err(anyhow!("Failed to get tokens from encrypted file: {}", e))
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("[AUTH]   ✗ Error retrieving password from keyring: {}", e);
+            eprintln!("[AUTH]   Trying encrypted file as fallback...");
+            // Try encrypted file as fallback
+            match load_encrypted_tokens(session_id) {
+                Ok(Some(tokens)) => {
+                    eprintln!("[AUTH]   ✓ Successfully retrieved tokens from encrypted file");
+                    Ok(Some(tokens))
+                }
+                Ok(None) => Ok(None),
+                Err(e2) => {
+                    eprintln!("[AUTH]   ✗ Encrypted file also failed: {}", e2);
+                    log_auth("TOKEN_RETRIEVE_ERROR", &format!("Keyring error: {}, Encrypted: {}", e, e2));
+                    Err(anyhow!("Failed to get tokens from keyring and encrypted file: keyring={}, encrypted={}", e, e2))
+                }
+            }
+        }
+    }
+}
+
+/// Delete tokens by session_id (delete from both keyring and encrypted file)
 fn delete_tokens(session_id: &str) -> Result<()> {
-    let entry = Entry::new(KEYRING_SERVICE, &format!("{}-{}", KEYRING_TOKENS, session_id))?;
-    match entry.delete_credential() {
-        Ok(_) => Ok(()),
-        Err(keyring::Error::NoEntry) => Ok(()), // Already deleted, that's fine
-        Err(e) => Err(anyhow!("Failed to delete tokens from keyring: {}", e)),
+    eprintln!("[AUTH] 🗑️  delete_tokens() called for session_id: {}", session_id);
+
+    // Try to delete from keyring
+    let keyring_result = {
+        match Entry::new(KEYRING_SERVICE, &format!("{}-{}", KEYRING_TOKENS, session_id)) {
+            Ok(entry) => match entry.delete_credential() {
+                Ok(_) => {
+                    eprintln!("[AUTH]   ✓ Deleted from keyring");
+                    Ok(())
+                }
+                Err(keyring::Error::NoEntry) => {
+                    eprintln!("[AUTH]   ℹ️  No entry in keyring (already deleted, that's fine)");
+                    Ok(())
+                }
+                Err(e) => {
+                    eprintln!("[AUTH]   ✗ Failed to delete from keyring: {}", e);
+                    Err(e)
+                }
+            },
+            Err(e) => {
+                eprintln!("[AUTH]   ✗ Failed to create keyring entry: {}", e);
+                Err(e)
+            }
+        }
+    };
+
+    // Also delete from encrypted file
+    let encrypted_result = delete_encrypted_tokens(session_id);
+
+    // Log results
+    match (keyring_result, encrypted_result) {
+        (Ok(_), Ok(_)) => {
+            log_auth("TOKEN_DELETE", &format!("Tokens deleted from both backends for session: {}", session_id));
+            Ok(())
+        }
+        (Ok(_), Err(e)) => {
+            eprintln!("[AUTH]   ⚠️  Keyring succeeded but encrypted file deletion failed: {}", e);
+            log_auth("TOKEN_DELETE", &format!("Keyring deleted but encrypted file failed: {}", e));
+            Ok(()) // Still return OK since keyring succeeded
+        }
+        (Err(e), Ok(_)) => {
+            eprintln!("[AUTH]   ⚠️  Encrypted file succeeded but keyring deletion failed: {}", e);
+            log_auth("TOKEN_DELETE", &format!("Encrypted file deleted but keyring failed: {}", e));
+            Ok(()) // Still return OK since encrypted file succeeded
+        }
+        (Err(k_err), Err(e_err)) => {
+            eprintln!("[AUTH]   ✗ Failed to delete from both backends");
+            log_auth("TOKEN_DELETE_FAILED", &format!("Keyring: {}, Encrypted: {}", k_err, e_err));
+            Err(anyhow!("Failed to delete tokens from both backends: keyring={}, encrypted={}", k_err, e_err))
+        }
     }
 }
 
 /// Get access token by session_id (for internal use only)
 pub fn get_access_token_by_session_id(session_id: &str) -> Result<String> {
-    let tokens = get_tokens(session_id)?
-        .ok_or_else(|| anyhow!("No tokens found for session_id"))?;
-    Ok(tokens.access_token)
+    eprintln!("[AUTH] 🎮 get_access_token_by_session_id() called");
+    eprintln!("[AUTH]   session_id: {}", session_id);
+
+    match get_tokens(session_id) {
+        Ok(Some(tokens)) => {
+            eprintln!("[AUTH]   ✓ Got tokens for session, extracting access_token");
+            eprintln!("[AUTH]   access_token length: {} bytes", tokens.access_token.len());
+            Ok(tokens.access_token)
+        }
+        Ok(None) => {
+            eprintln!("[AUTH]   ✗ get_tokens() returned None for session_id");
+            Err(anyhow!(
+                "No tokens found for session_id. Your session has expired or you're using an old profile. Please log out and log in again."
+            ))
+        }
+        Err(e) => {
+            eprintln!("[AUTH]   ✗ get_tokens() returned error: {}", e);
+            Err(e)
+        }
+    }
 }
 
 /// Get device code info for user to complete authentication
@@ -581,9 +792,10 @@ pub async fn complete_device_code_auth(device_code: String, interval: u64) -> Re
     println!("Fetched player profile: {}", profile_response.name);
 
     let expires_at = Utc::now() + Duration::seconds(ms_token.expires_in as i64);
-    
+
     // Generate session ID
     let session_id = Uuid::new_v4().to_string();
+    eprintln!("[AUTH] Generated session_id: {}", session_id);
 
     // Store tokens separately
     let tokens = TokenData {
@@ -591,7 +803,9 @@ pub async fn complete_device_code_auth(device_code: String, interval: u64) -> Re
         refresh_token: ms_token.refresh_token,
         expires_at: Some(expires_at),
     };
+    eprintln!("[AUTH] Attempting to store tokens for session: {}", session_id);
     store_tokens(&session_id, &tokens)?;
+    eprintln!("[AUTH] ✓ Tokens stored successfully!");
 
     // Create profile without tokens (only session_id)
     let profile = MinecraftProfile {
@@ -604,6 +818,7 @@ pub async fn complete_device_code_auth(device_code: String, interval: u64) -> Re
         expires_at: Some(expires_at),
     };
 
+    eprintln!("[AUTH] Saving profile to secure storage: {}", profile.username);
     save_user_profile(&profile)?;
     println!("Saved profile to secure storage");
 
@@ -1000,9 +1215,8 @@ mod tests {
         let profile = MinecraftProfile {
             uuid: "test-uuid".to_string(),
             username: "TestPlayer".to_string(),
-            access_token: "test-token".to_string(),
+            session_id: "test-session-id".to_string(),
             skin_url: Some("https://example.com/skin.png".to_string()),
-            refresh_token: Some("refresh-token".to_string()),
             expires_at: Some(Utc::now()),
         };
 
@@ -1010,11 +1224,13 @@ mod tests {
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("test-uuid"));
         assert!(json.contains("TestPlayer"));
+        assert!(json.contains("test-session-id"));
 
         // Test deserialization
         let deserialized: MinecraftProfile = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.uuid, profile.uuid);
         assert_eq!(deserialized.username, profile.username);
+        assert_eq!(deserialized.session_id, profile.session_id);
     }
 
     #[test]
@@ -1022,9 +1238,8 @@ mod tests {
         let profile = MinecraftProfile {
             uuid: "uuid-123".to_string(),
             username: "Player".to_string(),
-            access_token: "token-abc".to_string(),
+            session_id: "session-abc".to_string(),
             skin_url: None,
-            refresh_token: None,
             expires_at: None,
         };
 
@@ -1033,8 +1248,8 @@ mod tests {
         let deserialized: MinecraftProfile = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.uuid, "uuid-123");
         assert_eq!(deserialized.username, "Player");
+        assert_eq!(deserialized.session_id, "session-abc");
         assert_eq!(deserialized.skin_url, None);
-        assert_eq!(deserialized.refresh_token, None);
         assert_eq!(deserialized.expires_at, None);
     }
 

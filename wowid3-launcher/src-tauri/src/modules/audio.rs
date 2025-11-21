@@ -11,11 +11,9 @@ const MAX_AUDIO_SIZE_BYTES: u64 = 50 * 1024 * 1024; // 50 MB limit
 const AUDIO_CACHE_DIR: &str = "cache/audio";
 
 /// Get the cache directory for audio files
-fn get_cache_dir(app_handle: &tauri::AppHandle) -> Result<PathBuf> {
-    let cache_dir = app_handle
-        .path()
-        .app_cache_dir()
-        .context("Failed to get app cache directory")?
+fn get_cache_dir(_app_handle: &tauri::AppHandle) -> Result<PathBuf> {
+    // Use persistent data directory to avoid AppImage temp path issues
+    let cache_dir = super::paths::get_persistent_data_dir()?
         .join(AUDIO_CACHE_DIR);
 
     Ok(cache_dir)

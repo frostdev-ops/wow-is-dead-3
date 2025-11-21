@@ -47,11 +47,9 @@ fn get_java_runtime_info(base_url: &str) -> Result<JavaRuntimeInfo> {
 }
 
 /// Get the cache directory for Java runtime
-fn get_cache_dir(app_handle: &tauri::AppHandle) -> Result<PathBuf> {
-    let cache_dir = app_handle
-        .path()
-        .app_cache_dir()
-        .context("Failed to get app cache directory")?
+fn get_cache_dir(_app_handle: &tauri::AppHandle) -> Result<PathBuf> {
+    // Use persistent data directory to avoid AppImage temp path issues
+    let cache_dir = super::paths::get_persistent_data_dir()?
         .join(JAVA_CACHE_DIR);
 
     Ok(cache_dir)

@@ -13,17 +13,13 @@ use sha2::Digest;
 use super::auth::MinecraftProfile;
 use super::logger::log_storage;
 
-const STORAGE_DIR_NAME: &str = "wowid3-launcher";
 const STORAGE_FILE_NAME: &str = "session.enc";
 
 fn get_storage_dir() -> Result<PathBuf> {
-    if let Some(data_dir) = dirs::data_local_dir() {
-        let storage_dir = data_dir.join(STORAGE_DIR_NAME);
-        fs::create_dir_all(&storage_dir)?;
-        Ok(storage_dir)
-    } else {
-        Err(anyhow!("Could not determine data directory"))
-    }
+    // Use persistent data directory to avoid AppImage temp path issues
+    let storage_dir = super::paths::get_persistent_data_dir()?;
+    fs::create_dir_all(&storage_dir)?;
+    Ok(storage_dir)
 }
 
 fn get_storage_path() -> Result<PathBuf> {
@@ -142,6 +138,126 @@ pub fn delete_encrypted_profile() -> Result<()> {
     if storage_path.exists() {
         fs::remove_file(&storage_path)?;
         log_storage("DELETE", "encrypted_file", true, "Encrypted profile deleted");
+    }
+    Ok(())
+}
+
+// Token storage functions (as fallback when keyring fails)
+// Tokens are stored in a separate encrypted file for each session_id
+
+use serde::{Deserialize, Serialize};
+use chrono::{DateTime, Utc};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenData {
+    pub access_token: String,
+    pub refresh_token: Option<String>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+fn get_tokens_storage_dir() -> Result<PathBuf> {
+    let storage_dir = super::paths::get_persistent_data_dir()?;
+    let tokens_dir = storage_dir.join("tokens");
+    fs::create_dir_all(&tokens_dir)?;
+    Ok(tokens_dir)
+}
+
+fn get_tokens_storage_path(session_id: &str) -> Result<PathBuf> {
+    let tokens_dir = get_tokens_storage_dir()?;
+    Ok(tokens_dir.join(format!("{}.enc", session_id)))
+}
+
+pub fn save_encrypted_tokens(session_id: &str, tokens: &TokenData) -> Result<()> {
+    eprintln!("[AUTH] 📁 save_encrypted_tokens() called for session_id: {}", session_id);
+
+    let key = generate_machine_key()?;
+    let cipher = Aes256Gcm::new(&key.into());
+
+    let mut rng = rand::thread_rng();
+    let nonce_bytes: [u8; 12] = rng.gen();
+    let nonce = Nonce::from_slice(&nonce_bytes);
+
+    // Serialize tokens to JSON
+    let tokens_json = serde_json::to_string(tokens)?;
+
+    // Encrypt
+    let ciphertext = cipher
+        .encrypt(nonce, Payload::from(tokens_json.as_bytes()))
+        .map_err(|e| anyhow!("Token encryption failed: {}", e))?;
+
+    // Create envelope: nonce + ciphertext
+    let envelope = json!({
+        "v": 1,
+        "nonce": STANDARD.encode(&nonce_bytes),
+        "ciphertext": STANDARD.encode(&ciphertext),
+    });
+
+    // Write to file
+    let storage_path = get_tokens_storage_path(session_id)?;
+    let envelope_json = serde_json::to_string(&envelope)?;
+    fs::write(&storage_path, envelope_json)?;
+
+    eprintln!("[AUTH]   ✓ Tokens encrypted and saved to: {:?}", storage_path);
+    log_storage("SAVE", "encrypted_tokens", true, &format!("Tokens saved for session: {}", session_id));
+    Ok(())
+}
+
+pub fn load_encrypted_tokens(session_id: &str) -> Result<Option<TokenData>> {
+    eprintln!("[AUTH] 📁 load_encrypted_tokens() called for session_id: {}", session_id);
+
+    let storage_path = get_tokens_storage_path(session_id)?;
+
+    // Check if file exists
+    if !storage_path.exists() {
+        eprintln!("[AUTH]   ℹ️  No encrypted tokens file found for this session");
+        log_storage("LOAD", "encrypted_tokens", true, "No tokens file found (normal)");
+        return Ok(None);
+    }
+
+    log_storage("LOAD", "encrypted_tokens", true, "Reading encrypted tokens file");
+
+    // Read and parse envelope
+    let envelope_json = fs::read_to_string(&storage_path)?;
+    let envelope: Value = serde_json::from_str(&envelope_json)?;
+
+    // Extract components
+    let nonce_b64 = envelope
+        .get("nonce")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("Missing nonce in tokens envelope"))?;
+    let ciphertext_b64 = envelope
+        .get("ciphertext")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("Missing ciphertext in tokens envelope"))?;
+
+    // Decode from base64
+    let nonce_bytes = STANDARD.decode(nonce_b64)?;
+    let ciphertext = STANDARD.decode(ciphertext_b64)?;
+
+    // Decrypt
+    let key = generate_machine_key()?;
+    let cipher = Aes256Gcm::new(&key.into());
+    let nonce = Nonce::from_slice(&nonce_bytes);
+
+    let plaintext = cipher
+        .decrypt(nonce, Payload::from(ciphertext.as_slice()))
+        .map_err(|e| anyhow!("Token decryption failed: {}", e))?;
+
+    // Deserialize tokens
+    let tokens_json = String::from_utf8(plaintext)?;
+    let tokens: TokenData = serde_json::from_str(&tokens_json)?;
+
+    eprintln!("[AUTH]   ✓ Tokens decrypted successfully");
+    log_storage("LOAD", "encrypted_tokens", true, "Tokens decrypted successfully");
+    Ok(Some(tokens))
+}
+
+pub fn delete_encrypted_tokens(session_id: &str) -> Result<()> {
+    let storage_path = get_tokens_storage_path(session_id)?;
+    if storage_path.exists() {
+        fs::remove_file(&storage_path)?;
+        eprintln!("[AUTH]   ✓ Deleted encrypted tokens for session_id: {}", session_id);
+        log_storage("DELETE", "encrypted_tokens", true, &format!("Tokens deleted for session: {}", session_id));
     }
     Ok(())
 }

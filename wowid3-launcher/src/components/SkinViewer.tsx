@@ -23,10 +23,10 @@ const SkinViewerComponentBase = ({ username, uuid, skinUrl }: SkinViewerComponen
     logger.debug(LogCategory.MINECRAFT, 'Using skin URL:', { metadata: { url: skin } });
 
     try {
-      // Create the skin viewer with smaller dimensions for head-only display
+      // Create the skin viewer - original size 300x600
       const viewer = new View({
-        width: 150,
-        height: 150,
+        width: 300,
+        height: 600,
         skin: skin,
       });
 
@@ -38,15 +38,15 @@ const SkinViewerComponentBase = ({ username, uuid, skinUrl }: SkinViewerComponen
 
       logger.debug(LogCategory.MINECRAFT, 'Viewer created and appended');
 
-      // Set up viewer options for full body display
-      viewer.zoom = 0.9;
+      // Set up viewer options - original settings
+      viewer.zoom = 1.0;
       viewer.fov = 50;
 
-      // Position camera to see full player model
-      viewer.camera.position.y = 0; // Center on full body
-      viewer.camera.position.z = 40; // Distance to see full model
+      // Adjust camera angle to view from higher up - original positioning
+      viewer.camera.position.y = 20;
+      viewer.camera.position.z = 45;
 
-      logger.debug(LogCategory.MINECRAFT, 'Full player model configured for display');
+      logger.debug(LogCategory.MINECRAFT, '3D viewer configured with original size and positioning');
 
       // Enable mouse tracking for rotation relative to the model
       let mouseX = 0;
@@ -81,12 +81,65 @@ const SkinViewerComponentBase = ({ username, uuid, skinUrl }: SkinViewerComponen
 
       window.addEventListener('mousemove', handleMouseMove);
 
+      // Wait for the model to load, then set sitting pose
+      const setSittingPose = () => {
+        if (!viewer.playerObject) {
+          return;
+        }
+
+        // Find the skin object (contains the actual body parts)
+        // Access children via type assertion since PlayerObject type doesn't include children
+        const playerObj = viewer.playerObject as any;
+        const skinObject = playerObj.children?.find((c: any) => c.name === 'skin');
+
+        if (!skinObject) {
+          return;
+        }
+
+        // Access body parts from skin object
+        skinObject.children?.forEach((part: any) => {
+          // Rotate legs for sitting (backward bend) and spread apart
+          if (part.name === 'leftLeg') {
+            part.rotation.x = -Math.PI / 2; // 90 degrees backward
+            part.rotation.z = 0.2; // Spread outward
+          }
+          if (part.name === 'rightLeg') {
+            part.rotation.x = -Math.PI / 2; // 90 degrees backward
+            part.rotation.z = -0.2; // Spread outward
+          }
+
+          // Adjust arms to extend forward (like resting on knees)
+          if (part.name === 'leftArm') {
+            part.rotation.x = -0.8; // Extend forward
+            part.rotation.z = 0.2; // Angle outward slightly
+          }
+          if (part.name === 'rightArm') {
+            part.rotation.x = -0.8; // Extend forward
+            part.rotation.z = -0.2; // Angle outward slightly
+          }
+
+          // Body rotation
+          if (part.name === 'body') {
+            part.rotation.x = -0.2; // Slight backward lean
+          }
+        });
+      };
+
+      // Try setting pose with delays to ensure model is loaded
+      setTimeout(setSittingPose, 100);
+      setTimeout(setSittingPose, 500);
+      setTimeout(setSittingPose, 1000);
+
       // Animation loop
       let animationId: number;
       let frameCount = 0;
       const animate = () => {
-        if (viewer && viewer.playerObject && viewer.playerObject.skin) {
-          const head = viewer.playerObject.skin.head;
+        if (viewer && viewer.playerObject) {
+          // Find the skin and head objects
+          // Access children via type assertion since PlayerObject type doesn't include children
+          const playerObj = viewer.playerObject as any;
+          const skinObject = playerObj.children?.find((c: any) => c.name === 'skin');
+          const head = skinObject?.children?.find((c: any) => c.name === 'head');
 
           if (head) {
             // Rotate head to follow mouse (fast response)
@@ -94,12 +147,17 @@ const SkinViewerComponentBase = ({ username, uuid, skinUrl }: SkinViewerComponen
             const currentHeadRotationX = head.rotation.x;
             head.rotation.y += (targetRotationY - currentHeadRotationY) * 0.15;
             head.rotation.x += (targetRotationX - currentHeadRotationX) * 0.15;
+
+            // Rotate body to follow mouse (slower, delayed response)
+            const currentBodyRotationY = viewer.playerObject.rotation.y;
+            const bodyTargetRotationY = targetRotationY * 0.3; // Body rotates less
+            viewer.playerObject.rotation.y += (bodyTargetRotationY - currentBodyRotationY) * 0.1;
           }
         }
 
-        // Log every 180 frames (once per 3 seconds at 60fps) for debugging
+        // Log every 60 frames (once per second at 60fps) for debugging
         frameCount++;
-        if (frameCount % 180 === 0) {
+        if (frameCount % 60 === 0) {
           logger.debug(LogCategory.MINECRAFT, 'Animation running', { metadata: { targetRotationY, targetRotationX } });
         }
 
@@ -107,9 +165,7 @@ const SkinViewerComponentBase = ({ username, uuid, skinUrl }: SkinViewerComponen
       };
 
       animate();
-      console.log('[SkinViewer] Animation loop started');
-
-      logger.debug(LogCategory.MINECRAFT, '3D viewer initialized successfully');
+      logger.debug(LogCategory.MINECRAFT, 'Animation loop started, 3D viewer initialized successfully');
 
       return () => {
         window.removeEventListener('mousemove', handleMouseMove);
@@ -131,8 +187,8 @@ const SkinViewerComponentBase = ({ username, uuid, skinUrl }: SkinViewerComponen
     <div
       ref={containerRef}
       style={{
-        width: '150px',
-        height: '150px',
+        width: '300px',
+        height: '600px',
         pointerEvents: 'none',
       }}
     />

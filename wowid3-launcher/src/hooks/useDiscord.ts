@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   discordConnect,
   discordSetPresence,
@@ -7,48 +7,124 @@ import {
   discordDisconnect,
   discordIsConnected,
 } from './useTauriCommands';
+import { useToast } from '../components/ui/ToastContainer';
+
+const MAX_RETRY_ATTEMPTS = 5;
+const RETRY_INTERVAL = 30000; // 30 seconds
 
 export const useDiscord = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { addToast } = useToast();
+
+  // Track if we've shown the initial connection status toast
+  const hasShownInitialToast = useRef(false);
+  const retryCount = useRef(0);
+  const retryInterval = useRef<number | null>(null);
+
+  // Attempt to connect to Discord
+  const attemptConnection = useCallback(async (showToast = true) => {
+    try {
+      setIsConnecting(true);
+
+      // First check if already connected
+      const connected = await discordIsConnected();
+      if (connected) {
+        setIsConnected(true);
+        setError(null);
+
+        if (showToast && !hasShownInitialToast.current) {
+          addToast('Discord Rich Presence connected', 'success', 3000);
+          hasShownInitialToast.current = true;
+        }
+
+        // Stop retry interval if running
+        if (retryInterval.current) {
+          clearInterval(retryInterval.current);
+          retryInterval.current = null;
+          retryCount.current = 0;
+        }
+
+        return true;
+      }
+
+      // If not connected, attempt to connect
+      try {
+        await discordConnect();
+        setIsConnected(true);
+        setError(null);
+
+        if (showToast && !hasShownInitialToast.current) {
+          addToast('Discord Rich Presence connected', 'success', 3000);
+          hasShownInitialToast.current = true;
+        }
+
+        // Stop retry interval if running
+        if (retryInterval.current) {
+          clearInterval(retryInterval.current);
+          retryInterval.current = null;
+          retryCount.current = 0;
+        }
+
+        return true;
+      } catch (connectErr) {
+        // Connection failed - Discord might not be running
+        setIsConnected(false);
+        setError('Discord not running. Launch Discord to enable Rich Presence.');
+
+        if (showToast && !hasShownInitialToast.current) {
+          addToast('Discord not detected - Rich Presence unavailable', 'warning', 5000);
+          hasShownInitialToast.current = true;
+        }
+
+        return false;
+      }
+    } catch (err) {
+      setIsConnected(false);
+      setError('Discord unavailable');
+      console.warn('Discord initialization failed:', err);
+      return false;
+    } finally {
+      setIsConnecting(false);
+    }
+  }, [addToast]);
 
   // Check and auto-connect to Discord on mount
   useEffect(() => {
     const initializeDiscord = async () => {
-      try {
-        setIsConnecting(true);
-        // First check if already connected
-        const connected = await discordIsConnected();
-        if (connected) {
-          setIsConnected(true);
-          setError(null);
-          return;
-        }
+      const connected = await attemptConnection(true);
 
-        // If not connected, attempt to connect
-        try {
-          await discordConnect();
-          setIsConnected(true);
-          setError(null);
-          console.log('Discord connected successfully');
-        } catch (connectErr) {
-          // Connection failed, but this is okay - Discord might not be running
-          setIsConnected(false);
-          setError('Discord not running. Launch Discord to enable Rich Presence.');
-          console.warn('Discord not available or not running:', connectErr);
-        }
-      } catch (err) {
-        setIsConnected(false);
-        setError('Discord unavailable');
-        console.warn('Discord initialization failed:', err);
-      } finally {
-        setIsConnecting(false);
+      // If connection failed, start retry interval
+      if (!connected && retryCount.current < MAX_RETRY_ATTEMPTS) {
+        retryInterval.current = window.setInterval(async () => {
+          retryCount.current += 1;
+
+          const success = await attemptConnection(false);
+
+          if (success) {
+            addToast('Discord Rich Presence reconnected successfully', 'success', 3000);
+          } else if (retryCount.current >= MAX_RETRY_ATTEMPTS) {
+            // Stop trying after max attempts
+            if (retryInterval.current) {
+              clearInterval(retryInterval.current);
+              retryInterval.current = null;
+            }
+          }
+        }, RETRY_INTERVAL);
       }
     };
 
     initializeDiscord();
-  }, []);
+
+    // Cleanup on unmount
+    return () => {
+      if (retryInterval.current) {
+        clearInterval(retryInterval.current);
+        retryInterval.current = null;
+      }
+    };
+  }, [attemptConnection, addToast]);
 
   const connect = useCallback(async () => {
     try {

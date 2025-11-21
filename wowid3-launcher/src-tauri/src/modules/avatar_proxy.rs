@@ -1,5 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use base64::{engine::general_purpose::STANDARD, Engine};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AvatarData {
@@ -59,7 +60,7 @@ pub async fn fetch_avatar(username: &str) -> Result<AvatarData> {
 
     // The skin data is base64 encoded JSON
     if let Some(property) = skin_data.properties.first() {
-        let decoded = base64::decode(&property.value)?;
+        let decoded = STANDARD.decode(&property.value)?;
         let skin_json: serde_json::Value = serde_json::from_slice(&decoded)?;
 
         if let Some(textures) = skin_json.get("textures") {
@@ -71,7 +72,7 @@ pub async fn fetch_avatar(username: &str) -> Result<AvatarData> {
 
                     // Extract just the head portion (8x8 pixels from the top-left)
                     // For simplicity, we'll return the full skin and let the frontend handle cropping
-                    let base64_data = base64::encode(&skin_bytes);
+                    let base64_data = STANDARD.encode(&skin_bytes);
 
                     return Ok(AvatarData {
                         data: base64_data,

@@ -245,7 +245,16 @@ pub async fn is_version_installed(game_dir: &Path, version_id: &str) -> Result<b
     let version_json = version_dir.join(format!("{}.json", version_id));
     let version_jar = version_dir.join(format!("{}.jar", version_id));
 
-    Ok(version_json.exists() && version_jar.exists())
+    eprintln!("[Game Installer] is_version_installed() checking for version: {}", version_id);
+    eprintln!("[Game Installer]   game_dir: {:?}", game_dir);
+    eprintln!("[Game Installer]   version_dir: {:?}", version_dir);
+    eprintln!("[Game Installer]   version_json exists: {}", version_json.exists());
+    eprintln!("[Game Installer]   version_jar exists: {}", version_jar.exists());
+
+    let installed = version_json.exists() && version_jar.exists();
+    eprintln!("[Game Installer]   Result: version {} is {}", version_id, if installed { "INSTALLED" } else { "NOT INSTALLED" });
+
+    Ok(installed)
 }
 
 /// Get installed version metadata

@@ -68,3 +68,12 @@ wowid3-tracker-mod/build/classes/java/main/*
 wowid3-tracker-mod/build/classes/java/main/com/
 wowid3-tracker-mod/build/classes/java/main/com/wowid3/
 wowid3-tracker-mod/build/classes/java/main/com/wowid3/tracker/
+wowid3-mod-workdirs/*
+wowid3-mod-workdirs/
+wowid3-mod-workdirs/test-server/config/betterdeserttemples-fabric-1_20.toml
+
+wowid3-mod-workdirs/test-server/config/
+wowid3-mod-workdirs/test-server/config/*
+wowid3-mod-workdirs/test-server/config/betterdeserttemples-fabric-1_20.toml
+wowid3-mod-workdirs/test-server/config/betterdeserttemples-fabric-1_20.toml
+wowid3-mod-workdirs/test-server/config/betterdeserttemples-fabric-1_20.toml

@@ -124,15 +124,32 @@ pub async fn get_player_stats(
     // matches the UUID they are requesting, or if they are an admin.
     // For this implementation, we'll assume the launcher handles auth and we trust it,
     // but basic protection is good.
-    
+
+    // Normalize UUID format: add dashes if missing
+    // Minecraft UUIDs can be: "adca5752c67a4f0aae7444d9f369f6f8" (32 chars, no dashes)
+    // or: "adca5752-c67a-4f0a-ae74-44d9f369f6f8" (36 chars, with dashes)
+    let normalized_uuid = if uuid.len() == 32 && !uuid.contains('-') {
+        // Add dashes: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+        format!(
+            "{}-{}-{}-{}-{}",
+            &uuid[0..8],
+            &uuid[8..12],
+            &uuid[12..16],
+            &uuid[16..20],
+            &uuid[20..32]
+        )
+    } else {
+        uuid.clone()
+    };
+
     // Check for If-None-Match header for caching
     let client_hash = headers
         .get(header::IF_NONE_MATCH)
         .and_then(|h| h.to_str().ok())
         .map(|s| s.trim_matches('"').to_string());
 
-    // Query DB
-    let uuid_clone = uuid.clone();
+    // Query DB with normalized UUID
+    let uuid_clone = normalized_uuid.clone();
     let result = state.db.conn.call(move |conn| {
         conn.query_row(
             "SELECT stats_json, hash FROM player_stats WHERE uuid = ?1",
@@ -169,7 +186,7 @@ pub async fn get_player_stats(
         Err(tokio_rusqlite::Error::Error(rusqlite::Error::QueryReturnedNoRows)) => {
             // Return empty stats if not found
             let stats = PlayerStats {
-                uuid: uuid.clone(),
+                uuid: normalized_uuid.clone(),
                 username: "Unknown".to_string(),
                 ..Default::default()
             };

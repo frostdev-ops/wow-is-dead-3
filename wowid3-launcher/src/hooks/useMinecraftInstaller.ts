@@ -7,7 +7,8 @@ import {
   isVersionInstalled,
 } from './useTauriCommands';
 import { useSettingsStore } from '../stores/settingsStore';
-import { VersionInfo, FabricLoader, InstallProgress } from '../types/minecraft';
+import { InstallProgress } from '../types/minecraft';
+import { type VersionInfo, type FabricLoader } from '../types/schemas';
 import { logger, LogCategory } from '../utils/logger';
 import { LauncherError, LauncherErrorCode } from '../utils/errors';
 

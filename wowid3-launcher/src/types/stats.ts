@@ -9,6 +9,7 @@ export interface PlayerStats {
   items_gathered: Record<string, number>;
   damage_dealt: number;
   damage_taken: number;
+  deaths: number;
   dimensions_visited: string[];
   biomes_visited: string[];
   playtime_seconds: number;

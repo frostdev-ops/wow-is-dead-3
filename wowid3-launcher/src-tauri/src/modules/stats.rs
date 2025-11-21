@@ -26,7 +26,10 @@ pub struct PlayerStats {
     pub damage_dealt: f64,
     #[serde(default)]
     pub damage_taken: f64,
-    
+
+    #[serde(default)]
+    pub deaths: u64,
+
     #[serde(default)]
     pub dimensions_visited: Vec<String>,
     #[serde(default)]
@@ -60,16 +63,15 @@ struct StatsMetadata {
 }
 
 pub async fn get_player_stats(
-    app_handle: &tauri::AppHandle,
+    _app_handle: &tauri::AppHandle,
     uuid: &str,
     server_url: &str,
 ) -> Result<PlayerStats> {
-    let cache_dir = app_handle
-        .path()
-        .app_data_dir()?
+    // Use persistent data directory to avoid AppImage temp path issues
+    let cache_dir = super::paths::get_persistent_data_dir()?
         .join("cache")
         .join("player_stats");
-    
+
     fs::create_dir_all(&cache_dir).await?;
     
     let stats_path = cache_dir.join(format!("{}.json", uuid));

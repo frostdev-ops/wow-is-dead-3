@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { logger, LogCategory } from './utils/logger';
-import { useModpack, useServer, useTheme, useAudio } from './hooks';
+import { useModpack, useServer, useTheme, useAudio, useDiscord } from './hooks';
 import { usePolling } from './hooks/usePolling';
 import { useSettingsStore } from './stores/settingsStore';
 import { useUIStore } from './stores/uiStore';
@@ -28,6 +28,7 @@ function AppContent() {
   const { showLogViewer, setShowLogViewer } = useUIStore();
   const { isMuted, toggleMute, fallbackRef, mainRef, fallbackUrl } = useAudio();
   useTheme(); // Apply theme on mount
+  useDiscord(); // Initialize Discord Rich Presence on app startup
 
   // Initialize OS-specific game directory on mount
   useEffect(() => {

@@ -3,8 +3,6 @@ import { z } from 'zod';
 import type { MinecraftProfile, Manifest, ServerStatus } from '../stores';
 import { deduplicator } from '../utils/deduplication';
 import {
-  VersionInfo,
-  FabricLoader,
   InstallConfig,
   LaunchConfig
 } from '../types/minecraft';
@@ -16,6 +14,8 @@ import {
   DeviceCodeInfoSchema,
   VersionInfoSchema,
   FabricLoaderSchema,
+  type VersionInfo,
+  type FabricLoader,
 } from '../types/schemas';
 
 // Re-export LaunchConfig for backward compatibility
@@ -46,8 +46,8 @@ export interface AvatarData {
 // Authentication commands with Zod validation
 export const authenticateMinecraft = async (): Promise<MinecraftProfile> => {
   try {
-    const result = await invoke('cmd_authenticate');
-    return MinecraftProfileSchema.parse(result);
+  const result = await invoke('cmd_authenticate');
+  return MinecraftProfileSchema.parse(result);
   } catch (err) {
     if (err instanceof z.ZodError) {
       throw new Error(`Invalid authentication response: ${err.message}`);
@@ -58,8 +58,8 @@ export const authenticateMinecraft = async (): Promise<MinecraftProfile> => {
 
 export const authenticateFromOfficialLauncher = async (): Promise<MinecraftProfile> => {
   try {
-    const result = await invoke('cmd_authenticate_official_launcher');
-    return MinecraftProfileSchema.parse(result);
+  const result = await invoke('cmd_authenticate_official_launcher');
+  return MinecraftProfileSchema.parse(result);
   } catch (err) {
     if (err instanceof z.ZodError) {
       throw new Error(`Invalid authentication response: ${err.message}`);
@@ -70,9 +70,9 @@ export const authenticateFromOfficialLauncher = async (): Promise<MinecraftProfi
 
 export const getCurrentUser = async (): Promise<MinecraftProfile | null> => {
   try {
-    const result = await invoke('cmd_get_current_user');
-    if (result === null) return null;
-    return MinecraftProfileSchema.parse(result);
+  const result = await invoke('cmd_get_current_user');
+  if (result === null) return null;
+  return MinecraftProfileSchema.parse(result);
   } catch (err) {
     if (err instanceof z.ZodError) {
       throw new Error(`Invalid user profile: ${err.message}`);
@@ -87,9 +87,9 @@ export const logout = async (): Promise<void> => {
 
 export const refreshToken = async (): Promise<MinecraftProfile | null> => {
   try {
-    const result = await invoke('cmd_refresh_token');
-    if (result === null) return null;
-    return MinecraftProfileSchema.parse(result);
+  const result = await invoke('cmd_refresh_token');
+  if (result === null) return null;
+  return MinecraftProfileSchema.parse(result);
   } catch (err) {
     if (err instanceof z.ZodError) {
       throw new Error(`Invalid token response: ${err.message}`);

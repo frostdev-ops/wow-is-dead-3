@@ -128,10 +128,16 @@ async fn cmd_launch_game(app: AppHandle, mut config: LaunchConfig) -> Result<Str
     if config.game_dir.is_relative() {
         // Check if it exists relative to current directory first
         if !config.game_dir.exists() {
-            // If not, resolve to app data directory
-            if let Ok(app_data_dir) = app.path().app_data_dir() {
-                config.game_dir = app_data_dir.join(&config.game_dir);
-                eprintln!("[Launcher] Resolved game directory to: {:?}", config.game_dir);
+            // Resolve using persistent data directory (fixes AppImage temp path issue)
+            match resolve_game_directory(&app, &config.game_dir) {
+                Ok(resolved_path) => {
+                    config.game_dir = resolved_path;
+                    eprintln!("[Launcher] Resolved game directory to: {:?}", config.game_dir);
+                }
+                Err(e) => {
+                    eprintln!("[Launcher] Failed to resolve game directory: {}", e);
+                    return Err(format!("Failed to resolve game directory: {}", e));
+                }
             }
         } else {
             eprintln!("[Launcher] Using existing game directory: {:?}", config.game_dir);
@@ -255,10 +261,16 @@ async fn cmd_launch_game_with_metadata(
     if config.game_dir.is_relative() {
         // Check if it exists relative to current directory first
         if !config.game_dir.exists() {
-            // If not, resolve to app data directory
-            if let Ok(app_data_dir) = app.path().app_data_dir() {
-                config.game_dir = app_data_dir.join(&config.game_dir);
-                eprintln!("[Launcher] Resolved game directory to: {:?}", config.game_dir);
+            // Resolve using persistent data directory (fixes AppImage temp path issue)
+            match resolve_game_directory(&app, &config.game_dir) {
+                Ok(resolved_path) => {
+                    config.game_dir = resolved_path;
+                    eprintln!("[Launcher] Resolved game directory to: {:?}", config.game_dir);
+                }
+                Err(e) => {
+                    eprintln!("[Launcher] Failed to resolve game directory: {}", e);
+                    return Err(format!("Failed to resolve game directory: {}", e));
+                }
             }
         } else {
             eprintln!("[Launcher] Using existing game directory: {:?}", config.game_dir);

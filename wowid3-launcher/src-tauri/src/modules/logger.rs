@@ -3,19 +3,15 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 
-const LOG_DIR_NAME: &str = "wowid3-launcher";
 const LOG_FILE_NAME: &str = "auth.log";
 const MAX_LOG_SIZE: u64 = 10 * 1024 * 1024; // 10 MB
 const MAX_LOG_FILES: usize = 7; // Keep 7 days worth
 
 fn get_log_dir() -> Result<PathBuf, anyhow::Error> {
-    if let Some(data_dir) = dirs::data_local_dir() {
-        let log_dir = data_dir.join(LOG_DIR_NAME);
-        fs::create_dir_all(&log_dir)?;
-        Ok(log_dir)
-    } else {
-        Err(anyhow::anyhow!("Could not determine data directory"))
-    }
+    // Use persistent data directory to avoid AppImage temp path issues
+    let log_dir = super::paths::get_persistent_data_dir()?.join("logs");
+    fs::create_dir_all(&log_dir)?;
+    Ok(log_dir)
 }
 
 fn get_log_path() -> Result<PathBuf, anyhow::Error> {

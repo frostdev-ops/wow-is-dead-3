@@ -126,6 +126,9 @@ impl StatsProcessor {
                     StatEvent::DamageTaken { amount } => {
                         stats.damage_taken += amount;
                     }
+                    StatEvent::PlayerDeath => {
+                        stats.deaths += 1;
+                    }
                     StatEvent::DimensionVisited { dimension_id } => {
                         if !stats.dimensions_visited.contains(&dimension_id) {
                             stats.dimensions_visited.push(dimension_id);

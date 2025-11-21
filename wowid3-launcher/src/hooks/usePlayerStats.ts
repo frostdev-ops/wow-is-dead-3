@@ -16,7 +16,7 @@ export function usePlayerStats(uuid: string | null, serverUrl: string, autoRefre
 
   const fetchStats = async () => {
     if (!uuid) return;
-    
+
     try {
       setLoading(true);
       setError(null);

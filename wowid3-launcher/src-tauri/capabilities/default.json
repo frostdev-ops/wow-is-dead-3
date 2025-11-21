@@ -7,7 +7,22 @@
     "core:default",
     "opener:default",
     "os:default",
+    "shell:allow-execute",
+    "shell:allow-kill",
     "fs:allow-appcache-read-recursive",
-    "fs:allow-cache-read-recursive"
+    "fs:allow-appcache-write-recursive",
+    "fs:allow-cache-read-recursive",
+    "fs:allow-cache-write-recursive",
+    "fs:allow-appdata-read-recursive",
+    "fs:allow-appdata-write-recursive",
+    "fs:allow-appconfig-read-recursive",
+    "fs:allow-appconfig-write-recursive",
+    "fs:allow-applocaldata-read-recursive",
+    "fs:allow-applocaldata-write-recursive",
+    "fs:allow-applog-read-recursive",
+    "fs:allow-applog-write-recursive",
+    "fs:allow-home-read-recursive",
+    "fs:allow-home-write-recursive",
+    "fs:scope-home-recursive"
   ]
 }

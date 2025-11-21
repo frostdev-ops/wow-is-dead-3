@@ -171,18 +171,29 @@ pub async fn get_version_meta(version_id: &str, cache_dir: &Path) -> Result<Vers
         .join("versions")
         .join(format!("{}.json", version_id));
 
+    eprintln!("[Minecraft Version] get_version_meta() called for version: {}", version_id);
+    eprintln!("[Minecraft Version]   cache_dir: {:?}", cache_dir);
+    eprintln!("[Minecraft Version]   cache_file: {:?}", cache_file);
+
     // Try to load from cache first
     if cache_file.exists() {
+        eprintln!("[Minecraft Version]   ✓ Cache file exists, loading...");
         let content = tokio::fs::read_to_string(&cache_file)
             .await
             .context("Failed to read cached version metadata")?;
 
         if let Ok(meta) = serde_json::from_str::<VersionMeta>(&content) {
+            eprintln!("[Minecraft Version]   ✓ Loaded from cache successfully");
             return Ok(meta);
+        } else {
+            eprintln!("[Minecraft Version]   ✗ Cache file corrupted, will re-fetch");
         }
+    } else {
+        eprintln!("[Minecraft Version]   ℹ️  Cache file does not exist, will fetch from Mojang");
     }
 
     // Not in cache or corrupted, fetch from manifest
+    eprintln!("[Minecraft Version]   Fetching version manifest from Mojang...");
     let manifest = fetch_version_manifest().await?;
 
     let version_info = manifest

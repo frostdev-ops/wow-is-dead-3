@@ -51,25 +51,25 @@ export const useModpack = () => {
   // Check installed version on mount
   useEffect(() => {
     // CRITICAL: This effect must run to load installedVersion from disk
-    logger.info(LogCategory.MODPACK, '🔍 useModpack effect triggered', { 
+    logger.debug(LogCategory.MODPACK, 'useModpack effect triggered', { 
       metadata: { gameDirectory: gameDirectory || 'EMPTY' } 
     });
     
     // Don't run if gameDirectory isn't set yet
     if (!gameDirectory) {
-      logger.warn(LogCategory.MODPACK, '⚠️ Skipping version check - gameDirectory not set');
+      logger.debug(LogCategory.MODPACK, 'Skipping version check - gameDirectory not set');
       return;
     }
     
     const checkInstalled = async () => {
       try {
-        logger.info(LogCategory.MODPACK, '📁 Checking for .wowid3-version file', { 
+        logger.debug(LogCategory.MODPACK, 'Checking for .wowid3-version file', { 
           metadata: { gameDirectory } 
         });
         
         const version = await getInstalledVersion(gameDirectory);
         
-        logger.info(LogCategory.MODPACK, '✅ Version check complete', { 
+        logger.debug(LogCategory.MODPACK, 'Version check complete', { 
           metadata: { 
             versionFromDisk: version || 'NULL',
             versionInStore: installedVersion || 'NULL' 
@@ -79,18 +79,18 @@ export const useModpack = () => {
         // Only update if we found a version, OR if store is empty
         // This prevents overwriting a valid version with null
         if (version) {
-          logger.info(LogCategory.MODPACK, `✓ Modpack ${version} detected on disk`);
+          logger.debug(LogCategory.MODPACK, `Modpack ${version} detected on disk`);
           setInstalledVersion(version);
         } else if (!installedVersion) {
           // Only set to null if store is also empty (first load scenario)
-          logger.warn(LogCategory.MODPACK, '⚠️ No .wowid3-version file found');
+          logger.debug(LogCategory.MODPACK, 'No .wowid3-version file found');
           setInstalledVersion(null);
         } else {
           // File missing but store has version - keep the store version
-          logger.warn(LogCategory.MODPACK, `⚠️ .wowid3-version file missing, but store has ${installedVersion} - keeping store value`);
+          logger.debug(LogCategory.MODPACK, `.wowid3-version file missing, keeping store value: ${installedVersion}`);
         }
       } catch (err) {
-        logger.error(LogCategory.MODPACK, '❌ Failed to check installed version', err instanceof Error ? err : new Error(String(err)));
+        logger.error(LogCategory.MODPACK, 'Failed to check installed version', err instanceof Error ? err : new Error(String(err)));
       }
     };
 

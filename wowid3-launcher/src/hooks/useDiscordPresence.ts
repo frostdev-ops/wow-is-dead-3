@@ -52,48 +52,24 @@ export const useDiscordPresence = (
       try {
         // Default state
         let state = 'Playing WOWID3 Modpack';
-        let details = 'In Menu';
+        let details = 'In Game';
         let smallImage: string | undefined = undefined;
         let partySize: number | undefined = undefined;
         let partyMax: number | undefined = undefined;
 
-        // Fetch tracker status
-        // We assume the server URL is the HTTP API URL, not the MC server address
-        // If serverAddress is "mc.frostdev.io", we might need "https://mc.frostdev.io" or similar
-        // For now, let's try to derive it or use a configured API URL.
-        // The settings store has serverAddress (e.g. mc.frostdev.io) but maybe not the API URL.
-        // We'll assume the API is hosted at the same domain or use a hardcoded fallback for now if not in settings.
-        // TODO: Add apiUrl to settings store if needed. For now assuming typical setup.
-        
-        // Construct API URL from server address (heuristic)
-        let apiUrl = serverAddress;
-        if (!apiUrl.startsWith('http')) {
-             apiUrl = `https://${apiUrl}`; // HTTPS default
-        }
-        // If it's just a hostname, it might need port 8080 if dev, or 443 if prod.
-        // We'll assume the user configured the Modpack Server URL in settings, which is used for updates.
-        // Actually, useSettingsStore has `serverAddress` which is for MC server.
-        // `modpackStore` uses `updateUrl`.
-        // Let's use `updateUrl` base.
-        
-        // Actually, let's try to fetch from the same host as the modpack update URL.
-        // But we don't have access to modpack store here easily without importing.
-        // We'll use the hardcoded API URL from the project if available or fallback.
-        // The implementation plan didn't specify where to get the API URL. 
-        // We'll assume it's 'https://wowid-launcher.frostdev.io' based on other files
-        // or try to use the one from settings if possible.
-        
-        const statusUrl = 'https://wowid-launcher.frostdev.io'; 
+        // Try to fetch tracker status for enhanced presence
+        // Use hardcoded API URL - can be made configurable in the future
+        const statusUrl = 'https://wowid-launcher.frostdev.io';
 
         try {
           const trackerState: TrackerState = await getDetailedServerStatus(statusUrl);
-          
+
           // Find current player
           const currentPlayer = trackerState.online_players.find(p => p.uuid === uuid || p.name === username);
-          
+
           partySize = trackerState.online_players.length;
-          partyMax = 20; // Default max, or get from somewhere else if available
-          
+          partyMax = 20; // Default max server capacity
+
           if (currentPlayer) {
             // Format Dimension
             if (currentPlayer.dimension) {
@@ -102,9 +78,9 @@ export const useDiscordPresence = (
               else if (dim === 'the_nether') state = 'In The Nether';
               else if (dim === 'the_end') state = 'In The End';
               else state = `Exploring ${dim}`;
-              
+
               // Set small image based on dimension
-              if (dim === 'overworld') smallImage = 'grass_block'; // standard icon?
+              if (dim === 'overworld') smallImage = 'grass_block';
               else if (dim === 'the_nether') smallImage = 'netherrack';
               else if (dim === 'the_end') smallImage = 'end_stone';
             }
@@ -116,9 +92,9 @@ export const useDiscordPresence = (
                 .split('_')
                 .map(word => word.charAt(0).toUpperCase() + word.slice(1))
                 .join(' ');
-              
+
               details = `Biome: ${biomeName}`;
-              
+
               // Add coordinates if available
               if (currentPlayer.position) {
                  const [x, y, z] = currentPlayer.position.map(Math.round);
@@ -126,28 +102,38 @@ export const useDiscordPresence = (
               }
             }
           } else {
-            // Player online but not found in tracker? Or maybe just joined.
+            // Player not found in tracker yet
             details = 'Connecting to server...';
           }
-          
-        } catch (e) {
-          console.warn('Failed to fetch tracker status:', e);
-          // Fallback to basic presence
-          details = 'Playing on Server';
+
+        } catch (apiError) {
+          // API fetch failed - use basic presence without breaking Discord
+          console.warn('Failed to fetch detailed server status, using basic presence:', apiError);
+          details = 'Playing on WOWID3 Server';
+          state = 'Multiplayer Game';
+          // Continue with basic presence - don't throw
         }
 
-        await updatePresence(
-          details,
-          state,
-          'wowid3-logo', // Large image key
-          smallImage,
-          partySize,
-          partyMax,
-          startTimeRef.current || undefined
-        );
+        // Always attempt to update presence, even if API failed
+        try {
+          await updatePresence(
+            details,
+            state,
+            'wowid3-logo', // Large image key
+            smallImage,
+            partySize,
+            partyMax,
+            startTimeRef.current || undefined
+          );
+        } catch (presenceError) {
+          // Presence update failed - log but don't crash the loop
+          console.error('Failed to update Discord presence:', presenceError);
+        }
 
       } catch (err) {
-        console.error('Error in Discord presence loop:', err);
+        // Catch-all for any unexpected errors
+        console.error('Unexpected error in Discord presence loop:', err);
+        // Loop will continue on next interval
       }
     };
 
