@@ -1,5 +1,6 @@
 import { FC, ChangeEvent, useState, useCallback } from 'react';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useVpnStore } from '../stores/vpnStore';
 import { useAudio } from '../hooks';
 import { Input } from './ui/Input';
 // Logger import for future use
@@ -42,6 +43,11 @@ export const SettingsScreen: FC = () => {
     keepLauncherOpen,
     setKeepLauncherOpen,
   } = useSettingsStore();
+
+  const vpnEnabled = useVpnStore((state) => state.enabled);
+  const vpnStatus = useVpnStore((state) => state.status);
+  const vpnErrorMessage = useVpnStore((state) => state.errorMessage);
+  const setVpnEnabled = useVpnStore((state) => state.setEnabled);
 
   const { volume, setVolume } = useAudio();
 
@@ -97,6 +103,15 @@ export const SettingsScreen: FC = () => {
     const newVolume = parseFloat(e.target.value);
     setVolume(newVolume);
   }, [setVolume]);
+
+  const handleVpnToggle = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
+    const enabled = e.target.checked;
+    setVpnEnabled(enabled);
+    if (enabled) {
+      // Show VPN setup modal
+      // TODO: Implement VPN setup
+    }
+  }, [setVpnEnabled]);
 
   return (
     <div className="max-w-2xl mx-auto w-full pt-8 px-4 pb-20">
@@ -169,6 +184,48 @@ export const SettingsScreen: FC = () => {
             >
               Keep launcher open while game is running
             </label>
+          </div>
+        </div>
+
+        {/* Performance Section */}
+        <div className="pt-4 border-t border-white border-opacity-10">
+          <h3 className="text-lg font-semibold text-white mb-4">Performance</h3>
+
+          <div className="space-y-3">
+            <div className="flex items-center space-x-3">
+              <input
+                id="vpnEnabled"
+                type="checkbox"
+                checked={vpnEnabled}
+                onChange={handleVpnToggle}
+                disabled={vpnStatus === 'connecting'}
+                className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 bg-gray-700 border-gray-600 disabled:opacity-50"
+              />
+              <label
+                htmlFor="vpnEnabled"
+                className="text-sm font-medium text-gray-200 cursor-pointer"
+              >
+                Use VPN Tunnel (reduces lag)
+              </label>
+            </div>
+
+            <p className="text-xs text-gray-400 ml-8">
+              Enable if experiencing packet loss or lag. Requires VPN setup on first enable.
+            </p>
+
+            {vpnStatus === 'connected' && (
+              <div className="ml-8 flex items-center gap-2 px-3 py-2 bg-green-900 bg-opacity-20 border border-green-500 border-opacity-30 rounded text-green-400 text-sm">
+                <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+                VPN Connected
+              </div>
+            )}
+
+            {vpnStatus === 'error' && (
+              <div className="ml-8 flex items-center gap-2 px-3 py-2 bg-red-900 bg-opacity-20 border border-red-500 border-opacity-30 rounded text-red-400 text-sm">
+                <span className="inline-block w-2 h-2 rounded-full bg-red-500"></span>
+                VPN Error: {vpnErrorMessage}
+              </div>
+            )}
           </div>
         </div>
 

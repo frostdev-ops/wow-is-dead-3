@@ -17,6 +17,8 @@ use modules::log_reader::{read_latest_log, get_log_path, get_new_log_lines, read
 use modules::paths::{get_default_game_directory, resolve_game_directory, validate_game_directory};
 use modules::launcher_updater::{check_launcher_update, install_launcher_update, LauncherUpdateInfo};
 use modules::map_viewer::{check_bluemap_available, open_map_viewer, close_map_viewer, get_bluemap_url, BlueMapStatus};
+#[cfg(target_os = "windows")]
+use modules::VpnManager;
 use serde::Serialize;
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -729,18 +731,148 @@ fn cmd_validate_game_directory(path: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+// VPN Commands (Windows only)
+#[cfg(target_os = "windows")]
+#[tauri::command]
+async fn vpn_generate_keypair() -> Result<(String, String), String> {
+    VpnManager::generate_keypair()
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+async fn vpn_has_keypair() -> Result<bool, String> {
+    let manager = VpnManager::new().map_err(|e| e.to_string())?;
+    Ok(manager.has_keypair())
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+async fn vpn_tunnel_status() -> Result<String, String> {
+    let manager = VpnManager::new().map_err(|e| e.to_string())?;
+
+    if manager.tunnel_exists() {
+        if manager.is_tunnel_running() {
+            Ok("running".to_string())
+        } else {
+            Ok("stopped".to_string())
+        }
+    } else {
+        Ok("not_installed".to_string())
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+async fn vpn_start_tunnel() -> Result<(), String> {
+    // Start the WireGuard service
+    let output = std::process::Command::new("net")
+        .args(&["start", "WireGuardTunnel$wowid3"])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err("Failed to start VPN tunnel".to_string())
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+async fn vpn_stop_tunnel() -> Result<(), String> {
+    let output = std::process::Command::new("net")
+        .args(&["stop", "WireGuardTunnel$wowid3"])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err("Failed to stop VPN tunnel".to_string())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Initialize logger on startup
     initialize_logger();
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_os::init())
-        .manage(DiscordClient::new())
-        .invoke_handler(tauri::generate_handler![
+        .manage(DiscordClient::new());
+
+    #[cfg(target_os = "windows")]
+    {
+        builder = builder.invoke_handler(tauri::generate_handler![
+            cmd_authenticate_official_launcher,
+            cmd_get_current_user,
+            cmd_refresh_token,
+            cmd_logout,
+            cmd_get_device_code,
+            cmd_complete_device_code_auth,
+            cmd_fetch_avatar,
+            cmd_launch_game,
+            cmd_launch_game_with_metadata,
+            cmd_list_minecraft_versions,
+            cmd_get_latest_release,
+            cmd_get_latest_snapshot,
+            cmd_get_fabric_loaders,
+            cmd_get_latest_fabric_loader,
+            cmd_install_minecraft,
+            cmd_is_version_installed,
+            cmd_ping_server,
+            cmd_resolve_player_name,
+            cmd_get_detailed_server_status,
+            cmd_get_player_stats,
+            cmd_check_updates,
+            cmd_get_installed_version,
+            cmd_set_installed_version,
+            cmd_install_modpack,
+            cmd_verify_and_repair_modpack,
+            cmd_has_manifest_changed,
+            cmd_discord_connect,
+            cmd_discord_set_presence,
+            cmd_discord_update_presence,
+            cmd_discord_clear_presence,
+            cmd_discord_disconnect,
+            cmd_discord_is_connected,
+            cmd_get_cached_audio,
+            cmd_download_and_cache_audio,
+            cmd_read_cached_audio_bytes,
+            cmd_clear_audio_cache,
+            cmd_stop_game,
+            cmd_kill_game,
+            cmd_is_game_running,
+            cmd_read_latest_log,
+            cmd_get_log_path,
+            cmd_get_new_log_lines,
+            cmd_read_log_tail,
+            cmd_read_log_from_offset,
+            cmd_read_log_before_offset,
+            cmd_get_default_game_directory,
+            cmd_resolve_game_directory,
+            cmd_validate_game_directory,
+            cmd_check_launcher_update,
+            cmd_install_launcher_update,
+            cmd_check_bluemap_available,
+            cmd_open_map_viewer,
+            cmd_close_map_viewer,
+            cmd_get_bluemap_url,
+            vpn_generate_keypair,
+            vpn_has_keypair,
+            vpn_tunnel_status,
+            vpn_start_tunnel,
+            vpn_stop_tunnel
+        ]);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        builder = builder.invoke_handler(tauri::generate_handler![
             cmd_authenticate_official_launcher,
             cmd_get_current_user,
             cmd_refresh_token,
@@ -795,7 +927,10 @@ pub fn run() {
             cmd_open_map_viewer,
             cmd_close_map_viewer,
             cmd_get_bluemap_url
-        ])
+        ]);
+    }
+
+    builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
