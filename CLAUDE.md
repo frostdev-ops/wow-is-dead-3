@@ -378,6 +378,47 @@ Test dependencies are defined in `Cargo.toml`:
 - `wiremock`: HTTP mocking (launcher)
 - `tokio-test`: Async test utilities (launcher)
 
+## Database Management
+
+The modpack server uses SQLite for persistent data storage (player statistics, VPN peer information).
+
+### Schema Migrations
+
+This project uses **code-based schema initialization** (not file-based SQL migrations):
+
+- Schemas are defined in `src/database/*.rs` modules
+- Each module has an `init_schema()` function that creates tables and indexes
+- All schemas use `CREATE TABLE IF NOT EXISTS` for idempotency
+- Schema initialization happens automatically on server startup via `Database::init_schema()`
+- Multiple calls to `init_schema()` are safe and will not error
+
+**Adding a new table:**
+1. Add schema creation code to the appropriate module in `src/database/`
+2. Call the initialization function from `Database::init_schema()` in `src/database/mod.rs`
+3. Use `CREATE TABLE IF NOT EXISTS` to ensure idempotency
+4. Add tests to verify schema creation and idempotency
+
+**Example:**
+```rust
+async fn init_vpn_schema(&self) -> Result<()> {
+    self.conn.call(|conn| {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS vpn_peers (
+                uuid TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                public_key TEXT UNIQUE NOT NULL,
+                ip_address TEXT NOT NULL,
+                registered_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_vpn_public_key ON vpn_peers(public_key);"
+        )
+    }).await?;
+    Ok(())
+}
+```
+
+**Important:** Do NOT create SQL migration files in `migrations/` directory. They will not be executed.
+
 ## Common Development Patterns
 
 ### 1. Adding a new Tauri command (Launcher)

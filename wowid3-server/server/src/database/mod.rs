@@ -54,3 +54,49 @@ impl Database {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_vpn_schema_creation_succeeds() {
+        // Create a temporary directory for the test database
+        let temp_dir = tempdir().expect("Failed to create temp dir");
+        let db_path = temp_dir.path().join("test.db");
+
+        // Create database and initialize schema
+        let db = Database::new(&db_path).await.expect("Failed to create database");
+        db.init_schema().await.expect("Failed to initialize schema");
+
+        // Verify that the vpn_peers table exists by querying it
+        let count = db.conn.call(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM vpn_peers", [], |row| row.get::<_, i64>(0))
+        }).await.expect("vpn_peers table should exist after schema initialization");
+
+        // The count should be 0 for an empty table
+        assert_eq!(count, 0, "vpn_peers table should be empty after initialization");
+    }
+
+    #[tokio::test]
+    async fn test_schema_initialization_is_idempotent() {
+        // Create a temporary directory for the test database
+        let temp_dir = tempdir().expect("Failed to create temp dir");
+        let db_path = temp_dir.path().join("test.db");
+
+        // Create database and initialize schema
+        let db = Database::new(&db_path).await.expect("Failed to create database");
+
+        // Initialize schema twice
+        db.init_schema().await.expect("First schema initialization failed");
+        db.init_schema().await.expect("Second schema initialization should succeed (idempotent)");
+
+        // Verify that the vpn_peers table still works correctly
+        let count = db.conn.call(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM vpn_peers", [], |row| row.get::<_, i64>(0))
+        }).await.expect("vpn_peers table should still be functional after double initialization");
+
+        assert_eq!(count, 0, "vpn_peers table should still be empty");
+    }
+}
