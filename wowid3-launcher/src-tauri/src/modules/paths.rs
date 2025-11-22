@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
-use tauri::Manager;
 
 /// Get the default game directory path for the current OS
 ///

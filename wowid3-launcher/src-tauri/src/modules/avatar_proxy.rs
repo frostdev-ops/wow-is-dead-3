@@ -9,30 +9,38 @@ pub struct AvatarData {
 }
 
 /// Fetches a Minecraft avatar from the official APIs, proxying the request through the backend
-pub async fn fetch_avatar(username: &str) -> Result<AvatarData> {
+/// Accepts either a username or a UUID
+pub async fn fetch_avatar(username_or_uuid: &str) -> Result<AvatarData> {
     // Use official Minecraft API instead of third-party services
     let client = reqwest::Client::new();
 
-    // First, get the UUID for the username from Mojang API
-    let uuid_url = format!("https://api.mojang.com/users/profiles/minecraft/{}", username);
-    let uuid_response = client
-        .get(&uuid_url)
-        .send()
-        .await?;
+    // Check if input is already a UUID (contains hyphens in UUID format)
+    let uuid = if username_or_uuid.contains('-') && username_or_uuid.len() == 36 {
+        // Already a UUID, use it directly (remove hyphens for Mojang API)
+        username_or_uuid.replace("-", "")
+    } else {
+        // It's a username, need to look up the UUID
+        let uuid_url = format!("https://api.mojang.com/users/profiles/minecraft/{}", username_or_uuid);
+        let uuid_response = client
+            .get(&uuid_url)
+            .send()
+            .await?;
 
-    if !uuid_response.status().is_success() {
-        return Err(anyhow::anyhow!("Failed to fetch player UUID"));
-    }
+        if !uuid_response.status().is_success() {
+            return Err(anyhow::anyhow!("Failed to fetch player UUID"));
+        }
 
-    #[derive(Deserialize)]
-    struct UuidResponse {
-        id: String,
-    }
+        #[derive(Deserialize)]
+        struct UuidResponse {
+            id: String,
+        }
 
-    let uuid_data: UuidResponse = uuid_response.json().await?;
+        let uuid_data: UuidResponse = uuid_response.json().await?;
+        uuid_data.id
+    };
 
     // Fetch the skin data
-    let skin_url = format!("https://sessionserver.mojang.com/session/minecraft/profile/{}", uuid_data.id);
+    let skin_url = format!("https://sessionserver.mojang.com/session/minecraft/profile/{}", uuid);
     let skin_response = client
         .get(&skin_url)
         .send()

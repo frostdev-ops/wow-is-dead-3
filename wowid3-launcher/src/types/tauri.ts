@@ -64,6 +64,7 @@ export interface ManifestRaw {
     size: number;
   }>;
   changelog: string;
+  ignore_patterns?: string[];
 }
 
 /**

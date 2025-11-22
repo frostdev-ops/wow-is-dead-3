@@ -2,6 +2,7 @@ import { FC, ChangeEvent, useState, useCallback } from 'react';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAudio } from '../hooks';
 import { Input } from './ui/Input';
+import { NetworkTest } from './NetworkTest';
 // Logger import for future use
 // import { logger, LogCategory } from '../utils/logger';
 
@@ -99,79 +100,87 @@ export const SettingsScreen: FC = () => {
   }, [setVolume]);
 
   return (
-    <div className="max-w-2xl mx-auto w-full pt-8 px-4 pb-20">
+    <div className="max-w-4xl mx-auto w-full pt-8 px-4 pb-20">
       <h1 className="text-2xl font-bold mb-8 text-white" style={{ fontFamily: "'Trebuchet MS', sans-serif" }}>
         Launcher Settings
       </h1>
 
-      <div className="space-y-6 bg-black bg-opacity-40 p-6 rounded-lg backdrop-blur-sm border border-white border-opacity-10">
-        
-        <Input
-          label="Game Directory"
-          value={gameDirectory}
-          onChange={handleGamePathChange}
-          status={errors.gamePath ? 'error' : 'default'}
-          error={errors.gamePath}
-          helperText="Path where Minecraft files will be stored"
-        />
+      {/* General Settings */}
+      <div className="bg-black bg-opacity-40 p-6 rounded-lg backdrop-blur-sm border border-white border-opacity-10 mb-8">
+        <h2 className="text-xl font-semibold mb-6 text-white">General Settings</h2>
 
-        <Input
-          label="Manifest URL"
-          value={manifestUrl}
-          onChange={handleManifestUrlChange}
-          status={errors.manifestUrl ? 'error' : 'default'}
-          error={errors.manifestUrl}
-          helperText="URL to the modpack manifest JSON file"
-        />
+        <div className="space-y-6">
+          <Input
+            label="Game Directory"
+            value={gameDirectory}
+            onChange={handleGamePathChange}
+            status={errors.gamePath ? 'error' : 'default'}
+            error={errors.gamePath}
+            helperText="Path where Minecraft files will be stored"
+          />
 
-        <Input
-          label="RAM Allocation (MB)"
-          type="number"
-          value={ramAllocation}
-          onChange={handleRamChange}
-          status={errors.ram ? 'error' : 'default'}
-          error={errors.ram}
-          helperText={`Recommended: ${getRecommendedRam()}MB. Allocated to Minecraft Java process.`}
-        />
+          <Input
+            label="Manifest URL"
+            value={manifestUrl}
+            onChange={handleManifestUrlChange}
+            status={errors.manifestUrl ? 'error' : 'default'}
+            error={errors.manifestUrl}
+            helperText="URL to the modpack manifest JSON file"
+          />
 
-        <div className="space-y-4 pt-2">
-          <div>
-            <label htmlFor="volume" className="block text-sm font-medium text-gray-200 mb-2">
-              Music Volume: {Math.round(volume * 100)}%
-            </label>
-            <input
-              id="volume"
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={volume}
-              onChange={handleVolumeChange}
-              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
-              style={{
-                background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${volume * 100}%, #374151 ${volume * 100}%, #374151 100%)`
-              }}
-            />
-            <p className="text-xs text-gray-400 mt-1">Adjust background music volume</p>
-          </div>
+          <Input
+            label="RAM Allocation (MB)"
+            type="number"
+            value={ramAllocation}
+            onChange={handleRamChange}
+            status={errors.ram ? 'error' : 'default'}
+            error={errors.ram}
+            helperText={`Recommended: ${getRecommendedRam()}MB. Allocated to Minecraft Java process.`}
+          />
 
-          <div className="flex items-center space-x-3">
-            <input
-              id="keepLauncherOpen"
-              type="checkbox"
-              checked={keepLauncherOpen}
-              onChange={handleKeepLauncherOpenChange}
-              className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 bg-gray-700 border-gray-600"
-            />
-            <label
-              htmlFor="keepLauncherOpen"
-              className="text-sm font-medium text-gray-200 cursor-pointer"
-            >
-              Keep launcher open while game is running
-            </label>
+          <div className="space-y-4 pt-2">
+            <div>
+              <label htmlFor="volume" className="block text-sm font-medium text-gray-200 mb-2">
+                Music Volume: {Math.round(volume * 100)}%
+              </label>
+              <input
+                id="volume"
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={volume}
+                onChange={handleVolumeChange}
+                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+                style={{
+                  background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${volume * 100}%, #374151 ${volume * 100}%, #374151 100%)`
+                }}
+              />
+              <p className="text-xs text-gray-400 mt-1">Adjust background music volume</p>
+            </div>
+
+            <div className="flex items-center space-x-3">
+              <input
+                id="keepLauncherOpen"
+                type="checkbox"
+                checked={keepLauncherOpen}
+                onChange={handleKeepLauncherOpenChange}
+                className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 bg-gray-700 border-gray-600"
+              />
+              <label
+                htmlFor="keepLauncherOpen"
+                className="text-sm font-medium text-gray-200 cursor-pointer"
+              >
+                Keep launcher open while game is running
+              </label>
+            </div>
           </div>
         </div>
+      </div>
 
+      {/* Network Test */}
+      <div className="bg-black bg-opacity-40 p-6 rounded-lg backdrop-blur-sm border border-white border-opacity-10">
+        <NetworkTest />
       </div>
       
       <div className="mt-8 text-center text-xs text-gray-500">

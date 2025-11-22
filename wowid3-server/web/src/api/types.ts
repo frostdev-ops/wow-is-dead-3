@@ -199,3 +199,41 @@ export interface ApiError {
 export interface MessageResponse {
   message: string;
 }
+
+// ========== Launcher Version Types ==========
+
+export interface LauncherFile {
+  platform: string;  // "windows", "linux", "macos"
+  filename: string;  // e.g., "WOWID3Launcher.exe" or "WOWID3Launcher-x86_64.AppImage"
+  url: string;
+  sha256: string;
+  size: number;
+}
+
+export interface LauncherVersion {
+  version: string;
+  files: LauncherFile[];
+  changelog: string;
+  mandatory: boolean;
+  released_at: string;  // ISO 8601
+}
+
+export interface LauncherVersionsIndex {
+  versions: string[];  // Semantic versions, newest first
+  latest: string;
+}
+
+export interface UploadLauncherVersionRequest {
+  version: string;
+  changelog: string;
+  mandatory: boolean;
+  platform: string;  // "windows", "linux", "macos"
+  file: File;
+}
+
+export interface UploadLauncherVersionResponse {
+  message: string;
+  version: string;
+  platform: string;
+  platforms: string[];
+}

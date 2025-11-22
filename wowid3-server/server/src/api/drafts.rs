@@ -255,22 +255,27 @@ pub async fn publish_draft(
         || draft.minecraft_version.is_empty()
         || draft.fabric_loader.is_empty()
     {
-        return Err(AppError::BadRequest(
-            "Draft missing required fields (version, minecraft_version, fabric_loader)".to_string(),
-        ));
+        let error_msg = format!(
+            "Draft missing required fields (version: {}, minecraft_version: {}, fabric_loader: {})",
+            if draft.version.is_empty() { "EMPTY" } else { &draft.version },
+            if draft.minecraft_version.is_empty() { "EMPTY" } else { &draft.minecraft_version },
+            if draft.fabric_loader.is_empty() { "EMPTY" } else { &draft.fabric_loader }
+        );
+        tracing::warn!("publish_draft failed: {}", error_msg);
+        return Err(AppError::BadRequest(error_msg));
     }
 
     if draft.files.is_empty() {
+        tracing::warn!("publish_draft failed: Draft {} has no files", id);
         return Err(AppError::BadRequest("Draft has no files".to_string()));
     }
 
     // Create release directory
     let release_dir = state.config.release_path(&draft.version);
     if release_dir.exists() {
-        return Err(AppError::BadRequest(format!(
-            "Release version {} already exists",
-            draft.version
-        )));
+        let error_msg = format!("Release version {} already exists", draft.version);
+        tracing::warn!("publish_draft failed: {}", error_msg);
+        return Err(AppError::BadRequest(error_msg));
     }
 
     fs::create_dir_all(&release_dir).await.map_err(|e| {
@@ -307,10 +312,9 @@ pub async fn publish_draft(
     let verified_files = scan_directory_files(&release_dir).await?;
 
     if verified_files.is_empty() {
-        return Err(AppError::BadRequest(
-            "All files were filtered out by the blacklist. Adjust your blacklist or add files before publishing."
-                .to_string(),
-        ));
+        let error_msg = "All files were filtered out by the blacklist. Adjust your blacklist or add files before publishing.";
+        tracing::warn!("publish_draft failed for version {}: {}", draft.version, error_msg);
+        return Err(AppError::BadRequest(error_msg.to_string()));
     }
     // Convert DraftFile to ManifestFile with fresh checksums and release URLs
     // Filter out blacklisted files to prevent download failures

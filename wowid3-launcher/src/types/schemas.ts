@@ -52,6 +52,7 @@ export const ManifestSchema = z.object({
   fabric_loader: z.string().min(1),
   files: z.array(ModpackFileSchema),
   changelog: z.string(),
+  ignore_patterns: z.array(z.string()).default([]),
 });
 
 export type Manifest = z.infer<typeof ManifestSchema>;

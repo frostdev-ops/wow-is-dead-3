@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
 import { logger, LogCategory } from './utils/logger';
 import { useModpack, useServer, useTheme, useAudio, useDiscord } from './hooks';
 import { usePolling } from './hooks/usePolling';
 import { useSettingsStore } from './stores/settingsStore';
 import { useUIStore } from './stores/uiStore';
-import { checkLauncherUpdate, LauncherUpdateInfo } from './hooks/useTauriCommands';
+import { useUpdateStore } from './stores/updateStore';
+import { checkLauncherUpdate } from './hooks/useTauriCommands';
 import LauncherHome from './components/LauncherHome';
 import { SettingsScreen } from './components/SettingsScreen';
 import { StatsScreen } from './components/StatsScreen';
@@ -21,13 +23,22 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<'home' | 'settings' | 'stats'>('home');
   const [showChangelog, setShowChangelog] = useState(false);
   const [showChangelogModal, setShowChangelogModal] = useState(false);
-  const [launcherUpdate, setLauncherUpdate] = useState<LauncherUpdateInfo | null>(null);
+  const [appVersion, setAppVersion] = useState<string>('');
   const { checkUpdates, latestManifest } = useModpack();
   const { ping } = useServer();
   const { initializeGameDirectory } = useSettingsStore();
   const { showLogViewer, setShowLogViewer } = useUIStore();
+  const { launcherUpdate, setLauncherUpdate, showLauncherUpdateModal } = useUpdateStore();
   const { isMuted, toggleMute, fallbackRef, mainRef, fallbackUrl } = useAudio();
   useTheme(); // Apply theme on mount
+
+  // Get launcher version on mount
+  useEffect(() => {
+    getVersion().then(version => setAppVersion(version)).catch(err => {
+      console.error('Failed to get app version:', err);
+      setAppVersion('Unknown');
+    });
+  }, []);
   useDiscord(); // Initialize Discord Rich Presence on app startup
 
   // Initialize OS-specific game directory on mount
@@ -40,7 +51,7 @@ function AppContent() {
 
   // Initialize app (launcher updates, modpack check, server ping)
   useEffect(() => {
-    // Check for launcher updates
+    // Check for launcher updates on startup (stores in update store)
     checkLauncherUpdate().then(info => {
         if (info.available) {
             setLauncherUpdate(info);
@@ -52,7 +63,7 @@ function AppContent() {
     // Other initialization
     checkUpdates().catch(e => logger.error(LogCategory.MODPACK, 'Initial checkUpdates failed:', e instanceof Error ? e : new Error(String(e))));
     ping(); // Initial ping
-  }, [checkUpdates, ping]);
+  }, [checkUpdates, ping, setLauncherUpdate]);
 
   // Unified Polling
   usePolling({
@@ -80,14 +91,12 @@ function AppContent() {
         ref={fallbackRef}
         src={fallbackUrl}
         loop
-        crossOrigin="anonymous"
       />
 
       {/* Main Audio (full track from server) */}
       <audio
         ref={mainRef}
         loop
-        crossOrigin="anonymous"
       />
 
       <div className="relative z-10 w-full h-full flex flex-col">
@@ -335,9 +344,26 @@ function AppContent() {
       />
 
       {/* Launcher Update Modal - Blocks if update available */}
-      {launcherUpdate && (
+      {showLauncherUpdateModal && launcherUpdate && (
           <LauncherUpdateModal updateInfo={launcherUpdate} />
       )}
+
+      {/* Version Display - Fixed Bottom Left */}
+      <div className="fixed bottom-4 left-4 z-50 pointer-events-none">
+        <div
+          className="px-3 py-1.5 backdrop-blur-sm rounded"
+          style={{
+            fontFamily: "'Trebuchet MS', sans-serif",
+            backgroundColor: 'rgba(0, 0, 0, 0.4)',
+            border: '1px solid rgba(255, 215, 0, 0.3)',
+            boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.3), 0 0 10px rgba(255, 215, 0, 0.15)',
+          }}
+        >
+          <span className="text-xs font-semibold" style={{ color: '#FFD700' }}>
+            v{appVersion}
+          </span>
+        </div>
+      </div>
     </div>
   );
 }

@@ -4,6 +4,7 @@ use crate::models::{
     AdminError, BlacklistResponse, CreateReleaseRequest, DeleteReleaseResponse, DraftFile,
     DraftRelease, LoginRequest, LoginResponse, Manifest, ManifestFile, ReleaseInfo,
     UpdateBlacklistRequest, UploadResponse,
+    manifest::{LauncherFile, LauncherVersion},
 };
 use crate::storage;
 use crate::utils;
@@ -398,9 +399,18 @@ pub async fn list_releases(
 ) -> Result<Json<PaginatedReleaseResponse>, AppError> {
     let start = std::time::Instant::now();
 
-    let versions = storage::manifest::list_versions(&state.config)
+    let mut versions = storage::manifest::list_versions(&state.config)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to list versions: {}", e)))?;
+
+    // Sort versions before pagination (newest first)
+    versions.sort_by(|a, b| {
+        // Try semantic version comparison first
+        match (semver::Version::parse(a), semver::Version::parse(b)) {
+            (Ok(va), Ok(vb)) => vb.cmp(&va), // Reverse for descending order
+            _ => b.cmp(a), // Fallback to string comparison
+        }
+    });
 
     let total = versions.len();
     let limit = pagination.limit.min(100).max(1); // Cap at 100, min 1
@@ -444,8 +454,7 @@ pub async fn list_releases(
         }
     }
 
-    // Sort by version (newest first)
-    releases.sort_by(|a, b| b.version.cmp(&a.version));
+    // No need to sort here - versions are already sorted before pagination
 
     let duration = start.elapsed();
     tracing::info!("list_releases took {:?} (page {} of {}, {} items)", duration, page, total_pages, releases.len());
@@ -958,10 +967,50 @@ pub async fn upload_launcher_release(
         mandatory,
     };
 
-    // Save manifest
+    // Save manifest (old format for backward compatibility)
     storage::launcher::write_launcher_manifest(&state.config, &manifest)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to write launcher manifest: {}", e)))?;
+
+    // Also save in new multi-platform format
+    let launcher_version = crate::models::manifest::LauncherVersion {
+        version: version.clone(),
+        files: vec![
+            crate::models::manifest::LauncherFile {
+                platform: "windows".to_string(),
+                filename: file_name.clone(),
+                url: format!("{}/files/launcher/{}", state.config.base_url, file_name),
+                sha256: manifest.sha256.clone(),
+                size: manifest.size,
+            }
+        ],
+        changelog: manifest.changelog.clone(),
+        mandatory: manifest.mandatory,
+        released_at: chrono::Utc::now().to_rfc3339(),
+    };
+
+    // Save the new version
+    storage::launcher::save_launcher_version(&state.config, &launcher_version)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to save launcher version: {}", e)))?;
+
+    // Update the versions index
+    let mut index = storage::launcher::load_launcher_versions_index(&state.config)
+        .await
+        .unwrap_or_else(|_| crate::models::manifest::LauncherVersionsIndex {
+            versions: vec![],
+            latest: version.clone(),
+        });
+
+    // Add this version if not already in the list
+    if !index.versions.contains(&version) {
+        index.versions.insert(0, version.clone()); // Add to front (newest first)
+    }
+    index.latest = version.clone();
+
+    storage::launcher::save_launcher_versions_index(&state.config, &index)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to save versions index: {}", e)))?;
 
     let duration = start.elapsed();
     tracing::info!("upload_launcher_release completed in {:?} (version: {})", duration, version);
@@ -970,6 +1019,155 @@ pub async fn upload_launcher_release(
         "message": "Launcher release uploaded successfully",
         "version": version,
         "mandatory": mandatory
+    })))
+}
+
+/// POST /api/admin/launcher/version - Upload multi-platform launcher version file
+/// Allows uploading individual platform files to a version (create version if it doesn't exist)
+pub async fn upload_launcher_version_file(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+    mut multipart: Multipart,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let start = std::time::Instant::now();
+
+    let mut version = String::new();
+    let mut changelog = String::new();
+    let mut mandatory = true;
+    let mut platform = String::new();
+    let mut file_saved = false;
+    let mut file_sha256 = String::new();
+    let mut file_size = 0u64;
+    let mut original_filename = String::new();
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Multipart error: {}", e)))?
+    {
+        let name = field.name().unwrap_or("").to_string();
+
+        if name == "version" {
+            version = field.text().await.map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read version: {}", e)))?;
+        } else if name == "changelog" {
+            changelog = field.text().await.map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read changelog: {}", e)))?;
+        } else if name == "mandatory" {
+            let val = field.text().await.map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read mandatory flag: {}", e)))?;
+            mandatory = val == "true";
+        } else if name == "platform" {
+            platform = field.text().await.map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read platform: {}", e)))?;
+        } else if name == "file" {
+            original_filename = field.file_name().map(|n| n.to_string()).unwrap_or_else(|| "launcher".to_string());
+
+            // Validate file extension
+            let allowed_extensions = vec![".exe", ".AppImage"];
+            let has_allowed_ext = allowed_extensions.iter().any(|ext| original_filename.ends_with(ext));
+
+            if !has_allowed_ext {
+                return Err(AppError::BadRequest("File must be .exe or .AppImage".to_string()));
+            }
+
+            // Create version directory
+            let version_dir = state.config.launcher_version_path(&version);
+            fs::create_dir_all(&version_dir)
+                .await
+                .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create version directory: {}", e)))?;
+
+            let file_path = state.config.launcher_version_file_path(&version, &original_filename);
+
+            let mut file = fs::File::create(&file_path)
+                .await
+                .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create launcher file: {}", e)))?;
+
+            let mut hasher = sha2::Sha256::new();
+            let mut stream = field;
+
+            while let Some(chunk) = stream.chunk().await.map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read chunk: {}", e)))? {
+                hasher.update(&chunk);
+                file_size += chunk.len() as u64;
+                file.write_all(&chunk).await.map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to write chunk: {}", e)))?;
+            }
+
+            file.flush().await.map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to flush file: {}", e)))?;
+            file_sha256 = format!("{:x}", hasher.finalize());
+            file_saved = true;
+
+            tracing::info!("Uploaded launcher file: {} for platform {} ({} bytes, sha256: {})", original_filename, platform, file_size, &file_sha256[..12]);
+        }
+    }
+
+    if !file_saved {
+        return Err(AppError::BadRequest("No file uploaded".to_string()));
+    }
+    if version.is_empty() {
+        return Err(AppError::BadRequest("Version is required".to_string()));
+    }
+    if platform.is_empty() {
+        return Err(AppError::BadRequest("Platform is required (windows, linux, or macos)".to_string()));
+    }
+
+    // Load existing version or create new one
+    let mut launcher_version = storage::launcher::load_launcher_version(&state.config, &version)
+        .await
+        .unwrap_or_else(|_| LauncherVersion {
+            version: version.clone(),
+            files: vec![],
+            changelog: changelog.clone(),
+            mandatory,
+            released_at: Utc::now().to_rfc3339(),
+        });
+
+    // Update changelog and mandatory if provided
+    if !changelog.is_empty() {
+        launcher_version.changelog = changelog;
+    }
+    launcher_version.mandatory = mandatory;
+
+    // Add or update file for this platform
+    let launcher_file = LauncherFile {
+        platform: platform.clone(),
+        filename: original_filename.clone(),
+        url: format!("{}/files/launcher/versions/{}/{}", state.config.base_url, version, original_filename),
+        sha256: file_sha256,
+        size: file_size,
+    };
+
+    // Remove existing file for this platform if present
+    launcher_version.files.retain(|f| f.platform != platform);
+    launcher_version.files.push(launcher_file);
+
+    // Save version manifest
+    storage::launcher::save_launcher_version(&state.config, &launcher_version)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to save launcher version: {}", e)))?;
+
+    let duration = start.elapsed();
+    tracing::info!("upload_launcher_version_file completed in {:?} (version: {}, platform: {})", duration, version, platform);
+
+    Ok(Json(json!({
+        "message": "Launcher version file uploaded successfully",
+        "version": version,
+        "platform": platform,
+        "filename": original_filename,
+        "platforms": launcher_version.platforms()
+    })))
+}
+
+/// DELETE /api/admin/launcher/:version - Delete a launcher version
+pub async fn delete_launcher_version(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+    Path(version): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    storage::launcher::delete_launcher_version(&state.config, &version)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to delete launcher version: {}", e)))?;
+
+    tracing::info!("Deleted launcher version: {}", version);
+
+    Ok(Json(json!({
+        "message": "Launcher version deleted successfully",
+        "version": version
     })))
 }
 

@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::models::{Manifest, manifest::LauncherManifest, TrackerState};
+use crate::models::{Manifest, manifest::{LauncherVersion, LauncherVersionsIndex}, TrackerState};
 use crate::storage;
 use crate::utils;
 use anyhow;
@@ -37,24 +37,92 @@ pub struct PublicState {
     pub stats_processor: Arc<StatsProcessor>,
 }
 
-/// GET /api/launcher/latest
+/// GET /api/launcher/latest - Returns multi-platform launcher version info
+/// Falls back to old manifest format for backward compatibility
 pub async fn get_latest_launcher_manifest(
     State(state): State<PublicState>,
-) -> Result<Json<LauncherManifest>, AppError> {
-    let manifest = storage::launcher::read_latest_launcher_manifest(&state.config)
-        .await
-        .map_err(|_| AppError::NotFound("No launcher update available".to_string()))?;
+) -> Result<Json<LauncherVersion>, AppError> {
+    // Try to load the latest version from the versions index (new multi-platform format)
+    match storage::launcher::load_launcher_versions_index(&state.config).await {
+        Ok(index) => {
+            let latest_version = &index.latest;
 
-    Ok(Json(manifest))
+            match storage::launcher::load_launcher_version(&state.config, latest_version).await {
+                Ok(version) => return Ok(Json(version)),
+                Err(e) => {
+                    eprintln!("[Launcher API] Failed to load version {}: {:?}", latest_version, e);
+                    // Fall through to try old format
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("[Launcher API] No versions index found: {:?}, falling back to old manifest format", e);
+            // Fall through to try old format
+        }
+    }
+
+    // Fallback: Try old single-file manifest format and convert to LauncherVersion
+    match storage::launcher::read_latest_launcher_manifest(&state.config).await {
+        Ok(manifest) => {
+            // Get the manifest file's modification time to use as released_at
+            // This provides a stable timestamp representing when the launcher was published
+            let manifest_path = state.config.launcher_manifest_path();
+            let released_at = match tokio::fs::metadata(&manifest_path).await {
+                Ok(metadata) => {
+                    match metadata.modified() {
+                        Ok(modified) => {
+                            // Convert SystemTime to DateTime<Utc>
+                            let datetime: chrono::DateTime<chrono::Utc> = modified.into();
+                            datetime.to_rfc3339()
+                        }
+                        Err(e) => {
+                            eprintln!("[Launcher API] Failed to get file modified time: {:?}, using fallback", e);
+                            // Fallback to a fixed timestamp for legacy manifest (not current time)
+                            "2024-01-01T00:00:00Z".to_string()
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[Launcher API] Failed to get file metadata: {:?}, using fallback", e);
+                    // Fallback to a fixed timestamp for legacy manifest (not current time)
+                    "2024-01-01T00:00:00Z".to_string()
+                }
+            };
+
+            // Convert old LauncherManifest to new LauncherVersion format
+            let launcher_version = LauncherVersion {
+                version: manifest.version,
+                files: vec![
+                    crate::models::manifest::LauncherFile {
+                        platform: "windows".to_string(),
+                        filename: "WOWID3Launcher.exe".to_string(),
+                        url: manifest.url,
+                        sha256: manifest.sha256,
+                        size: manifest.size,
+                    }
+                ],
+                changelog: manifest.changelog,
+                mandatory: manifest.mandatory,
+                released_at,
+            };
+
+            Ok(Json(launcher_version))
+        }
+        Err(e) => {
+            Err(AppError::NotFound(format!("No launcher update available: {:?}", e)))
+        }
+    }
 }
 
-/// GET /files/launcher/:filename
+/// GET /files/launcher/:filename - Serve launcher files (legacy, for current Windows-only release)
 pub async fn serve_launcher_file(
     State(state): State<PublicState>,
     Path(filename): Path<String>,
 ) -> Result<Response, AppError> {
-    // Security: Only allow specific launcher filenames (currently just the main exe)
-    if filename != "WOWID3Launcher.exe" {
+    // Security: Only allow specific launcher filenames
+    let allowed_files = vec!["WOWID3Launcher.exe"];
+
+    if !allowed_files.contains(&filename.as_str()) {
         return Err(AppError::NotFound(format!("File {} not found", filename)));
     }
 
@@ -70,7 +138,7 @@ pub async fn serve_launcher_file(
     })?;
 
     let content_type = "application/vnd.microsoft.portable-executable";
-    
+
     let stream = ReaderStream::new(file);
     let body = Body::from_stream(stream);
 
@@ -80,6 +148,77 @@ pub async fn serve_launcher_file(
         .header(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", filename))
         .body(body)
         .unwrap())
+}
+
+/// GET /files/launcher/versions/:version/:filename - Serve versioned launcher files (multi-platform)
+pub async fn serve_versioned_launcher_file(
+    State(state): State<PublicState>,
+    Path((version, filename)): Path<(String, String)>,
+) -> Result<Response, AppError> {
+    // Security: Validate filename format and extension
+    let allowed_extensions = vec![".exe", ".AppImage"];
+    let has_allowed_ext = allowed_extensions.iter().any(|ext| filename.ends_with(ext));
+
+    if !has_allowed_ext {
+        return Err(AppError::NotFound(format!("File {} not found", filename)));
+    }
+
+    // Validate filename doesn't contain path traversal attempts
+    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+        return Err(AppError::NotFound("Invalid filename".to_string()));
+    }
+
+    let file_path = state.config.launcher_version_file_path(&version, &filename);
+
+    if !file_path.exists() {
+        return Err(AppError::NotFound(format!("File {} for version {} not found", filename, version)));
+    }
+
+    let file = fs::File::open(&file_path).await.map_err(|_| {
+        AppError::NotFound(format!("Could not open file: {}", filename))
+    })?;
+
+    // Determine content type based on extension
+    let content_type = if filename.ends_with(".exe") {
+        "application/vnd.microsoft.portable-executable"
+    } else if filename.ends_with(".AppImage") {
+        "application/x-executable"
+    } else {
+        "application/octet-stream"
+    };
+
+    let stream = ReaderStream::new(file);
+    let body = Body::from_stream(stream);
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", filename))
+        .body(body)
+        .unwrap())
+}
+
+/// GET /api/launcher/versions - List all available launcher versions
+pub async fn get_launcher_versions(
+    State(state): State<PublicState>,
+) -> Result<Json<LauncherVersionsIndex>, AppError> {
+    let index = storage::launcher::load_launcher_versions_index(&state.config)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to load versions: {}", e)))?;
+
+    Ok(Json(index))
+}
+
+/// GET /api/launcher/:version - Get a specific launcher version manifest
+pub async fn get_launcher_version(
+    State(state): State<PublicState>,
+    Path(version): Path<String>,
+) -> Result<Json<LauncherVersion>, AppError> {
+    let version_manifest = storage::launcher::load_launcher_version(&state.config, &version)
+        .await
+        .map_err(|_| AppError::NotFound(format!("Version {} not found", version)))?;
+
+    Ok(Json(version_manifest))
 }
 
 /// GET /api/manifest/latest

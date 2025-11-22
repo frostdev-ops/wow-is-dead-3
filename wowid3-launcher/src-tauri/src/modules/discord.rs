@@ -8,9 +8,11 @@ use std::sync::{Arc, Mutex};
 ///
 /// To get your own Application ID:
 /// 1. Go to https://discord.com/developers/applications
-/// 2. Click "New Application" and name it "WOWID3"
+/// 2. Click "New Application" and name it "WOW Is Dead 3!"
 /// 3. Copy the "Application ID" from General Information
-/// 4. Go to Rich Presence → Art Assets and upload a Minecraft icon (name it "minecraft")
+/// 4. Go to Rich Presence → Art Assets and upload:
+///    - Large icon named "wowid3-logo" (main launcher/server branding)
+///    - Small icons: "grass_block", "netherrack", "end_stone" (dimension indicators)
 /// 5. Replace the placeholder below with your real Application ID
 const DISCORD_APP_ID: &str = "1251233593062068315";
 
@@ -196,7 +198,7 @@ impl DiscordClient {
 /// Game presence information for Discord
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GamePresence {
-    /// Current game state (e.g., "Playing WOWID3 Modpack")
+    /// Current game state (e.g., "Playing WOW Is Dead 3!")
     pub state: String,
     /// Details about what the user is doing (e.g., "Server: WOWID3")
     pub details: Option<String>,
@@ -223,10 +225,10 @@ pub struct GamePresence {
 impl Default for GamePresence {
     fn default() -> Self {
         GamePresence {
-            state: "Playing WOWID3 Modpack".to_string(),
+            state: "Playing WOW Is Dead 3!".to_string(),
             details: None,
-            large_image: None,
-            large_image_text: None,
+            large_image: Some("wowid3-logo".to_string()),
+            large_image_text: Some("WOW Is Dead 3!".to_string()),
             small_image: None,
             small_image_text: None,
             start_time: None,
@@ -245,7 +247,7 @@ mod tests {
     #[test]
     fn test_game_presence_default() {
         let presence = GamePresence::default();
-        assert_eq!(presence.state, "Playing WOWID3 Modpack");
+        assert_eq!(presence.state, "Playing WOW Is Dead 3!");
         assert_eq!(presence.details, None);
         assert_eq!(presence.party_size, None);
     }
@@ -253,10 +255,10 @@ mod tests {
     #[test]
     fn test_game_presence_with_details() {
         let presence = GamePresence {
-            state: "Playing WOWID3 Modpack".to_string(),
+            state: "Playing WOW Is Dead 3!".to_string(),
             details: Some("Server: WOWID3 [5/32 Players]".to_string()),
             large_image: Some("wowid3-logo".to_string()),
-            large_image_text: Some("WOWID3 Modpack".to_string()),
+            large_image_text: Some("WOW Is Dead 3!".to_string()),
             small_image: Some("online".to_string()),
             small_image_text: Some("Server Online".to_string()),
             start_time: Some(1700000000),
@@ -266,7 +268,7 @@ mod tests {
             player_count: None,
         };
 
-        assert_eq!(presence.state, "Playing WOWID3 Modpack");
+        assert_eq!(presence.state, "Playing WOW Is Dead 3!");
         assert_eq!(
             presence.details,
             Some("Server: WOWID3 [5/32 Players]".to_string())
@@ -309,10 +311,10 @@ mod tests {
     #[test]
     fn test_game_presence_serialization() {
         let presence = GamePresence {
-            state: "Playing WOWID3 Modpack".to_string(),
+            state: "Playing WOW Is Dead 3!".to_string(),
             details: Some("Server: WOWID3 [5/32 Players]".to_string()),
             large_image: Some("wowid3-logo".to_string()),
-            large_image_text: Some("WOWID3 Modpack".to_string()),
+            large_image_text: Some("WOW Is Dead 3!".to_string()),
             small_image: Some("online".to_string()),
             small_image_text: Some("Server Online".to_string()),
             start_time: Some(1700000000),
@@ -323,7 +325,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&presence).unwrap();
-        assert!(json.contains("Playing WOWID3 Modpack"));
+        assert!(json.contains("Playing WOW Is Dead 3!"));
         assert!(json.contains("Server: WOWID3"));
         assert!(json.contains("5"));
         assert!(json.contains("32"));
@@ -333,10 +335,10 @@ mod tests {
     fn test_game_presence_deserialization() {
         let json = r#"
         {
-            "state": "Playing WOWID3 Modpack",
+            "state": "Playing WOW Is Dead 3!",
             "details": "Server: WOWID3 [5/32 Players]",
             "large_image": "wowid3-logo",
-            "large_image_text": "WOWID3 Modpack",
+            "large_image_text": "WOW Is Dead 3!",
             "small_image": "online",
             "small_image_text": "Server Online",
             "start_time": 1700000000,
@@ -347,7 +349,7 @@ mod tests {
         "#;
 
         let presence: GamePresence = serde_json::from_str(json).unwrap();
-        assert_eq!(presence.state, "Playing WOWID3 Modpack");
+        assert_eq!(presence.state, "Playing WOW Is Dead 3!");
         assert_eq!(presence.party_size, Some(5));
         assert_eq!(presence.party_max, Some(32));
     }
@@ -355,7 +357,7 @@ mod tests {
     #[test]
     fn test_game_presence_minimal() {
         let presence = GamePresence {
-            state: "Playing WOWID3 Modpack".to_string(),
+            state: "Playing WOW Is Dead 3!".to_string(),
             details: None,
             large_image: None,
             large_image_text: None,
@@ -368,14 +370,14 @@ mod tests {
             player_count: None,
         };
 
-        assert_eq!(presence.state, "Playing WOWID3 Modpack");
+        assert_eq!(presence.state, "Playing WOW Is Dead 3!");
         assert!(presence.large_image.is_none());
     }
 
     #[test]
     fn test_game_presence_with_timestamps() {
         let presence = GamePresence {
-            state: "Playing WOWID3 Modpack".to_string(),
+            state: "Playing WOW Is Dead 3!".to_string(),
             details: Some("Server: WOWID3".to_string()),
             large_image: None,
             large_image_text: None,

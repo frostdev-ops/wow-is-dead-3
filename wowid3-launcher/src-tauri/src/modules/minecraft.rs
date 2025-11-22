@@ -12,6 +12,7 @@ use super::game_installer::get_installed_version;
 use super::library_manager;
 use super::minecraft_version::{Argument, ArgumentValue};
 use super::auth::get_access_token_by_session_id;
+use super::updater::get_installed_version as get_modpack_version;
 
 // Global game process ID tracker
 lazy_static::lazy_static! {
@@ -71,6 +72,14 @@ pub async fn launch_game_with_metadata(
     let access_token = get_access_token_by_session_id(&config.session_id)
         .context("Failed to retrieve access token from session_id")?;
 
+    // Get modpack version for window title
+    // Fallback to "Unknown" if version file doesn't exist or can't be read
+    let modpack_version = get_modpack_version(game_dir)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "Unknown".to_string());
+
     // Prepare argument substitution map
     // Note: Since working directory will be set to game_dir, use relative paths
     let mut arg_map = HashMap::new();
@@ -113,6 +122,10 @@ pub async fn launch_game_with_metadata(
         // Minecraft-specific optimizations
         "-Dorg.lwjgl.opengl.Display.allowSoftwareOpenGL=true".to_string(),
         "-Dfml.earlyprogresswindow=false".to_string(),
+        // Set distinct window title to avoid duplicate window entries in OS window managers
+        // This helps distinguish the Minecraft game window from the launcher window
+        // Use modpack version instead of Minecraft version for better identification
+        format!("-Dcom.mojang.minecraft.windowTitle=WOWID3 - {}", modpack_version),
     ];
 
     // Platform-specific optimizations
@@ -207,6 +220,14 @@ pub async fn launch_game_with_metadata(
 
     // Set working directory
     cmd.current_dir(&game_dir);
+
+    // Set environment variables to distinguish Minecraft process from launcher
+    // This helps prevent duplicate window entries in OS window managers
+    cmd.env("MC_VERSION", &version_meta.id);
+    cmd.env("MC_MODPACK_VERSION", &modpack_version);
+    cmd.env("MC_LAUNCHER", "wowid3-launcher");
+    // Set a distinct process title environment variable that some systems use
+    cmd.env("PROCESS_NAME", format!("WOWID3 - {}", modpack_version));
 
     // Platform-specific environment variables
     #[cfg(target_os = "linux")]
@@ -608,7 +629,7 @@ mod tests {
             game_dir: PathBuf::from("/home/user/.minecraft"),
             username: "TestUser".to_string(),
             uuid: "550e8400-e29b-41d4-a716-446655440000".to_string(),
-            access_token: "test_token".to_string(),
+            session_id: "test_session".to_string(),
         };
 
         let json = serde_json::to_string(&config).unwrap();

@@ -3,7 +3,8 @@ import { listen } from '@tauri-apps/api/event';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LauncherUpdateInfo, installLauncherUpdate } from '../hooks/useTauriCommands';
 import { Card, Button, ProgressBar } from './ui';
-import { Rocket, AlertTriangle, Download } from 'lucide-react';
+import { Rocket, AlertTriangle, Download, X } from 'lucide-react';
+import { useUpdateStore } from '../stores/updateStore';
 
 interface LauncherUpdateModalProps {
   updateInfo: LauncherUpdateInfo;
@@ -19,6 +20,13 @@ const LauncherUpdateModal: React.FC<LauncherUpdateModalProps> = ({ updateInfo })
   const [isUpdating, setIsUpdating] = useState(false);
   const [progressState, setProgressState] = useState<{current: number, total: number}>({ current: 0, total: 0 });
   const [error, setError] = useState<string | null>(null);
+  const { setShowLauncherUpdateModal } = useUpdateStore();
+
+  const handleDismiss = () => {
+    if (!updateInfo.mandatory) {
+      setShowLauncherUpdateModal(false);
+    }
+  };
 
   useEffect(() => {
     if (isUpdating) {
@@ -62,14 +70,25 @@ const LauncherUpdateModal: React.FC<LauncherUpdateModalProps> = ({ updateInfo })
             className="w-full max-w-md"
           >
             <Card className="p-6 border-2 border-primary/50 shadow-2xl shadow-primary/20">
-              <div className="flex items-center gap-4 mb-6">
-                <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center animate-pulse">
-                  <Rocket className="w-6 h-6 text-primary" />
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center animate-pulse">
+                    <Rocket className="w-6 h-6 text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-white">Launcher Update</h2>
+                    <p className="text-primary font-medium">Version {updateInfo.version} Available</p>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-2xl font-bold text-white">Launcher Update</h2>
-                  <p className="text-primary font-medium">Version {updateInfo.version} Available</p>
-                </div>
+                {!updateInfo.mandatory && !isUpdating && (
+                  <button
+                    onClick={handleDismiss}
+                    className="text-gray-400 hover:text-white transition-colors"
+                    aria-label="Close"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                )}
               </div>
 
               <div className="space-y-4 mb-6">
@@ -101,21 +120,32 @@ const LauncherUpdateModal: React.FC<LauncherUpdateModalProps> = ({ updateInfo })
                         {progressState.total > 0 ? ((progressState.current / progressState.total) * 100).toFixed(1) : 0}%
                     </span>
                   </div>
-                  <ProgressBar 
-                    current={progressState.current} 
-                    total={progressState.total} 
-                    className="h-2" 
+                  <ProgressBar
+                    current={progressState.current}
+                    total={progressState.total}
+                    className="h-2"
                   />
                   <p className="text-xs text-center text-gray-500 mt-2">The launcher will restart automatically</p>
                 </div>
               ) : (
-                <Button 
-                  onClick={handleUpdate} 
-                  className="w-full py-6 text-lg font-semibold shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all"
-                >
-                  <Download className="w-5 h-5 mr-2" />
-                  Update & Restart
-                </Button>
+                <div className="flex gap-3">
+                  {!updateInfo.mandatory && (
+                    <Button
+                      onClick={handleDismiss}
+                      variant="secondary"
+                      className="flex-1 py-4 text-base font-semibold"
+                    >
+                      Remind Me Later
+                    </Button>
+                  )}
+                  <Button
+                    onClick={handleUpdate}
+                    className={`py-4 text-base font-semibold shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all ${updateInfo.mandatory ? 'w-full' : 'flex-1'}`}
+                  >
+                    <Download className="w-5 h-5 mr-2" />
+                    Update & Restart
+                  </Button>
+                </div>
               )}
             </Card>
           </motion.div>

@@ -194,7 +194,8 @@ export const useModpack = () => {
           );
         }
 
-        // Confirm update success
+        // Update state to reflect successful installation
+        setInstalledVersion(latestManifest.version); // CRITICAL: Update installed version so Play button works!
         setUpdateAvailable(false);
 
         // After install, run async verification and cleanup (silent, non-blocking)

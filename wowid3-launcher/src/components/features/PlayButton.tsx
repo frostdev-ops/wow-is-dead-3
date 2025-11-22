@@ -8,6 +8,9 @@ export enum PlayButtonState {
   PLAYING = 'PLAYING',
   INSTALLING = 'INSTALLING',
   UPDATING = 'UPDATING',
+  CHECKING_UPDATES = 'CHECKING_UPDATES',
+  LAUNCHER_UPDATE_REQUIRED = 'LAUNCHER_UPDATE_REQUIRED',
+  MODPACK_UPDATE_REQUIRED = 'MODPACK_UPDATE_REQUIRED',
   LOGIN_REQUIRED = 'LOGIN_REQUIRED',
   UPDATE_AVAILABLE = 'UPDATE_AVAILABLE',
   READY = 'READY',
@@ -31,6 +34,12 @@ const getButtonConfig = (state: PlayButtonState) => {
       return { text: 'Installing/Updating...', disabled: true };
     case PlayButtonState.UPDATING:
       return { text: 'Updating...', disabled: true };
+    case PlayButtonState.CHECKING_UPDATES:
+      return { text: 'Checking for updates...', disabled: true };
+    case PlayButtonState.LAUNCHER_UPDATE_REQUIRED:
+      return { text: 'Launcher Update Available', disabled: false };
+    case PlayButtonState.MODPACK_UPDATE_REQUIRED:
+      return { text: 'Modpack Update Available', disabled: false };
     case PlayButtonState.LOGIN_REQUIRED:
       return { text: 'Login', disabled: false };
     case PlayButtonState.UPDATE_AVAILABLE:
@@ -77,6 +86,9 @@ export const usePlayButtonState = ({
   isDownloading,
   isAuthenticated,
   updateAvailable,
+  isCheckingUpdates,
+  launcherUpdateRequired,
+  modpackUpdateRequired,
 }: {
   authLoading: boolean;
   isLaunching: boolean;
@@ -85,6 +97,9 @@ export const usePlayButtonState = ({
   isDownloading: boolean;
   isAuthenticated: boolean;
   updateAvailable: boolean;
+  isCheckingUpdates?: boolean;
+  launcherUpdateRequired?: boolean;
+  modpackUpdateRequired?: boolean;
 }): PlayButtonState => {
   // Priority order (highest to lowest)
   if (authLoading) return PlayButtonState.AUTHENTICATING;
@@ -92,7 +107,10 @@ export const usePlayButtonState = ({
   if (isPlaying) return PlayButtonState.PLAYING;
   if (isBlockedForInstall) return PlayButtonState.INSTALLING;
   if (isDownloading) return PlayButtonState.UPDATING;
+  if (isCheckingUpdates) return PlayButtonState.CHECKING_UPDATES;
   if (!isAuthenticated) return PlayButtonState.LOGIN_REQUIRED;
+  if (launcherUpdateRequired) return PlayButtonState.LAUNCHER_UPDATE_REQUIRED;
+  if (modpackUpdateRequired) return PlayButtonState.MODPACK_UPDATE_REQUIRED;
   if (updateAvailable) return PlayButtonState.UPDATE_AVAILABLE;
   return PlayButtonState.READY;
 };

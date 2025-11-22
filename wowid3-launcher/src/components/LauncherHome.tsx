@@ -3,8 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth, useModpack, useServer, useDiscord, useMinecraftInstaller, useDiscordPresence } from '../hooks';
 import { useServerTracker } from '../hooks/useServerTracker';
 import { extractBaseUrl } from '../utils/url';
-import { 
-  useRamAllocation, 
+import {
+  useRamAllocation,
   useManifestUrl
 } from '../stores/selectors';
 import { useToast } from './ui/ToastContainer';
@@ -12,6 +12,7 @@ import { ProgressBar } from './ui/ProgressBar';
 import { ChangelogViewer } from './ChangelogViewer';
 import { PlayerList } from './PlayerList';
 import DeviceCodeModal from './DeviceCodeModal';
+import ModpackUpdateDialog from './ModpackUpdateDialog';
 import { SkinViewerWithSuspense, CatModelWithSuspense } from './LazyComponents';
 import { MinecraftSetup } from './MinecraftSetup';
 import { AuthenticationCard } from './features/AuthenticationCard';
@@ -21,6 +22,7 @@ import { DiscordStatus } from './features/DiscordStatus';
 import { PlayButton, usePlayButtonState } from './features/PlayButton';
 import { useGameLauncher } from '../hooks/useGameLauncher';
 import { useModpackLifecycle } from '../hooks/useModpackLifecycle';
+import { useUpdateStore } from '../stores/updateStore';
 import type { DeviceCodeInfo } from '../hooks/useTauriCommands';
 
 export default function LauncherHome() {
@@ -46,9 +48,20 @@ export default function LauncherHome() {
     checkUpdates
   } = useModpack();
 
+  // Update Store
+  const {
+    launcherUpdate,
+    modpackUpdate,
+    setLauncherUpdate,
+    setModpackUpdate,
+    setShowLauncherUpdateModal
+  } = useUpdateStore();
+
   // Local State
   const [showChangelog, setShowChangelog] = useState(false);
   const [deviceCodeInfo, setDeviceCodeInfo] = useState<DeviceCodeInfo | null>(null);
+  const [isCheckingLauncherUpdates, setIsCheckingLauncherUpdates] = useState(false);
+  const [isCheckingModpackUpdates, setIsCheckingModpackUpdates] = useState(false);
   const lastAuthError = useRef<string | null>(null);
 
   // Feature Hooks
@@ -71,6 +84,8 @@ export default function LauncherHome() {
   
 
   // Derived State
+  const isCheckingUpdates = isCheckingLauncherUpdates || isCheckingModpackUpdates;
+
   const playButtonState = useMemo(() => usePlayButtonState({
     authLoading,
     isLaunching,
@@ -78,7 +93,10 @@ export default function LauncherHome() {
     isBlockedForInstall,
     isDownloading,
     isAuthenticated,
-    updateAvailable
+    updateAvailable,
+    isCheckingUpdates,
+    launcherUpdateRequired: launcherUpdate?.available === true,
+    modpackUpdateRequired: modpackUpdate?.available === true
   }), [
     authLoading,
     isLaunching,
@@ -86,7 +104,10 @@ export default function LauncherHome() {
     isBlockedForInstall,
     isDownloading,
     isAuthenticated,
-    updateAvailable
+    updateAvailable,
+    isCheckingUpdates,
+    launcherUpdate,
+    modpackUpdate
   ]);
 
   // Effects
@@ -113,7 +134,71 @@ export default function LauncherHome() {
     }
   }, [launchError, addToast, clearLaunchError]);
 
-  // 4. Modpack Error Toast
+  // 4. Check Launcher Updates (after authentication)
+  useEffect(() => {
+    if (!isAuthenticated || authLoading) {
+      return;
+    }
+
+    const checkLauncherUpdates = async () => {
+      try {
+        setIsCheckingLauncherUpdates(true);
+        const { checkLauncherUpdate } = await import('../hooks/useTauriCommands');
+        const updateInfo = await checkLauncherUpdate();
+
+        if (updateInfo.available) {
+          setLauncherUpdate(updateInfo);
+        } else {
+          setLauncherUpdate(null);
+        }
+      } catch (err) {
+        console.error('[LauncherHome] Failed to check launcher updates:', err);
+        // Don't block if check fails
+        setLauncherUpdate(null);
+      } finally {
+        setIsCheckingLauncherUpdates(false);
+      }
+    };
+
+    checkLauncherUpdates();
+  }, [isAuthenticated, authLoading, setLauncherUpdate]);
+
+  // 5. Check Modpack Updates (after authentication)
+  useEffect(() => {
+    if (!isAuthenticated || authLoading) {
+      return;
+    }
+
+    const checkModpackUpdates = async () => {
+      try {
+        setIsCheckingModpackUpdates(true);
+        const serverManifest = await checkUpdates();
+        const myVersion = installedVersion;
+        const serverVersion = serverManifest.version;
+
+        if (myVersion !== serverVersion) {
+          setModpackUpdate({
+            available: true,
+            currentVersion: myVersion || 'Not Installed',
+            newVersion: serverVersion,
+            changelog: serverManifest.changelog
+          });
+        } else {
+          setModpackUpdate(null);
+        }
+      } catch (err) {
+        console.error('[LauncherHome] Failed to check modpack updates:', err);
+        // Don't block if check fails
+        setModpackUpdate(null);
+      } finally {
+        setIsCheckingModpackUpdates(false);
+      }
+    };
+
+    checkModpackUpdates();
+  }, [isAuthenticated, authLoading, installedVersion, checkUpdates, setModpackUpdate]);
+
+  // 6. Modpack Error Toast
   useEffect(() => {
     if (modpackState.error) {
       addToast(modpackState.error.message, 'error');
@@ -132,6 +217,7 @@ export default function LauncherHome() {
 
   // Handlers
   const handlePlayClick = useCallback(async () => {
+    // Handle authentication
     if (!isAuthenticated || !user) {
       try {
         const deviceCode = await login();
@@ -148,72 +234,27 @@ export default function LauncherHome() {
       return;
     }
 
-    // LAUNCHER VERSION CHECK: Block launch if launcher itself is outdated
-    try {
-      console.log('[Play] Checking launcher version...');
-      const { checkLauncherUpdate } = await import('../hooks/useTauriCommands');
-      const launcherUpdate = await checkLauncherUpdate();
-
-      console.log('[Play] Launcher update check:', launcherUpdate);
-
-      // If update is available and mandatory, BLOCK launch
-      if (launcherUpdate.available && launcherUpdate.mandatory) {
-        console.error('[Play] ✗ Launcher update is MANDATORY! Current version outdated.');
-        addToast(
-          `Launcher update required! Version ${launcherUpdate.version} is available. Please restart to update.`,
-          'error'
-        );
-        return; // BLOCK launch - launcher must be updated
-      }
-
-      // If update is available but not mandatory, warn but allow launch
-      if (launcherUpdate.available) {
-        console.warn('[Play] ⚠ Launcher update available (optional):', launcherUpdate.version);
-        addToast(
-          `Launcher update ${launcherUpdate.version} available (optional)`,
-          'info'
-        );
-      } else {
-        console.log('[Play] ✓ Launcher is up to date');
-      }
-    } catch (err) {
-      console.error('[Play] Launcher version check failed:', err);
-      // Don't block launch if check fails - server might not have launcher manifest yet
-      console.warn('[Play] ⚠ Continuing without launcher version check');
+    // Check for launcher update (modal will be shown automatically by update store)
+    if (launcherUpdate?.available) {
+      // Modal is already shown via update store, just ensure it's visible
+      setShowLauncherUpdateModal(true);
+      return;
     }
 
-    // MODPACK VERSION CHECK: Simple caveman-style "do numbers match?" check before EVERY launch
-    try {
-      console.log('[Play] Checking modpack version...');
-      const serverManifest = await checkUpdates();
-      const myVersion = installedVersion;
-      const serverVersion = serverManifest.version;
-
-      console.log('[Play] Modpack version check:', { myVersion, serverVersion });
-
-      // Simple number comparison - do they match?
-      if (myVersion !== serverVersion) {
-        console.log('[Play] Modpack version mismatch detected! Forcing update...');
-        addToast(`Modpack update required: ${myVersion || 'none'} → ${serverVersion}`, 'info');
-
-        // FORCE update - block launch until updated
-        await performInstall({ blockUi: true });
-        return;
-      }
-
-      console.log('[Play] ✓ Modpack versions match, proceeding with launch');
-    } catch (err) {
-      console.error('[Play] Modpack version check failed:', err);
-      addToast(`Failed to verify modpack version: ${err}`, 'error');
-      return; // Don't launch if we can't verify version
+    // Check for modpack update (dialog will be shown automatically)
+    if (modpackUpdate?.available) {
+      // Dialog is already shown via update store state
+      // User must click "Update Now" in the dialog
+      return;
     }
 
+    // All checks passed, launch the game
     if (minecraftInstalled && versionId && user.session_id) {
       try {
         await launchGame({
           username: user.username,
           uuid: user.uuid,
-          accessToken: user.session_id, // Backend will resolve session_id to token
+          accessToken: user.session_id,
           versionId: versionId
         });
       } catch (err) {
@@ -226,13 +267,31 @@ export default function LauncherHome() {
     login,
     finishDeviceCodeAuth,
     addToast,
-    checkUpdates,
-    installedVersion,
-    performInstall,
+    launcherUpdate,
+    modpackUpdate,
+    setShowLauncherUpdateModal,
     minecraftInstalled,
     versionId,
     launchGame
   ]);
+
+  // Handler for modpack update confirmation
+  const handleModpackUpdateConfirm = useCallback(async () => {
+    try {
+      await performInstall({ blockUi: true });
+      // After successful update, clear the modpack update state
+      setModpackUpdate(null);
+      addToast('Modpack updated successfully!', 'success');
+    } catch (err) {
+      addToast(`Failed to update modpack: ${err}`, 'error');
+    }
+  }, [performInstall, setModpackUpdate, addToast]);
+
+  // Handler for modpack update cancellation
+  const handleModpackUpdateCancel = useCallback(() => {
+    // Just close the dialog, keep the update state so button shows "Modpack Update Available"
+    addToast('Modpack update cancelled. You must update to play.', 'warning');
+  }, [addToast]);
 
   return (
     <div className="flex flex-col items-center justify-center h-full pt-32 p-0">
@@ -402,6 +461,12 @@ export default function LauncherHome() {
                     onCancel={() => setDeviceCodeInfo(null)}
                   />
                 )}
+
+                {/* Modpack Update Dialog */}
+                <ModpackUpdateDialog
+                  onConfirm={handleModpackUpdateConfirm}
+                  onCancel={handleModpackUpdateCancel}
+                />
 
                 {/* Play Button */}
                 <PlayButton 

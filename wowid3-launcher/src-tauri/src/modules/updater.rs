@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
@@ -74,6 +75,11 @@ pub async fn check_for_updates(manifest_url: &str) -> Result<Manifest> {
         .context("Failed to parse manifest JSON - server returned invalid JSON")?;
 
     eprintln!("[Updater] Manifest parsed successfully: version {}", manifest.version);
+    eprintln!("[Updater] Manifest contains {} files", manifest.files.len());
+    eprintln!("[Updater] Manifest contains {} ignore patterns", manifest.ignore_patterns.len());
+    if !manifest.ignore_patterns.is_empty() {
+        eprintln!("[Updater] First 5 patterns: {:?}", &manifest.ignore_patterns[..std::cmp::min(5, manifest.ignore_patterns.len())]);
+    }
 
     Ok(manifest)
 }
@@ -271,11 +277,14 @@ async fn cleanup_extra_files(manifest: &Manifest, game_dir: &PathBuf) -> Result<
         .iter()
         .map(|f| f.path.replace('\\', "/"))
         .collect();
-    
+
     let ignore_patterns = manifest.ignore_patterns.clone();
 
     println!("[Cleanup] Starting cleanup of extra files...");
     println!("[Cleanup] Using {} ignore patterns from server", ignore_patterns.len());
+
+    // Compile ignore patterns into GlobSet BEFORE entering spawn_blocking
+    let glob_set = compile_ignore_patterns(&ignore_patterns)?;
 
     tokio::task::spawn_blocking(move || {
         let mut removed_count = 0;
@@ -285,7 +294,7 @@ async fn cleanup_extra_files(manifest: &Manifest, game_dir: &PathBuf) -> Result<
 
         for entry in walker.into_iter().filter_map(|e| e.ok()) {
             let path = entry.path();
-            
+
             // Skip the game_dir itself
             if path == game_dir {
                 continue;
@@ -305,7 +314,7 @@ async fn cleanup_extra_files(manifest: &Manifest, game_dir: &PathBuf) -> Result<
             if manifest_files.contains(&relative_path) {
                 continue;
             }
-            
+
             // CRITICAL: Never delete launcher meta files and base Minecraft installation
             if relative_path == ".wowid3-version"
                 || relative_path == ".wowid3-manifest-hash"
@@ -318,73 +327,10 @@ async fn cleanup_extra_files(manifest: &Manifest, game_dir: &PathBuf) -> Result<
                 continue;
             }
 
-            // Check against server-provided ignore patterns
-            let mut should_ignore = false;
-            let mut matched_pattern = String::new();
-            
-            for pattern in &ignore_patterns {
-                // Exact match
-                if &relative_path == pattern {
-                    should_ignore = true;
-                    matched_pattern = format!("exact match: {}", pattern);
-                    break;
-                }
-                
-                // Directory prefix match (e.g., "logs/" matches "logs/debug.log", "logs/2024/debug.log")
-                // This protects all files within a directory and its subdirectories
-                if pattern.ends_with('/') {
-                    if relative_path.starts_with(pattern) {
-                        should_ignore = true;
-                        matched_pattern = format!("directory: {}", pattern);
-                        break;
-                    }
-                }
-                
-                // Wildcard at start AND end (e.g., "*cache/" matches any directory ending in "cache")
-                // Checks if any path component matches (e.g., "mods/resourcecache/file.txt" matches "*cache/")
-                if pattern.starts_with('*') && pattern.ends_with('/') {
-                    let middle = &pattern[1..pattern.len()-1]; // Remove * and /
-                    // Split path into components and check if any directory matches
-                    let components: Vec<&str> = relative_path.split('/').collect();
-                    for (i, component) in components.iter().enumerate() {
-                        // Don't check the last component (filename)
-                        if i < components.len() - 1 && component.ends_with(middle) {
-                            should_ignore = true;
-                            matched_pattern = format!("*dir pattern: {}", pattern);
-                            break;
-                        }
-                    }
-                    if should_ignore {
-                        break;
-                    }
-                }
-                
-                // Wildcard at end only (e.g., "user*" matches "user.dat", "usercache.json")
-                // Also matches directories: "Xaero*" matches "XaeroWorldMap/data.txt"
-                if pattern.ends_with('*') && !pattern.starts_with('*') {
-                    let prefix = &pattern[..pattern.len()-1]; // Remove trailing *
-                    
-                    // Check if the relative path starts with the prefix (for directory patterns like "Xaero*")
-                    if relative_path.starts_with(prefix) {
-                        should_ignore = true;
-                        matched_pattern = format!("prefix*: {}", pattern);
-                        break;
-                    }
-                    
-                    // Also check just the filename (for file patterns like "user*")
-                    if let Some(filename) = relative_path.split('/').last() {
-                        if filename.starts_with(prefix) {
-                            should_ignore = true;
-                            matched_pattern = format!("file*: {}", pattern);
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if should_ignore {
+            // Check against server-provided ignore patterns using GlobSet
+            if glob_set.is_match(&relative_path) {
                 kept_count += 1;
-                println!("[Cleanup] Keeping (ignored): {} [matched: {}]", relative_path, matched_pattern);
+                println!("[Cleanup] Keeping (blacklisted): {}", relative_path);
                 continue;
             }
 
@@ -487,16 +433,70 @@ pub fn check_disk_space(game_dir: &PathBuf, required_bytes: u64) -> Result<()> {
     Ok(())
 }
 
+/// Check if a file path matches any of the ignore patterns (blacklist)
+/// Compile glob patterns into a GlobSet for efficient matching
+/// Uses case-sensitive matching and supports full glob syntax
+fn compile_ignore_patterns(patterns: &[String]) -> Result<GlobSet> {
+    let mut builder = GlobSetBuilder::new();
+
+    for pattern in patterns {
+        // Build glob pattern - case-sensitive for consistent behavior across platforms
+        let glob = GlobBuilder::new(pattern)
+            .case_insensitive(false)
+            .build()
+            .with_context(|| format!("Invalid glob pattern '{}' in ignore_patterns", pattern))?;
+
+        builder.add(glob);
+    }
+
+    builder.build()
+        .context("Failed to build GlobSet from ignore_patterns")
+}
+
+/// Check if a file path matches any ignore pattern using proper glob matching
+/// This replaces the previous custom string matching with globset for consistency with the server
+fn matches_ignore_pattern(file_path: &str, glob_set: &GlobSet) -> bool {
+    let matched = glob_set.is_match(file_path);
+
+    if matched {
+        eprintln!("[Blacklist] File '{}' matches ignore pattern", file_path);
+    }
+
+    matched
+}
+
 /// Determine which files need to be downloaded (delta update)
+/// RESPECTS BLACKLIST: Will NOT download blacklisted files if they already exist
 pub async fn get_files_to_download(
     manifest: &Manifest,
     game_dir: &PathBuf,
 ) -> Result<Vec<ManifestFile>> {
     let mut files_to_download = Vec::new();
+    let ignore_patterns = &manifest.ignore_patterns;
+
+    // Compile ignore patterns into GlobSet for efficient matching
+    let glob_set = compile_ignore_patterns(ignore_patterns)?;
+
+    eprintln!("[Delta] Checking {} files against {} ignore patterns", manifest.files.len(), ignore_patterns.len());
 
     for file in &manifest.files {
         let file_path = game_dir.join(&file.path);
+        let relative_path = file.path.replace('\\', "/");
 
+        // CRITICAL: Check if file is blacklisted
+        if matches_ignore_pattern(&relative_path, &glob_set) {
+            // If file doesn't exist, download it (first install)
+            // If file exists, NEVER touch it (user may have modified it)
+            if !file_path.exists() {
+                eprintln!("[Delta] Blacklisted but missing, downloading: {}", relative_path);
+                files_to_download.push(file.clone());
+            } else {
+                eprintln!("[Delta] Blacklisted and exists, skipping: {}", relative_path);
+            }
+            continue;
+        }
+
+        // Normal file handling (not blacklisted)
         // Download if file doesn't exist or checksum doesn't match
         if !file_path.exists() {
             eprintln!("[Delta] Missing: {}", file.path);
@@ -862,6 +862,7 @@ mod tests {
                     size: 1024,
                 },
             ],
+            ignore_patterns: vec![],
         };
 
         let files_to_download = get_files_to_download(&manifest, &temp_dir.path().to_path_buf())
@@ -905,6 +906,7 @@ mod tests {
                     size: 2048,
                 },
             ],
+            ignore_patterns: vec![],
         };
 
         let files_to_download = get_files_to_download(&manifest, &temp_dir.path().to_path_buf())
@@ -939,6 +941,7 @@ mod tests {
                     size: 1024,
                 },
             ],
+            ignore_patterns: vec![],
         };
 
         let files_to_download = get_files_to_download(&manifest, &temp_dir.path().to_path_buf())
@@ -1175,6 +1178,7 @@ mod integration_tests {
                     size: file2_content.len() as u64,
                 },
             ],
+            ignore_patterns: vec![],
         };
 
         let result = install_modpack(&manifest, &temp_dir.path().to_path_buf(), |current, total, filename, _current_bytes, _total_bytes| {
@@ -1245,6 +1249,7 @@ mod integration_tests {
                     size: file2_content.len() as u64,
                 },
             ],
+            ignore_patterns: vec![],
         };
 
         let result = install_modpack(&manifest, &temp_dir.path().to_path_buf(), |current, total, filename, _current_bytes, _total_bytes| {
@@ -1294,6 +1299,7 @@ mod integration_tests {
                 sha256: checksum,
                 size: file_content.len() as u64,
             }],
+            ignore_patterns: vec![],
         };
 
         let result = install_modpack(&manifest, &temp_dir.path().to_path_buf(), |_current, _total, _filename, _current_bytes, _total_bytes| {
@@ -1309,5 +1315,186 @@ mod integration_tests {
             .await
             .unwrap();
         assert_eq!(version, Some("1.0.0".to_string()));
+    }
+
+    #[test]
+    fn test_blacklist_pattern_matching() {
+        // Test patterns that were previously failing
+        let patterns = vec![
+            "Xaero*".to_string(),
+            "config/xaerominimap*.txt".to_string(),
+            "config/xaeroworldmap*.txt".to_string(),
+            "config/sodium-options.json".to_string(),
+            "options.txt".to_string(),
+            "iris*".to_string(),
+            "user*".to_string(),
+            "logs/".to_string(),
+            "*cache/".to_string(),
+        ];
+
+        let glob_set = compile_ignore_patterns(&patterns).unwrap();
+
+        // Test capital X patterns (should match)
+        assert!(glob_set.is_match("XaeroWaypoints/waypoints.txt"), "Xaero* should match XaeroWaypoints/waypoints.txt");
+        assert!(glob_set.is_match("XaeroWorldMap/data.txt"), "Xaero* should match XaeroWorldMap/data.txt");
+
+        // Test lowercase xaero config files (should match with new patterns)
+        assert!(glob_set.is_match("config/xaerominimap.txt"), "config/xaerominimap*.txt should match config/xaerominimap.txt");
+        assert!(glob_set.is_match("config/xaerominimap-common.txt"), "config/xaerominimap*.txt should match config/xaerominimap-common.txt");
+        assert!(glob_set.is_match("config/xaeroworldmap.txt"), "config/xaeroworldmap*.txt should match config/xaeroworldmap.txt");
+        assert!(glob_set.is_match("config/xaeroworldmap-common.txt"), "config/xaeroworldmap*.txt should match config/xaeroworldmap-common.txt");
+
+        // Test exact matches
+        assert!(glob_set.is_match("options.txt"), "options.txt should match exactly");
+        assert!(glob_set.is_match("config/sodium-options.json"), "config/sodium-options.json should match exactly");
+
+        // Test wildcard patterns
+        assert!(glob_set.is_match("iris.properties"), "iris* should match iris.properties");
+        assert!(glob_set.is_match("user.dat"), "user* should match user.dat");
+        assert!(glob_set.is_match("usercache.json"), "user* should match usercache.json");
+
+        // Test directory patterns
+        assert!(glob_set.is_match("logs/debug.log"), "logs/ should match logs/debug.log");
+        assert!(glob_set.is_match("logs/2024/debug.log"), "logs/ should match logs/2024/debug.log");
+
+        // Test *cache/ pattern
+        assert!(glob_set.is_match("mods/resourcecache/file.txt"), "*cache/ should match mods/resourcecache/file.txt");
+        assert!(glob_set.is_match(".cache/data.bin"), "*cache/ should match .cache/data.bin");
+
+        // Test files that should NOT match
+        assert!(!glob_set.is_match("config/MouseTweaks.cfg"), "MouseTweaks.cfg should not match any pattern");
+        assert!(!glob_set.is_match("mods/fabric-api.jar"), "fabric-api.jar should not match any pattern");
+        assert!(!glob_set.is_match("config/yetanotherconfiglib.json"), "random config should not match any pattern");
+    }
+
+    #[tokio::test]
+    async fn test_blacklisted_files_not_overwritten() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a blacklisted file that user has modified
+        let user_file = temp_dir.path().join("options.txt");
+        std::fs::write(&user_file, "user customized options").unwrap();
+
+        // Manifest includes options.txt in ignore_patterns (but not in files list)
+        let manifest = Manifest {
+            version: "1.0.0".to_string(),
+            minecraft_version: "1.20.1".to_string(),
+            fabric_loader: "0.15.0".to_string(),
+            changelog: "Test".to_string(),
+            files: vec![],
+            ignore_patterns: vec!["options.txt".to_string()],
+        };
+
+        let files_to_download = get_files_to_download(&manifest, &temp_dir.path().to_path_buf()).await.unwrap();
+
+        // Should be empty since no files in manifest
+        assert_eq!(files_to_download.len(), 0);
+
+        // Verify user file was not touched
+        let content = std::fs::read_to_string(&user_file).unwrap();
+        assert_eq!(content, "user customized options");
+    }
+
+    #[tokio::test]
+    async fn test_config_files_protected_by_new_patterns() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create config directory and files
+        let config_dir = temp_dir.path().join("config");
+        std::fs::create_dir_all(&config_dir).unwrap();
+
+        // User has customized these config files
+        std::fs::write(config_dir.join("xaerominimap.txt"), "user minimap settings").unwrap();
+        std::fs::write(config_dir.join("xaeroworldmap.txt"), "user world map settings").unwrap();
+        std::fs::write(config_dir.join("sodium-options.json"), "user sodium settings").unwrap();
+
+        // Manifest includes these files but they're in ignore_patterns
+        let manifest = Manifest {
+            version: "1.0.0".to_string(),
+            minecraft_version: "1.20.1".to_string(),
+            fabric_loader: "0.15.0".to_string(),
+            changelog: "Test".to_string(),
+            files: vec![
+                ManifestFile {
+                    path: "config/xaerominimap.txt".to_string(),
+                    url: "http://example.com/xaerominimap.txt".to_string(),
+                    sha256: "different_hash".to_string(),
+                    size: 100,
+                },
+                ManifestFile {
+                    path: "config/xaeroworldmap.txt".to_string(),
+                    url: "http://example.com/xaeroworldmap.txt".to_string(),
+                    sha256: "different_hash".to_string(),
+                    size: 100,
+                },
+                ManifestFile {
+                    path: "config/sodium-options.json".to_string(),
+                    url: "http://example.com/sodium-options.json".to_string(),
+                    sha256: "different_hash".to_string(),
+                    size: 100,
+                },
+            ],
+            ignore_patterns: vec![
+                "config/xaerominimap*.txt".to_string(),
+                "config/xaeroworldmap*.txt".to_string(),
+                "config/sodium-options.json".to_string(),
+            ],
+        };
+
+        let files_to_download = get_files_to_download(&manifest, &temp_dir.path().to_path_buf()).await.unwrap();
+
+        // All files should be skipped because they exist and are blacklisted
+        assert_eq!(files_to_download.len(), 0, "Blacklisted files should not be re-downloaded even if in manifest");
+
+        // Verify user files were not touched
+        assert_eq!(std::fs::read_to_string(config_dir.join("xaerominimap.txt")).unwrap(), "user minimap settings");
+        assert_eq!(std::fs::read_to_string(config_dir.join("xaeroworldmap.txt")).unwrap(), "user world map settings");
+        assert_eq!(std::fs::read_to_string(config_dir.join("sodium-options.json")).unwrap(), "user sodium settings");
+    }
+}
+#[cfg(test)]
+mod test_glob_patterns {
+    use globset::{GlobBuilder, GlobSetBuilder};
+
+    #[test]
+    fn test_trailing_slash_patterns() {
+        let mut builder = GlobSetBuilder::new();
+        
+        // Test the exact patterns from the current manifest
+        let patterns = vec![
+            "options.txt",
+            "logs/",
+            "xaero/",
+            "Xaero*",
+        ];
+        
+        for pattern in &patterns {
+            let glob = GlobBuilder::new(pattern)
+                .case_insensitive(false)
+                .build()
+                .unwrap();
+            builder.add(glob);
+        }
+        
+        let glob_set = builder.build().unwrap();
+        
+        // Test file paths
+        let test_cases = vec![
+            ("options.txt", true, "exact match"),
+            ("logs/debug.log", true, "logs/ should match nested files"),
+            ("logs/latest.log", true, "logs/ should match nested files"),
+            ("xaero/waypoints.txt", true, "xaero/ should match nested files"),
+            ("XaeroWaypoints/waypoints.txt", true, "Xaero* should match XaeroWaypoints/"),
+            ("XaeroWorldMap/data.txt", true, "Xaero* should match XaeroWorldMap/"),
+            ("config/mouseTweaks.cfg", false, "unrelated config"),
+        ];
+        
+        for (path, should_match, description) in test_cases {
+            let matches = glob_set.is_match(path);
+            println!("{}: {} ({})", path, if matches { "MATCH" } else { "NO MATCH" }, description);
+            if should_match {
+                assert!(matches, "FAILED: {} - {}", path, description);
+            }
+        }
     }
 }

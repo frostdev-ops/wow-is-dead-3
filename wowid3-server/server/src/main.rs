@@ -7,12 +7,14 @@ mod middleware;
 mod models;
 mod services;
 mod storage;
+mod tcp_test_server;
 mod utils;
 
 use api::admin::{
     clear_cache, clear_jar_cache, clear_manifest_cache, copy_release_to_draft, create_release,
     delete_release, delete_resource, get_blacklist, get_cache_stats, list_releases, login,
-    update_blacklist, upload_files, upload_resource, upload_launcher_release, AdminState as AdminApiState,
+    update_blacklist, upload_files, upload_resource, upload_launcher_release,
+    upload_launcher_version_file, delete_launcher_version, AdminState as AdminApiState,
 };
 use api::bluemap::{
     get_global_settings, get_live_markers, get_live_players, get_map_asset, get_map_settings,
@@ -26,7 +28,8 @@ use api::drafts::{
 };
 use api::public::{
     get_latest_manifest, get_manifest_by_version, list_resources, serve_audio_file, serve_file,
-    serve_java_runtime, serve_resource, get_latest_launcher_manifest, serve_launcher_file, PublicState,
+    serve_java_runtime, serve_resource, get_latest_launcher_manifest, serve_launcher_file,
+    serve_versioned_launcher_file, get_launcher_versions, get_launcher_version, PublicState,
 };
 use api::tracker::{get_tracker_status, submit_chat_message, update_tracker_state, submit_stat_events, get_player_stats};
 use axum::{
@@ -140,12 +143,15 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/manifest/latest", get(get_latest_manifest))
         .route("/api/manifest/:version", get(get_manifest_by_version))
         .route("/api/launcher/latest", get(get_latest_launcher_manifest))
+        .route("/api/launcher/versions", get(get_launcher_versions))
+        .route("/api/launcher/:version", get(get_launcher_version))
         .route("/api/assets/:filename", get(serve_audio_file))
         .route("/api/java/:filename", get(serve_java_runtime))
         .route("/api/resources", get(list_resources))
         .route("/api/resources/:filename", get(serve_resource))
         .route("/files/:version/*path", get(serve_file))
         .route("/files/launcher/:filename", get(serve_launcher_file))
+        .route("/files/launcher/versions/:version/:filename", get(serve_versioned_launcher_file))
         // Tracker routes
         .route("/api/tracker/update", post(update_tracker_state))
         .route("/api/tracker/chat", post(submit_chat_message))
@@ -183,6 +189,8 @@ async fn main() -> anyhow::Result<()> {
     let admin_routes = Router::new()
         .route("/api/admin/upload", post(upload_files))
         .route("/api/admin/launcher", post(upload_launcher_release))
+        .route("/api/admin/launcher/version", post(upload_launcher_version_file))
+        .route("/api/admin/launcher/:version", delete(delete_launcher_version))
         .route("/api/admin/resources", post(upload_resource))
         .route("/api/admin/resources/:filename", delete(delete_resource))
         .route("/api/admin/releases", post(create_release).get(list_releases))
@@ -223,10 +231,19 @@ async fn main() -> anyhow::Result<()> {
         .layer(DefaultBodyLimit::max(20 * 1024 * 1024 * 1024)) // 20GB limit
         .layer(cors);
 
-    // Start server
+    // Start TCP test server on port 25567
+    let tcp_test_server = tcp_test_server::TcpTestServer::new(25567);
+    tokio::spawn(async move {
+        if let Err(e) = tcp_test_server.run().await {
+            tracing::error!("TCP test server error: {}", e);
+        }
+    });
+    info!("TCP test server started on port 25567");
+
+    // Start HTTP server
     let addr = format!("{}:{}", config.api_host, config.api_port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    info!("Server running on {}", addr);
+    info!("HTTP server running on {}", addr);
 
     axum::serve(listener, app).await?;
 

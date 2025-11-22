@@ -421,7 +421,76 @@ Test dependencies are defined in `Cargo.toml`:
 ## Build Artifacts
 
 - **Launcher**: AppImage, deb, NSIS installer in `wowid3-launcher/src-tauri/target/release/bundle/`
-- **Server**: Binary at `wowid3-server/server/target/release/wowid3-modpack-server`
+- **Server Backend**: Binary at `wowid3-server/server/target/release/wowid3-modpack-server`
+- **Server Frontend**: Static files in `wowid3-server/web/dist/`
+
+## Production Deployment
+
+### Server Deployment (pma@192.168.10.43)
+
+The production server runs at **pma@192.168.10.43** with the following configuration:
+
+**Backend (Rust Axum API)**:
+- Location: `/opt/wowid3-server/wowid3-modpack-server`
+- Service: `wowid3-server.service` (systemd)
+- Port: 5566 (localhost only, proxied by nginx)
+- Restart command: `sudo systemctl restart wowid3-server`
+- Logs: `sudo journalctl -u wowid3-server -f`
+
+**Frontend (React Admin Panel)**:
+- Build location: `wowid3-server/web/dist/`
+- Deploy location: `/var/www/wowid3-admin/`
+- Served by: nginx on port 5565
+- Public URL: `http://wowid-launcher.frostdev.io:5565`
+
+**Storage**:
+- Files: `/opt/wowid3-server/storage/`
+- Releases: `/opt/wowid3-server/storage/releases/`
+- Database: `/opt/wowid3-server/storage/stats.db`
+
+**Nginx Configuration** (port 5565):
+```nginx
+server {
+    listen 5565;
+    server_name wowid-launcher.frostdev.io;
+
+    client_max_body_size 20480M;
+    client_body_timeout 1800s;
+
+    location / {
+        root /var/www/wowid3-admin;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:5566;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+**TCP Test Server**:
+- Port: 25567 (public, for network testing)
+- Handled by the Rust backend (same binary)
+
+### Deployment Workflow
+
+**Deploy Backend**:
+```bash
+cd wowid3-server/server
+cargo build --release
+scp target/release/wowid3-modpack-server pma@192.168.10.43:/tmp/
+ssh pma@192.168.10.43 'sudo systemctl stop wowid3-server && sudo mv /tmp/wowid3-modpack-server /opt/wowid3-server/wowid3-modpack-server && sudo chmod +x /opt/wowid3-server/wowid3-modpack-server && sudo systemctl start wowid3-server'
+```
+
+**Deploy Frontend**:
+```bash
+cd wowid3-server/web
+npm run build
+rsync -av --delete dist/ pma@192.168.10.43:/var/www/wowid3-admin/
+```
 
 ## Microsoft OAuth Client ID
 

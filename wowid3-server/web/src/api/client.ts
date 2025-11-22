@@ -68,3 +68,57 @@ export function createFormData(files: File[]): FormData {
   });
   return formData;
 }
+
+// ========== Launcher Version API Functions ==========
+
+import type {
+  LauncherVersion,
+  LauncherVersionsIndex,
+  UploadLauncherVersionRequest,
+  UploadLauncherVersionResponse,
+  MessageResponse,
+} from './types';
+
+/**
+ * Fetch all launcher versions
+ */
+export async function getLauncherVersions(): Promise<LauncherVersionsIndex> {
+  const response = await api.get<LauncherVersionsIndex>('/launcher/versions');
+  return response.data;
+}
+
+/**
+ * Fetch specific launcher version
+ */
+export async function getLauncherVersion(version: string): Promise<LauncherVersion> {
+  const response = await api.get<LauncherVersion>(`/launcher/${version}`);
+  return response.data;
+}
+
+/**
+ * Upload launcher version file (multi-platform)
+ */
+export async function uploadLauncherVersionFile(
+  data: UploadLauncherVersionRequest
+): Promise<UploadLauncherVersionResponse> {
+  const formData = new FormData();
+  formData.append('version', data.version);
+  formData.append('changelog', data.changelog);
+  formData.append('mandatory', data.mandatory.toString());
+  formData.append('platform', data.platform);
+  formData.append('file', data.file);
+
+  const response = await api.post<UploadLauncherVersionResponse>(
+    '/admin/launcher/version',
+    formData
+  );
+  return response.data;
+}
+
+/**
+ * Delete launcher version
+ */
+export async function deleteLauncherVersion(version: string): Promise<MessageResponse> {
+  const response = await api.delete<MessageResponse>(`/admin/launcher/${version}`);
+  return response.data;
+}

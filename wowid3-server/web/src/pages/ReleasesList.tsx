@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDrafts } from '../hooks/useDrafts';
-import { Plus, Edit, Trash2, Package, Clock, FileText, Sparkles, Search } from 'lucide-react';
+import { useAdmin, Release } from '../hooks/useAdmin';
+import { Plus, Edit, Trash2, Package, Clock, FileText, Sparkles, Search, CheckCircle2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useDebounce } from '../hooks/useDebounce';
 import { PageTransition, containerVariants, statsCardVariants } from '@/components/PageTransition';
@@ -110,18 +111,101 @@ const DraftCard = memo(({
 
 DraftCard.displayName = 'DraftCard';
 
+// Performance: Memoized ReleaseCard component for published releases
+const ReleaseCard = memo(({
+  release,
+  index,
+  onDelete
+}: {
+  release: Release;
+  index: number;
+  onDelete: (version: string) => void;
+}) => {
+  return (
+    <motion.div
+      variants={statsCardVariants}
+      whileHover={{ y: -2 }}
+      transition={{ duration: 0.2 }}
+    >
+      <Card className="p-6">
+        <div className="flex items-start justify-between">
+          {/* Left Content */}
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-2 bg-green-500/10 rounded-lg">
+                <CheckCircle2 className="w-5 h-5 text-green-500" />
+              </div>
+              <h3 className="text-xl font-bold">
+                {release.version}
+              </h3>
+              <Badge variant="success" className="shadow-sm bg-green-500/10 text-green-500 border-green-500/20">
+                PUBLISHED
+              </Badge>
+            </div>
+
+            {/* Metadata */}
+            <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+              <div className="flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
+                <span className="font-medium">Minecraft {release.minecraft_version}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <FileText className="w-4 h-4" />
+                <span>{release.file_count} files</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Clock className="w-4 h-4" />
+                <span>Published {formatDistanceToNow(new Date(release.created_at), { addSuffix: true })}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Package className="w-4 h-4" />
+                <span>{(release.size_bytes / (1024 * 1024)).toFixed(1)} MB</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-2">
+            <Button
+              onClick={() => onDelete(release.version)}
+              variant="ghost"
+              size="icon"
+              className="text-destructive hover:text-destructive"
+              title="Delete"
+            >
+              <Trash2 className="w-5 h-5" />
+            </Button>
+          </div>
+        </div>
+      </Card>
+    </motion.div>
+  );
+});
+
+ReleaseCard.displayName = 'ReleaseCard';
+
 function ReleasesList() {
   const navigate = useNavigate();
-  const { drafts, listDrafts, createDraft, deleteDraft, loading } = useDrafts();
-  const [filter, setFilter] = useState<'all' | 'drafts'>('all');
+  const { drafts, listDrafts, createDraft, deleteDraft, loading: draftsLoading } = useDrafts();
+  const { listReleases, deleteRelease, loading: releasesLoading } = useAdmin();
+  const [releases, setReleases] = useState<Release[]>([]);
+  const [filter, setFilter] = useState<'all' | 'drafts' | 'published'>('all');
   const [isCreating, setIsCreating] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Performance: Debounce search input (300ms delay)
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
+  const loading = draftsLoading || releasesLoading;
+
   useEffect(() => {
-    listDrafts();
+    const fetchData = async () => {
+      await Promise.all([
+        listDrafts(),
+        listReleases().then(setReleases).catch(() => setReleases([]))
+      ]);
+    };
+    fetchData();
   }, []);
 
   const handleCreateNew = async () => {
@@ -138,37 +222,75 @@ function ReleasesList() {
     navigate(`/releases/${id}/edit`);
   }, [navigate]);
 
-  const handleDelete = useCallback(async (id: string, version: string) => {
+  const handleDeleteDraft = useCallback(async (id: string, version: string) => {
     if (confirm(`Delete draft ${version || 'Untitled Draft'}?`)) {
       await deleteDraft(id);
-      listDrafts();
+      await listDrafts();
     }
   }, [deleteDraft, listDrafts]);
 
-  // Performance: Filter and search drafts with useMemo
-  const filteredDrafts = useMemo(() => {
-    let result = filter === 'drafts' ? drafts : drafts;
+  const handleDeleteRelease = useCallback(async (version: string) => {
+    if (confirm(`Delete published release ${version}?\n\nWARNING: Users may still be using this version. This action cannot be undone.`)) {
+      await deleteRelease(version);
+      const newReleases = await listReleases();
+      setReleases(newReleases || []);
+    }
+  }, [deleteRelease, listReleases]);
+
+  // Performance: Combine and filter drafts and releases with useMemo
+  type ListItem = { type: 'draft'; data: any } | { type: 'release'; data: Release };
+
+  const filteredItems = useMemo(() => {
+    let items: ListItem[] = [];
+
+    // Add drafts
+    if (filter === 'all' || filter === 'drafts') {
+      items = items.concat(drafts.map(draft => ({ type: 'draft' as const, data: draft })));
+    }
+
+    // Add releases
+    if (filter === 'all' || filter === 'published') {
+      items = items.concat(releases.map(release => ({ type: 'release' as const, data: release })));
+    }
 
     // Apply search filter
     if (debouncedSearchQuery.trim()) {
       const query = debouncedSearchQuery.toLowerCase();
-      result = result.filter(draft =>
-        (draft.version && draft.version.toLowerCase().includes(query)) ||
-        (draft.minecraft_version && draft.minecraft_version.toLowerCase().includes(query)) ||
-        (draft.fabric_loader && draft.fabric_loader.toLowerCase().includes(query))
-      );
+      items = items.filter(item => {
+        if (item.type === 'draft') {
+          const draft = item.data;
+          return (
+            (draft.version && draft.version.toLowerCase().includes(query)) ||
+            (draft.minecraft_version && draft.minecraft_version.toLowerCase().includes(query)) ||
+            (draft.fabric_loader && draft.fabric_loader.toLowerCase().includes(query))
+          );
+        } else {
+          const release = item.data;
+          return (
+            release.version.toLowerCase().includes(query) ||
+            release.minecraft_version.toLowerCase().includes(query)
+          );
+        }
+      });
     }
 
-    return result;
-  }, [drafts, filter, debouncedSearchQuery]);
+    // Sort by date (most recent first)
+    items.sort((a, b) => {
+      const dateA = a.type === 'draft' ? new Date(a.data.updated_at) : new Date(a.data.created_at);
+      const dateB = b.type === 'draft' ? new Date(b.data.updated_at) : new Date(b.data.created_at);
+      return dateB.getTime() - dateA.getTime();
+    });
+
+    return items;
+  }, [drafts, releases, filter, debouncedSearchQuery]);
 
   // Performance: Virtual scrolling for large lists
   const parentRef = React.useRef<HTMLDivElement>(null);
 
   const virtualizer = useVirtualizer({
-    count: filteredDrafts.length,
+    count: filteredItems.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 200, // Estimated height of each draft card
+    estimateSize: () => 200, // Estimated height of each card
     overscan: 3, // Render 3 extra items for smooth scrolling
   });
 
@@ -215,13 +337,19 @@ function ReleasesList() {
                 onClick={() => setFilter('all')}
                 variant={filter === 'all' ? 'default' : 'outline'}
               >
-                All Releases
+                All ({drafts.length + releases.length})
+              </Button>
+              <Button
+                onClick={() => setFilter('published')}
+                variant={filter === 'published' ? 'default' : 'outline'}
+              >
+                Published ({releases.length})
               </Button>
               <Button
                 onClick={() => setFilter('drafts')}
                 variant={filter === 'drafts' ? 'default' : 'outline'}
               >
-                Drafts Only
+                Drafts ({drafts.length})
               </Button>
             </div>
 
@@ -248,23 +376,27 @@ function ReleasesList() {
             </div>
             <p className="mt-4 text-muted-foreground font-medium">Loading releases...</p>
           </div>
-        ) : filteredDrafts.length === 0 ? (
+        ) : filteredItems.length === 0 ? (
           /* Empty State */
           <Card className="p-12 text-center">
             <div className="w-20 h-20 mx-auto mb-6 bg-muted rounded-full flex items-center justify-center">
               <Sparkles className="w-10 h-10 text-muted-foreground" />
             </div>
-            <h3 className="text-2xl font-bold mb-2">No releases yet</h3>
+            <h3 className="text-2xl font-bold mb-2">
+              {filter === 'published' ? 'No published releases' : filter === 'drafts' ? 'No drafts' : 'No releases yet'}
+            </h3>
             <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-              Create your first release to start managing modpack versions with the intelligent release wizard.
+              {filter === 'published'
+                ? 'Publish a draft to create your first release.'
+                : 'Create your first release to start managing modpack versions with the intelligent release wizard.'}
             </p>
             <Button onClick={handleCreateNew} size="lg">
               <Plus className="w-5 h-5" />
-              Create Your First Release
+              Create New Draft
             </Button>
           </Card>
         ) : (
-          /* Drafts Grid - Performance: Virtualized for smooth scrolling */
+          /* Items Grid - Performance: Virtualized for smooth scrolling */
           <div
             ref={parentRef}
             style={{ height: '70vh', overflow: 'auto' }}
@@ -280,10 +412,10 @@ function ReleasesList() {
               }}
             >
               {virtualizer.getVirtualItems().map((virtualItem) => {
-                const draft = filteredDrafts[virtualItem.index];
+                const item = filteredItems[virtualItem.index];
                 return (
                   <div
-                    key={draft.id}
+                    key={item.type === 'draft' ? item.data.id : item.data.version}
                     style={{
                       position: 'absolute',
                       top: 0,
@@ -293,12 +425,20 @@ function ReleasesList() {
                       padding: '8px 0',
                     }}
                   >
-                    <DraftCard
-                      draft={draft}
-                      index={virtualItem.index}
-                      onEdit={handleEdit}
-                      onDelete={handleDelete}
-                    />
+                    {item.type === 'draft' ? (
+                      <DraftCard
+                        draft={item.data}
+                        index={virtualItem.index}
+                        onEdit={handleEdit}
+                        onDelete={handleDeleteDraft}
+                      />
+                    ) : (
+                      <ReleaseCard
+                        release={item.data}
+                        index={virtualItem.index}
+                        onDelete={handleDeleteRelease}
+                      />
+                    )}
                   </div>
                 );
               })}

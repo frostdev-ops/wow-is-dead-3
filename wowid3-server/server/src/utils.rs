@@ -16,30 +16,30 @@ pub async fn load_blacklist_patterns(config: &Config) -> anyhow::Result<Vec<Stri
     } else {
         // Return default blacklist if file doesn't exist
         vec![
-            "natives/".to_string(),
-            ".mixin.out/".to_string(),
-            "logs/".to_string(),
-            "screenshots/".to_string(),
-            "server-resource-packs/".to_string(),
-            "assets/".to_string(),
+            "natives/**".to_string(),
+            ".mixin.out/**".to_string(),
+            "logs/**".to_string(),
+            "screenshots/**".to_string(),
+            "server-resource-packs/**".to_string(),
+            "assets/**".to_string(),
             "Xaero*".to_string(),
-            "libraries/".to_string(),
-            "versions/".to_string(),
-            "modernfix/".to_string(),
-            "saves/".to_string(),
-            "xaero/".to_string(),
-            "*cache/".to_string(),
-            "data/".to_string(),
-            "ModTranslations/".to_string(),
-            "moddata/".to_string(),
-            "pfm/".to_string(),
-            "patchouli_books/".to_string(),
-            "local/".to_string(),
-            "emotes/".to_string(),
-            "schematics/".to_string(),
-            "defaultconfigs/".to_string(),
-            ".fabric/".to_string(),
-            ".cache/".to_string(),
+            "libraries/**".to_string(),
+            "versions/**".to_string(),
+            "modernfix/**".to_string(),
+            "saves/**".to_string(),
+            "xaero/**".to_string(),
+            "*cache/**".to_string(),
+            "data/**".to_string(),
+            "ModTranslations/**".to_string(),
+            "moddata/**".to_string(),
+            "pfm/**".to_string(),
+            "patchouli_books/**".to_string(),
+            "local/**".to_string(),
+            "emotes/**".to_string(),
+            "schematics/**".to_string(),
+            "defaultconfigs/**".to_string(),
+            ".fabric/**".to_string(),
+            ".cache/**".to_string(),
             "options.txt".to_string(),
             "emi.json".to_string(),
             "server.dat".to_string(),
@@ -47,6 +47,15 @@ pub async fn load_blacklist_patterns(config: &Config) -> anyhow::Result<Vec<Stri
             "user*".to_string(),
             "patchouli*".to_string(),
             "rhino*".to_string(),
+            // User-customizable mod config files (case-sensitive variants)
+            "config/xaerominimap*.txt".to_string(),      // Xaero's Minimap settings
+            "config/xaeroworldmap*.txt".to_string(),     // Xaero's World Map settings
+            "config/xaerominimap_entities.json".to_string(), // Minimap entity settings
+            "config/xaeropatreon.txt".to_string(),       // Patreon settings
+            "config/sodium-options.json".to_string(),    // Sodium video settings
+            "config/fancymenu/options.txt".to_string(),  // FancyMenu settings
+            "config/drippyloadingscreen/options.txt".to_string(), // Loading screen settings
+            "config/ribbits-options.json".to_string(),   // Ribbits mod settings
         ]
     };
 

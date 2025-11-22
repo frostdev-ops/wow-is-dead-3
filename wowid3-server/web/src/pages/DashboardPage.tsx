@@ -89,11 +89,11 @@ export default function DashboardPage() {
                   <div>
                     <p className="font-medium">{release.version}</p>
                     <p className="text-sm text-muted-foreground">
-                      {release.minecraft_version} • Fabric {release.fabric_loader}
+                      {release.minecraft_version} • Fabric
                     </p>
                   </div>
                   <div className="text-sm font-medium text-muted-foreground">
-                    {release.files?.length || 0} files
+                    {release.file_count} files
                   </div>
                 </motion.div>
               ))}

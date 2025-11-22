@@ -3,8 +3,8 @@ import { LauncherError } from '../types';
 
 export interface PlayerInfo {
   name: string;
-  id?: string;
   uuid?: string;
+  id?: string; // Legacy support, prefer uuid
 }
 
 export interface ServerStatus {

@@ -51,7 +51,7 @@ export const useDiscordPresence = (
     const updateLoop = async () => {
       try {
         // Default state
-        let state = 'Playing WOWID3 Modpack';
+        let state = 'Playing WOW Is Dead 3!';
         let details = 'In Game';
         let smallImage: string | undefined = undefined;
         let partySize: number | undefined = undefined;
@@ -109,7 +109,7 @@ export const useDiscordPresence = (
         } catch (apiError) {
           // API fetch failed - use basic presence without breaking Discord
           console.warn('Failed to fetch detailed server status, using basic presence:', apiError);
-          details = 'Playing on WOWID3 Server';
+          details = 'Playing on WOW Is Dead 3!';
           state = 'Multiplayer Game';
           // Continue with basic presence - don't throw
         }

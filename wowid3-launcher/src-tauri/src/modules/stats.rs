@@ -1,7 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tauri::Manager;
 use tokio::fs;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

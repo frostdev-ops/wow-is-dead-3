@@ -49,6 +49,7 @@ zip = "0.6"
 
 # Version extraction and pattern matching
 regex = "1"
+semver = "1"
 
 # CLI argument parsing
 clap = { version = "4", features = ["derive"] }
@@ -66,3 +67,7 @@ async-trait = "0.1"
 backoff = { version = "0.4", features = ["tokio"] }
 rusqlite = "0.37.0"
 tokio-rusqlite = "0.7.0"
+
+# Network testing
+socket2 = "0.5"
+rand = "0.8"

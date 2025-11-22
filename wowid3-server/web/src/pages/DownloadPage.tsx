@@ -81,6 +81,38 @@ interface LauncherManifest {
   changelog: string;
 }
 
+interface LauncherFile {
+  platform: string;
+  filename: string;
+  url: string;
+  sha256: string;
+  size: number;
+}
+
+interface LauncherVersion {
+  version: string;
+  files: LauncherFile[];
+  changelog: string;
+  mandatory: boolean;
+  released_at: string;
+}
+
+type Platform = 'windows' | 'linux' | 'macos' | 'unknown';
+
+/**
+ * Detect user's operating system from browser user agent
+ */
+function detectOS(): Platform {
+  const userAgent = window.navigator.userAgent.toLowerCase();
+  const platform = window.navigator.platform?.toLowerCase() || '';
+
+  if (platform.includes('win') || userAgent.includes('windows')) return 'windows';
+  if (platform.includes('linux') || userAgent.includes('linux') || userAgent.includes('x11')) return 'linux';
+  if (platform.includes('mac') || userAgent.includes('mac')) return 'macos';
+
+  return 'unknown';
+}
+
 interface Snowflake {
   id: number;
   left: string;
@@ -101,9 +133,12 @@ interface TrailSnowflake {
 
 export default function DownloadPage() {
   const [manifest, setManifest] = useState<LauncherManifest | null>(null);
+  const [launcherVersion, setLauncherVersion] = useState<LauncherVersion | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [splashText, setSplashText] = useState("");
   const [trailSnowflakes, setTrailSnowflakes] = useState<TrailSnowflake[]>([]);
+  const [selectedPlatform, setSelectedPlatform] = useState<Platform>('windows');
+  const [detectedOS, setDetectedOS] = useState<Platform>('unknown');
   
   // Music State
   const [musicVolume, setMusicVolume] = useState(0.3);
@@ -130,10 +165,17 @@ export default function DownloadPage() {
   const lastTrailTimeRef = useRef(0);
 
   useEffect(() => {
+    // Detect OS and set selected platform
+    const os = detectOS();
+    setDetectedOS(os);
+    if (os !== 'unknown') {
+      setSelectedPlatform(os);
+    }
+
     // Initialize random splash text
     const now = new Date();
     const isWednesday = now.getDay() === 3; // 0 = Sunday, 3 = Wednesday
-    
+
     if (isWednesday) {
        // 20% chance to override with wednesday meme on wednesdays
        if (Math.random() < 0.2) {
@@ -157,7 +199,6 @@ export default function DownloadPage() {
     const music = new Audio('/8-bit-christmas.mp3');
     music.loop = true;
     music.volume = musicVolume;
-    music.crossOrigin = "anonymous"; // Important for Web Audio API
     musicRef.current = music;
 
     // Setup Web Audio API
@@ -249,9 +290,18 @@ export default function DownloadPage() {
         });
     }
 
-    // Fetch manifest
+    // Fetch manifest - try new API first, fall back to old format
     api.get('/launcher/latest')
-      .then(res => setManifest(res.data))
+      .then(res => {
+        const data = res.data;
+        // Check if it's the new multi-platform format
+        if (data.files && Array.isArray(data.files)) {
+          setLauncherVersion(data);
+        } else {
+          // Old format backward compatibility
+          setManifest(data);
+        }
+      })
       .catch(err => console.error('Failed to fetch launcher manifest:', err))
       .finally(() => setIsLoading(false));
 
@@ -380,7 +430,40 @@ export default function DownloadPage() {
     return flakes;
   }, []);
 
-  const downloadUrl = manifest ? `/files/launcher/WOWID3Launcher.exe` : '#';
+  // Platform-specific installation instructions
+  const instructions: Record<Platform, string[]> = {
+    windows: [
+      "1. Run WOWID3Launcher.exe",
+      "2. Follow the installation wizard",
+      "3. Launch from Start Menu or Desktop shortcut"
+    ],
+    linux: [
+      "1. Make the file executable: chmod +x WOWID3Launcher-*.AppImage",
+      "2. Run the launcher: ./WOWID3Launcher-*.AppImage",
+      "3. Optional: Add to applications menu"
+    ],
+    macos: [
+      "1. Open the .dmg file",
+      "2. Drag WOWID3 Launcher to Applications",
+      "3. Launch from Applications folder"
+    ],
+    unknown: [
+      "Please select your operating system above"
+    ]
+  };
+
+  // Get platform-specific file from launcher version
+  const selectedFile = launcherVersion?.files.find(f => f.platform === selectedPlatform);
+
+  // Backward compatibility: Use old manifest format if new format not available
+  const downloadUrl = selectedFile
+    ? selectedFile.url
+    : manifest
+    ? `/files/launcher/WOWID3Launcher.exe`
+    : '#';
+
+  const fileSize = selectedFile?.size || manifest?.size || 0;
+  const versionNumber = launcherVersion?.version || manifest?.version || 'unknown';
 
   return (
     <div 
@@ -549,14 +632,52 @@ export default function DownloadPage() {
             </p>
           </div>
 
+          {/* Platform Selector Tabs */}
+          {launcherVersion && (
+            <div className="relative z-20 mb-8">
+              <div className="flex justify-center gap-3">
+                {(['windows', 'linux', 'macos'] as Platform[]).map((platform) => {
+                  const platformFile = launcherVersion.files.find(f => f.platform === platform);
+                  const isAvailable = !!platformFile;
+                  const isSelected = selectedPlatform === platform;
+                  const platformLabel = platform.charAt(0).toUpperCase() + platform.slice(1);
+
+                  return (
+                    <button
+                      key={platform}
+                      onClick={() => isAvailable && setSelectedPlatform(platform)}
+                      disabled={!isAvailable}
+                      className={`px-6 py-3 rounded-xl font-bold text-lg transition-all border-4 ${
+                        isSelected
+                          ? 'bg-yellow-400 text-black border-white shadow-[0_8px_0_rgba(0,0,0,0.5)] scale-105'
+                          : isAvailable
+                          ? 'bg-[#003366] text-white border-white/40 hover:border-white shadow-[0_4px_0_rgba(0,0,0,0.5)] hover:scale-105'
+                          : 'bg-gray-600 text-gray-400 border-gray-500 opacity-50 cursor-not-allowed'
+                      }`}
+                      style={{ textShadow: isSelected ? '2px 2px 0 #000' : 'none' }}
+                      onMouseEnter={isAvailable ? playHover : undefined}
+                    >
+                      {platformLabel}
+                      {!isAvailable && ' (Coming Soon)'}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Custom Download Button */}
           <div className="relative z-20 mb-16">
             <a
               href={downloadUrl}
-              className={`group block relative w-96 h-40 md:w-[32rem] md:h-48 transition-transform duration-100 active:scale-95 ${!manifest && !isLoading ? 'opacity-50 cursor-not-allowed grayscale' : ''}`}
+              className={`group block relative w-96 h-40 md:w-[32rem] md:h-48 transition-transform duration-100 active:scale-95 ${
+                (!manifest && !launcherVersion) || isLoading || !selectedFile
+                  ? 'opacity-50 cursor-not-allowed grayscale'
+                  : ''
+              }`}
               onMouseEnter={playHover}
               onClick={(e) => {
-                if (!manifest && !isLoading) {
+                if ((!manifest && !launcherVersion) || isLoading || !selectedFile) {
                   e.preventDefault();
                 } else {
                   playClick();
@@ -583,10 +704,11 @@ export default function DownloadPage() {
               </div>
 
               {/* Version Badge */}
-              {manifest && (
+              {(launcherVersion || manifest) && (
                  <div className="absolute -bottom-4 left-1/2 transform -translate-x-1/2 bg-black/60 backdrop-blur-md border-2 border-white/20 rounded-full px-6 py-1.5 shadow-xl whitespace-nowrap pointer-events-none transition-transform group-hover:scale-105">
                    <span className="text-sm font-bold text-yellow-200 drop-shadow-md tracking-wide">
-                     v{manifest.version} • Windows
+                     v{versionNumber} • {selectedPlatform.charAt(0).toUpperCase() + selectedPlatform.slice(1)}
+                     {fileSize > 0 && ` • ${(fileSize / (1024 * 1024)).toFixed(1)} MB`}
                    </span>
                  </div>
               )}
@@ -595,22 +717,40 @@ export default function DownloadPage() {
 
           {/* Guild Secrets Grid */}
           <div className="grid md:grid-cols-3 gap-8 w-full max-w-5xl px-4">
-            <FeatureModal 
+            <FeatureModal
               imgSrc="/buttons/spbutton.png"
               title="Shadow Company"
               description="Duskwood's #1 (and only) guild. We left because the Auction House prices were a crime against humanity."
             />
-            <FeatureModal 
+            <FeatureModal
               imgSrc="/buttons/optionbutton.png"
               title="State of WoW"
               description="Dragonflight? More like Dragon-mid. We made our own fun with 200+ mods and zero microtransactions."
             />
-            <FeatureModal 
+            <FeatureModal
               imgSrc="/buttons/mpbutton.png"
               title="Powered by Loo"
               description="Our AI overlord Loothing watches from the shadows. He knows what you did in Goldshire Inn."
             />
           </div>
+
+          {/* Installation Instructions */}
+          {(launcherVersion || manifest) && selectedPlatform !== 'unknown' && (
+            <div className="mt-12 w-full max-w-3xl px-4">
+              <div className="bg-[#003366]/80 backdrop-blur-md border-4 border-white rounded-2xl p-6 shadow-xl">
+                <h3 className="text-2xl font-black text-yellow-400 mb-4 drop-shadow-[0_2px_0_rgba(0,0,0,0.8)]" style={{ textShadow: '2px 2px 0 #000' }}>
+                  Installation Instructions ({selectedPlatform.charAt(0).toUpperCase() + selectedPlatform.slice(1)})
+                </h3>
+                <ul className="space-y-2">
+                  {instructions[selectedPlatform].map((instruction, idx) => (
+                    <li key={idx} className="text-white/90 font-medium text-left">
+                      {instruction}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
 
         </motion.div>
       </main>

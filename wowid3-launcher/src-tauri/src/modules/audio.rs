@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
-use tauri::Manager;
 
 const MAX_DOWNLOAD_RETRIES: u32 = 3;
 const RETRY_DELAY_MS: u64 = 1000;

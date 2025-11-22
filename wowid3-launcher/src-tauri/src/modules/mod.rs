@@ -19,3 +19,4 @@ pub mod paths;
 pub mod launcher_updater;
 pub mod stats;
 pub mod map_viewer;
+pub mod network_test;

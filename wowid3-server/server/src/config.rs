@@ -106,4 +106,26 @@ impl Config {
     pub fn launcher_manifest_path(&self) -> PathBuf {
         self.launcher_path().join("latest.json")
     }
+
+    // Multi-platform launcher version paths
+
+    /// Path to version history index (launcher/versions.json)
+    pub fn launcher_versions_index_path(&self) -> PathBuf {
+        self.launcher_path().join("versions.json")
+    }
+
+    /// Path to a specific launcher version directory (launcher/versions/{version}/)
+    pub fn launcher_version_path(&self, version: &str) -> PathBuf {
+        self.launcher_path().join("versions").join(version)
+    }
+
+    /// Path to a specific version's manifest (launcher/versions/{version}/manifest.json)
+    pub fn launcher_version_manifest_path(&self, version: &str) -> PathBuf {
+        self.launcher_version_path(version).join("manifest.json")
+    }
+
+    /// Path to a launcher file within a version (launcher/versions/{version}/{filename})
+    pub fn launcher_version_file_path(&self, version: &str, filename: &str) -> PathBuf {
+        self.launcher_version_path(version).join(filename)
+    }
 }

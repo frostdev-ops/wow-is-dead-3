@@ -17,9 +17,10 @@ use modules::log_reader::{read_latest_log, get_log_path, get_new_log_lines, read
 use modules::paths::{get_default_game_directory, resolve_game_directory, validate_game_directory};
 use modules::launcher_updater::{check_launcher_update, install_launcher_update, LauncherUpdateInfo};
 use modules::map_viewer::{check_bluemap_available, open_map_viewer, close_map_viewer, get_bluemap_url, BlueMapStatus};
+use modules::network_test::{test_game_server_reachability, test_latency_and_jitter, test_download_speed, test_upload_speed, test_packet_loss, run_full_network_analysis};
 use serde::Serialize;
 use std::path::PathBuf;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 
 // Authentication Commands
 #[tauri::command]
@@ -487,8 +488,8 @@ async fn cmd_discord_update_presence(
     let presence = GamePresence {
         state,
         details: Some(details),
-        large_image: large_image.or(Some("minecraft".to_string())),
-        large_image_text: Some("WOWID3 Modpack".to_string()),
+        large_image: large_image.or(Some("wowid3-logo".to_string())),
+        large_image_text: Some("WOW Is Dead 3!".to_string()),
         small_image,
         small_image_text: None,
         start_time,
@@ -794,7 +795,13 @@ pub fn run() {
             cmd_check_bluemap_available,
             cmd_open_map_viewer,
             cmd_close_map_viewer,
-            cmd_get_bluemap_url
+            cmd_get_bluemap_url,
+            test_game_server_reachability,
+            test_latency_and_jitter,
+            test_download_speed,
+            test_upload_speed,
+            test_packet_loss,
+            run_full_network_analysis
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
