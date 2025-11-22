@@ -637,7 +637,7 @@ mod tests {
             game_dir: PathBuf::from("/home/user/.minecraft"),
             username: "TestUser".to_string(),
             uuid: "550e8400-e29b-41d4-a716-446655440000".to_string(),
-            access_token: "test_token".to_string(),
+            session_id: "test_session_id".to_string(),
         };
 
         let json = serde_json::to_string(&config).unwrap();

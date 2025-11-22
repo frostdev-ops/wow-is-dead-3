@@ -130,9 +130,11 @@ mod tests {
 
     #[test]
     fn test_bluemap_url_is_localhost() {
-        // Ensure BlueMap URL is always localhost for security
-        assert!(BLUEMAP_URL.contains("127.0.0.1") || BLUEMAP_URL.contains("localhost"));
-        assert!(BLUEMAP_URL.starts_with("http://"));
+        // BlueMap is now served via the remote release server API
+        // Update test to validate the new expected URL format
+        assert!(BLUEMAP_URL.contains("wowid-launcher.frostdev.io"));
+        assert!(BLUEMAP_URL.starts_with("https://"));
+        assert!(BLUEMAP_URL.ends_with("/api/bluemap/webapp"));
     }
 
     #[test]
