@@ -1,3 +1,13 @@
+// This module is Windows-only because it uses Windows-specific APIs:
+// - sc.exe (Service Control Manager) for WireGuard tunnel status
+// - PROGRAMDATA environment variable for config storage
+// - WireGuardNT service naming convention
+//
+// Cross-platform support would require:
+// - Linux: wg show command, /etc/wireguard/ paths
+// - macOS: different WireGuard installation paths and service management
+#![cfg(target_os = "windows")]
+
 use anyhow::Result;
 use base64::{Engine as _, engine::general_purpose};
 use rand::rngs::OsRng;
@@ -66,7 +76,7 @@ impl VpnManager {
             .args(&["query", "WireGuardTunnel$wowid3"])
             .output();
 
-        output.is_ok() && output.unwrap().status.success()
+        output.map(|o| o.status.success()).unwrap_or(false)
     }
 
     pub fn is_tunnel_running(&self) -> bool {

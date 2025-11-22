@@ -19,6 +19,9 @@ pub mod paths;
 pub mod launcher_updater;
 pub mod stats;
 pub mod map_viewer;
+
+#[cfg(target_os = "windows")]
 pub mod vpn;
 
+#[cfg(target_os = "windows")]
 pub use vpn::VpnManager;
