@@ -64,12 +64,13 @@ pub async fn register_peer(
                 // Update public key in database
                 state.db.conn.call({
                     let uuid = req.minecraft_uuid.clone();
+                    let username = req.minecraft_username.clone();
                     let public_key = req.public_key.clone();
                     let now = chrono::Utc::now().timestamp();
                     move |conn| {
                         conn.execute(
-                            "UPDATE vpn_peers SET public_key = ?1, registered_at = ?2 WHERE uuid = ?3",
-                            [&public_key, &now.to_string(), &uuid]
+                            "UPDATE vpn_peers SET public_key = ?1, username = ?2, registered_at = ?3 WHERE uuid = ?4",
+                            rusqlite::params![&public_key, &username, &now, &uuid]
                         )
                     }
                 }).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e)))?;
