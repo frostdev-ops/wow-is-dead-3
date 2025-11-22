@@ -19,6 +19,7 @@ const ResourcePacksPage = lazy(() => import('./pages/ResourcePacksPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const LauncherPage = lazy(() => import('./pages/LauncherPage'));
 const DownloadPage = lazy(() => import('./pages/DownloadPage'));
+const VpnPage = lazy(() => import('./pages/VpnPage'));
 
 // Performance: Loading fallback component
 const LoadingFallback = () => (
@@ -58,6 +59,7 @@ function AnimatedRoutes() {
         <Route path="/upload" element={<ProtectedRoute><UploadPage /></ProtectedRoute>} />
         <Route path="/resources" element={<ProtectedRoute><ResourcePacksPage /></ProtectedRoute>} />
         <Route path="/launcher" element={<ProtectedRoute><LauncherPage /></ProtectedRoute>} />
+        <Route path="/vpn" element={<ProtectedRoute><VpnPage /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
 
         {/* Catch-all: Redirect to dashboard or login */}

@@ -237,7 +237,8 @@ async fn main() -> anyhow::Result<()> {
         .merge(bluemap_routes)
         .merge(admin_login)
         .merge(admin_routes)
-        .merge(vpn::api::vpn_routes(vpn_state))
+        .merge(vpn::api::vpn_public_routes(vpn_state.clone()))
+        .merge(vpn::api::vpn_admin_routes(vpn_state))
         .layer(DefaultBodyLimit::max(20 * 1024 * 1024 * 1024)) // 20GB limit
         .layer(cors);
 

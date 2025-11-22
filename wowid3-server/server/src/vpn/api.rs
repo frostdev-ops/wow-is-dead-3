@@ -131,6 +131,18 @@ pub struct PeerInfo {
     pub ip_address: String,
     pub online: bool,
     pub last_handshake: Option<i64>,
+    pub bytes_sent: i64,
+    pub bytes_received: i64,
+    pub registered_at: i64,
+}
+
+#[derive(Serialize)]
+pub struct VpnStats {
+    pub total_peers: usize,
+    pub active_connections: usize,
+    pub total_bandwidth_sent: i64,
+    pub total_bandwidth_received: i64,
+    pub peers: Vec<PeerInfo>,
 }
 
 /// List all non-revoked VPN peers (admin only)
@@ -140,7 +152,7 @@ pub async fn list_peers(
     // Query all non-revoked peers from database
     let peers = state.db.conn.call(|conn| {
         let mut stmt = conn.prepare(
-            "SELECT uuid, username, ip_address, last_handshake
+            "SELECT uuid, username, ip_address, last_handshake, bytes_sent, bytes_received, registered_at
              FROM vpn_peers
              WHERE revoked = 0
              ORDER BY username ASC"
@@ -161,6 +173,9 @@ pub async fn list_peers(
                 ip_address: row.get(2)?,
                 online,
                 last_handshake,
+                bytes_sent: row.get(4).unwrap_or(0),
+                bytes_received: row.get(5).unwrap_or(0),
+                registered_at: row.get(6)?,
             })
         })?;
 
@@ -173,6 +188,66 @@ pub async fn list_peers(
     }).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e)))?;
 
     Ok((StatusCode::OK, Json(peers)))
+}
+
+/// Get VPN statistics (admin only)
+pub async fn get_vpn_stats(
+    State(state): State<VpnState>,
+) -> Result<(StatusCode, Json<VpnStats>), (StatusCode, String)> {
+    // Query all non-revoked peers from database with stats
+    let peers = state.db.conn.call(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT uuid, username, ip_address, last_handshake, bytes_sent, bytes_received, registered_at
+             FROM vpn_peers
+             WHERE revoked = 0
+             ORDER BY last_handshake DESC NULLS LAST"
+        )?;
+
+        let peer_iter = stmt.query_map([], |row| {
+            let last_handshake: Option<i64> = row.get(3).ok();
+            let now = chrono::Utc::now().timestamp();
+
+            // Peer is online if last handshake was within last 3 minutes
+            let online = last_handshake
+                .map(|ts| now - ts < 180)
+                .unwrap_or(false);
+
+            Ok(PeerInfo {
+                uuid: row.get(0)?,
+                username: row.get(1)?,
+                ip_address: row.get(2)?,
+                online,
+                last_handshake,
+                bytes_sent: row.get(4).unwrap_or(0),
+                bytes_received: row.get(5).unwrap_or(0),
+                registered_at: row.get(6)?,
+            })
+        })?;
+
+        let mut peers = Vec::new();
+        for peer_result in peer_iter {
+            peers.push(peer_result?);
+        }
+
+        Ok::<Vec<PeerInfo>, rusqlite::Error>(peers)
+    }).await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e)))?;
+
+    // Calculate aggregate stats
+    let total_peers = peers.len();
+    let active_connections = peers.iter().filter(|p| p.online).count();
+    let total_bandwidth_sent: i64 = peers.iter().map(|p| p.bytes_sent).sum();
+    let total_bandwidth_received: i64 = peers.iter().map(|p| p.bytes_received).sum();
+
+    Ok((
+        StatusCode::OK,
+        Json(VpnStats {
+            total_peers,
+            active_connections,
+            total_bandwidth_sent,
+            total_bandwidth_received,
+            peers,
+        }),
+    ))
 }
 
 /// Revoke a VPN peer's access (admin only)
@@ -214,10 +289,20 @@ pub async fn revoke_peer(
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub fn vpn_routes(state: VpnState) -> Router {
+pub fn vpn_public_routes(state: VpnState) -> Router {
     Router::new()
         .route("/api/vpn/register", post(register_peer))
+        .with_state(state)
+}
+
+pub fn vpn_admin_routes(state: VpnState) -> Router {
+    use axum::middleware as axum_middleware;
+    use crate::middleware::auth::auth_middleware;
+
+    Router::new()
         .route("/api/admin/vpn/peers", get(list_peers))
+        .route("/api/admin/vpn/stats", get(get_vpn_stats))
         .route("/api/admin/vpn/peers/:uuid", delete(revoke_peer))
+        .layer(axum_middleware::from_fn(auth_middleware))
         .with_state(state)
 }

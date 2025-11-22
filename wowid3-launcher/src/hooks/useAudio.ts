@@ -18,6 +18,7 @@ export const useAudio = () => {
   const mainRef = useRef<HTMLAudioElement | null>(null);
   const mainBlobUrlRef = useRef<string | null>(null);
   const retryTimeoutRef = useRef<number | null>(null);
+  const isLoadingRef = useRef(false);
 
   const {
     isMuted,
@@ -190,11 +191,18 @@ export const useAudio = () => {
     try {
       logger.info(LogCategory.AUDIO, 'Starting main audio load (non-blocking)');
 
+      // Prevent multiple simultaneous load attempts
+      if (isLoadingRef.current) {
+        logger.debug(LogCategory.AUDIO, 'Already loading audio, skipping duplicate load attempt');
+        return;
+      }
+
       const cachedBytes = await invoke<number[] | null>('cmd_read_cached_audio_bytes');
 
       if (cachedBytes) {
         logger.info(LogCategory.AUDIO, 'Found cached audio bytes', { metadata: { size: cachedBytes.length } });
         try {
+          isLoadingRef.current = true;
           const byteArray = new Uint8Array(cachedBytes);
           const blob = new Blob([byteArray], { type: 'audio/mpeg' });
           const blobUrl = URL.createObjectURL(blob);
@@ -202,10 +210,7 @@ export const useAudio = () => {
           logger.debug(LogCategory.AUDIO, 'Created Blob URL for cached audio');
 
           if (mainRef.current) {
-            if (mainBlobUrlRef.current) {
-              logger.debug(LogCategory.AUDIO, 'Revoking previous Blob URL');
-              URL.revokeObjectURL(mainBlobUrlRef.current);
-            }
+            const oldBlobUrl = mainBlobUrlRef.current;
             mainBlobUrlRef.current = blobUrl;
 
             let loadTimeout: number | null = null;
@@ -220,14 +225,21 @@ export const useAudio = () => {
                 if (mainRef.current) {
                   mainRef.current.src = '';
                 }
+                isLoadingRef.current = false;
               }, LOAD_TIMEOUT_MS);
 
               mainRef.current.onloadeddata = () => {
                 if (loadTimeout !== null) clearTimeout(loadTimeout);
                 logger.info(LogCategory.AUDIO, 'Main audio successfully loaded from cached Blob');
+                // Only revoke old URL after new one is loaded
+                if (oldBlobUrl && oldBlobUrl !== blobUrl) {
+                  logger.debug(LogCategory.AUDIO, 'Revoking old Blob URL after new audio loaded');
+                  URL.revokeObjectURL(oldBlobUrl);
+                }
                 setMainAudioReady(true);
                 setAudioSource('cached');
                 resetRetryCount();
+                isLoadingRef.current = false;
               };
               mainRef.current.onerror = () => {
                 if (loadTimeout !== null) clearTimeout(loadTimeout);
@@ -235,10 +247,16 @@ export const useAudio = () => {
                 const errorMsg = mainRef.current?.error?.message;
                 logger.error(LogCategory.AUDIO, `Cached Blob audio failed to load. Code: ${errorCode}, Message: ${errorMsg}`);
                 if (mainRef.current) mainRef.current.src = '';
+                // Only revoke if it's the current URL
                 if (mainBlobUrlRef.current === blobUrl) {
                   URL.revokeObjectURL(blobUrl);
                   mainBlobUrlRef.current = null;
                 }
+                // Revoke old URL if it wasn't revoked yet
+                if (oldBlobUrl && oldBlobUrl !== blobUrl) {
+                  URL.revokeObjectURL(oldBlobUrl);
+                }
+                isLoadingRef.current = false;
               };
             };
 
@@ -265,16 +283,14 @@ export const useAudio = () => {
         if (downloadedBytes && mainRef.current) {
           logger.info(LogCategory.AUDIO, 'Read downloaded audio bytes', { metadata: { size: downloadedBytes.length } });
 
+          isLoadingRef.current = true;
           const byteArray = new Uint8Array(downloadedBytes);
           const blob = new Blob([byteArray], { type: 'audio/mpeg' });
           const blobUrl = URL.createObjectURL(blob);
 
           logger.debug(LogCategory.AUDIO, 'Created Blob URL for downloaded audio');
 
-          if (mainBlobUrlRef.current) {
-            logger.debug(LogCategory.AUDIO, 'Revoking previous Blob URL');
-            URL.revokeObjectURL(mainBlobUrlRef.current);
-          }
+          const oldBlobUrl = mainBlobUrlRef.current;
           mainBlobUrlRef.current = blobUrl;
 
           let loadTimeout: number | null = null;
@@ -289,13 +305,20 @@ export const useAudio = () => {
               if (mainRef.current) {
                 mainRef.current.src = '';
               }
+              isLoadingRef.current = false;
             }, LOAD_TIMEOUT_MS);
 
             mainRef.current.onloadeddata = () => {
               if (loadTimeout !== null) clearTimeout(loadTimeout);
               logger.info(LogCategory.AUDIO, 'Downloaded audio successfully loaded from Blob');
+              // Only revoke old URL after new one is loaded
+              if (oldBlobUrl && oldBlobUrl !== blobUrl) {
+                logger.debug(LogCategory.AUDIO, 'Revoking old Blob URL after new audio loaded');
+                URL.revokeObjectURL(oldBlobUrl);
+              }
               setMainAudioReady(true);
               markDownloadSuccess();
+              isLoadingRef.current = false;
             };
             mainRef.current.onerror = () => {
               if (loadTimeout !== null) clearTimeout(loadTimeout);
@@ -303,10 +326,16 @@ export const useAudio = () => {
               const errorMsg = mainRef.current?.error?.message;
               logger.error(LogCategory.AUDIO, `Downloaded Blob audio failed to load. Code: ${errorCode}, Message: ${errorMsg}`);
               if (mainRef.current) mainRef.current.src = '';
+              // Only revoke if it's the current URL
               if (mainBlobUrlRef.current === blobUrl) {
                 URL.revokeObjectURL(blobUrl);
                 mainBlobUrlRef.current = null;
               }
+              // Revoke old URL if it wasn't revoked yet
+              if (oldBlobUrl && oldBlobUrl !== blobUrl) {
+                URL.revokeObjectURL(oldBlobUrl);
+              }
+              isLoadingRef.current = false;
             };
           };
 
@@ -315,6 +344,7 @@ export const useAudio = () => {
           mainRef.current.src = blobUrl;
         }
       } catch (downloadErr) {
+        isLoadingRef.current = false;
         const errorMsg = downloadErr instanceof Error ? downloadErr.message : String(downloadErr);
         logger.warn(LogCategory.AUDIO, 'Download failed, will use fallback audio:', { metadata: { error: errorMsg } });
         const error = createLauncherError(
@@ -329,6 +359,7 @@ export const useAudio = () => {
       }
     } catch (err) {
       logger.error(LogCategory.AUDIO, 'Unexpected error in audio setup:', err instanceof Error ? err : new Error(String(err)));
+      isLoadingRef.current = false;
     }
   }, [setMainAudioReady, setAudioSource, resetRetryCount, markDownloadSuccess, markDownloadFailure]);
 

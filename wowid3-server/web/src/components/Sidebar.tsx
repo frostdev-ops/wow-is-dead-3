@@ -8,6 +8,7 @@ import {
   FileText,
   Archive,
   Rocket,
+  Network,
 } from 'lucide-react';
 import { motion, LayoutGroup } from 'framer-motion';
 
@@ -53,6 +54,11 @@ export function Sidebar() {
       icon: <Rocket className="w-5 h-5" />,
     },
     {
+      label: 'VPN',
+      path: '/vpn',
+      icon: <Network className="w-5 h-5" />,
+    },
+    {
       label: 'Settings',
       path: '/settings',
       icon: <Settings className="w-5 h-5" />,
@@ -66,6 +72,7 @@ export function Sidebar() {
     if (path === '/upload' && location.pathname === '/upload') return true;
     if (path === '/resources' && location.pathname === '/resources') return true;
     if (path === '/launcher' && location.pathname === '/launcher') return true;
+    if (path === '/vpn' && location.pathname === '/vpn') return true;
     if (path === '/settings' && location.pathname === '/settings') return true;
     return false;
   };

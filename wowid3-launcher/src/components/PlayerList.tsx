@@ -274,11 +274,11 @@ const PlayerListBase = ({ status, trackerState }: PlayerListProps) => {
         )}
       </div>
       <div className="grid grid-cols-2 gap-2">
-        {players.map((player, idx) => (
-          <PlayerItem 
+        {players.map((player) => (
+          <PlayerItem
             // @ts-ignore - handling both types with loose access
-            key={`${player.id || player.uuid}-${idx}`} 
-            player={player} 
+            key={player.id || player.uuid || player.name}
+            player={player}
           />
         ))}
       </div>
@@ -286,11 +286,33 @@ const PlayerListBase = ({ status, trackerState }: PlayerListProps) => {
   );
 };
 
-// Export memoized PlayerList - only re-renders when status or trackerState changes
+// Export memoized PlayerList - only re-renders when actual data changes
 export const PlayerList = memo(PlayerListBase, (prevProps, nextProps) => {
-  // Custom comparison for optimal performance
-  return (
-    prevProps.status === nextProps.status &&
-    prevProps.trackerState === nextProps.trackerState
-  );
+  // Compare actual player lists instead of object references
+  const prevPlayers = prevProps.trackerState?.online_players?.length
+    ? prevProps.trackerState.online_players
+    : prevProps.status?.players || [];
+
+  const nextPlayers = nextProps.trackerState?.online_players?.length
+    ? nextProps.trackerState.online_players
+    : nextProps.status?.players || [];
+
+  // Quick length check
+  if (prevPlayers.length !== nextPlayers.length) {
+    return false; // Props changed, re-render
+  }
+
+  // Check if player data actually changed
+  const playersEqual = prevPlayers.every((prev, idx) => {
+    const next = nextPlayers[idx];
+    return prev.uuid === next.uuid &&
+           prev.name === next.name;
+  });
+
+  // Also check status online state
+  const statusEqual = prevProps.status?.online === nextProps.status?.online &&
+                      prevProps.status?.player_count === nextProps.status?.player_count;
+
+  // Return true if nothing changed (don't re-render), false if something changed (re-render)
+  return playersEqual && statusEqual;
 });

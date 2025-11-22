@@ -26,6 +26,9 @@ import { useUpdateStore } from '../stores/updateStore';
 import type { DeviceCodeInfo } from '../hooks/useTauriCommands';
 
 export default function LauncherHome() {
+  // Refs for tracking state updates
+  const justInstalledRef = useRef(false);
+
   // Global State
   const { user, isAuthenticated, login, finishDeviceCodeAuth, isLoading: authLoading, error: authError } = useAuth();
   const { status } = useServer();
@@ -169,6 +172,12 @@ export default function LauncherHome() {
       return;
     }
 
+    // Skip check immediately after install to prevent race condition
+    if (justInstalledRef.current) {
+      justInstalledRef.current = false;
+      return;
+    }
+
     const checkModpackUpdates = async () => {
       try {
         setIsCheckingModpackUpdates(true);
@@ -279,6 +288,8 @@ export default function LauncherHome() {
   const handleModpackUpdateConfirm = useCallback(async () => {
     try {
       await performInstall({ blockUi: true });
+      // Mark that we just installed to prevent the update check effect from re-running
+      justInstalledRef.current = true;
       // After successful update, clear the modpack update state
       setModpackUpdate(null);
       addToast('Modpack updated successfully!', 'success');
