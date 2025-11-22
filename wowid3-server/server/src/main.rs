@@ -8,6 +8,7 @@ mod models;
 mod services;
 mod storage;
 mod utils;
+mod vpn;
 
 use api::admin::{
     clear_cache, clear_jar_cache, clear_manifest_cache, copy_release_to_draft, create_release,
