@@ -7,7 +7,8 @@ use modules::minecraft::{launch_game, launch_game_with_metadata, analyze_crash, 
 use modules::minecraft_version::{list_versions, get_latest_release, get_latest_snapshot, VersionInfo};
 use modules::fabric_installer::{get_fabric_loaders, get_latest_fabric_loader, FabricLoader};
 use modules::game_installer::{install_minecraft, is_version_installed, InstallConfig};
-use modules::server::{ping_server, resolve_player_name, fetch_tracker_status, ServerStatus, TrackerState};
+use modules::server::{ping_server, ping_server_with_vpn, resolve_player_name, fetch_tracker_status, ServerStatus, TrackerState};
+use modules::minecraft::verify_server_reachable;
 use modules::stats::{get_player_stats, PlayerStats};
 use modules::updater::{check_for_updates, get_installed_version, install_modpack, verify_and_repair_modpack, has_manifest_changed, update_version_file, Manifest};
 use modules::audio::{get_cached_audio, download_and_cache_audio, read_cached_audio_bytes, clear_audio_cache};
@@ -534,6 +535,16 @@ async fn cmd_get_detailed_server_status(base_url: String) -> Result<TrackerState
 }
 
 #[tauri::command]
+async fn cmd_ping_server_with_vpn(vpn_enabled: bool) -> Result<ServerStatus, String> {
+    ping_server_with_vpn(vpn_enabled).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cmd_verify_server_reachable(address: String) -> Result<bool, String> {
+    verify_server_reachable(&address).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn cmd_get_player_stats(
     app: AppHandle,
     uuid: String,
@@ -825,6 +836,8 @@ pub fn run() {
             cmd_install_minecraft,
             cmd_is_version_installed,
             cmd_ping_server,
+            cmd_ping_server_with_vpn,
+            cmd_verify_server_reachable,
             cmd_resolve_player_name,
             cmd_get_detailed_server_status,
             cmd_get_player_stats,
@@ -890,6 +903,8 @@ pub fn run() {
             cmd_install_minecraft,
             cmd_is_version_installed,
             cmd_ping_server,
+            cmd_ping_server_with_vpn,
+            cmd_verify_server_reachable,
             cmd_resolve_player_name,
             cmd_get_detailed_server_status,
             cmd_get_player_stats,

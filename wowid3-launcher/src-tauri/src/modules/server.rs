@@ -4,6 +4,9 @@ use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
+#[cfg(target_os = "windows")]
+use super::vpn::VpnManager;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlayerInfo {
     pub name: String,
@@ -216,6 +219,43 @@ fn extract_motd_text(description: &serde_json::Value) -> String {
         }
         _ => String::new(),
     }
+}
+
+/// Determine which server address to use based on VPN settings
+/// Returns VPN address (10.8.0.1:25565) if VPN is enabled and running,
+/// otherwise returns direct address (mc.frostdev.io:25565)
+pub fn get_server_address(vpn_enabled: bool) -> &'static str {
+    #[cfg(target_os = "windows")]
+    {
+        if vpn_enabled {
+            // Check if VPN tunnel is running
+            if let Ok(manager) = VpnManager::new() {
+                if manager.is_tunnel_running() {
+                    eprintln!("[Server] Using VPN address: 10.8.0.1:25565");
+                    return "10.8.0.1:25565";
+                } else {
+                    eprintln!("[Server] VPN enabled but tunnel not running, using direct connection");
+                }
+            } else {
+                eprintln!("[Server] VPN enabled but manager failed to initialize, using direct connection");
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = vpn_enabled; // Suppress unused variable warning on non-Windows
+    }
+
+    eprintln!("[Server] Using direct address: mc.frostdev.io:25565");
+    "mc.frostdev.io:25565"
+}
+
+/// Ping Minecraft server with VPN-aware address selection
+/// Automatically selects VPN or direct address based on VPN settings
+pub async fn ping_server_with_vpn(vpn_enabled: bool) -> Result<ServerStatus> {
+    let address = get_server_address(vpn_enabled);
+    ping_server(address).await
 }
 
 /// Ping Minecraft server and get status
