@@ -19,3 +19,6 @@ pub mod paths;
 pub mod launcher_updater;
 pub mod stats;
 pub mod map_viewer;
+pub mod vpn;
+
+pub use vpn::VpnManager;
