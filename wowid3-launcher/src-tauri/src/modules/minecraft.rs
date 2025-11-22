@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 use sysinfo::{System, Pid, ProcessesToUpdate};
@@ -13,6 +14,9 @@ use super::library_manager;
 use super::minecraft_version::{Argument, ArgumentValue};
 use super::auth::get_access_token_by_session_id;
 use super::updater::get_installed_version as get_modpack_version;
+
+#[cfg(target_os = "windows")]
+use super::vpn::VpnManager;
 
 // Global game process ID tracker
 lazy_static::lazy_static! {
@@ -525,6 +529,31 @@ fn is_wayland_session() -> bool {
 #[cfg(not(target_os = "linux"))]
 fn is_wayland_session() -> bool {
     false
+}
+
+/// Verify if a server is reachable via TCP connection with 5-second timeout
+pub async fn verify_server_reachable(address: &str) -> Result<bool> {
+    use tokio::net::TcpStream;
+
+    eprintln!("[Server Verification] Testing connection to: {}", address);
+
+    match tokio::time::timeout(
+        Duration::from_secs(5),
+        TcpStream::connect(address)
+    ).await {
+        Ok(Ok(_stream)) => {
+            eprintln!("[Server Verification] Successfully connected to {}", address);
+            Ok(true)
+        },
+        Ok(Err(e)) => {
+            eprintln!("[Server Verification] Failed to connect to {}: {}", address, e);
+            Ok(false)
+        },
+        Err(_) => {
+            eprintln!("[Server Verification] Timeout connecting to {}", address);
+            Ok(false)
+        }
+    }
 }
 
 /// Analyze crash report and return helpful error message

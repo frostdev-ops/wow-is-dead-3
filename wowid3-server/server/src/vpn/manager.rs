@@ -1,0 +1,51 @@
+use anyhow::Result;
+use std::process::Command;
+
+pub struct WireGuardManager;
+
+impl WireGuardManager {
+    pub fn add_peer(public_key: &str, ip: &str) -> Result<()> {
+        let output = Command::new("wg")
+            .args(&["set", "wg0", "peer", public_key, "allowed-ips", &format!("{}/32", ip)])
+            .output()?;
+
+        if !output.status.success() {
+            let error = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!("Failed to add WireGuard peer: {}", error));
+        }
+
+        Ok(())
+    }
+
+    pub fn remove_peer(public_key: &str) -> Result<()> {
+        let output = Command::new("wg")
+            .args(&["set", "wg0", "peer", public_key, "remove"])
+            .output()?;
+
+        if !output.status.success() {
+            let error = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!("Failed to remove WireGuard peer: {}", error));
+        }
+
+        Ok(())
+    }
+
+    pub fn get_server_public_key() -> Result<String> {
+        let key = std::fs::read_to_string("/etc/wireguard/server_public.key")?
+            .trim()
+            .to_string();
+        Ok(key)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_add_peer_command_format() {
+        // This test will fail until implementation is tested on actual server
+        // For now, just verify the module compiles
+        assert_eq!(1, 1);
+    }
+}

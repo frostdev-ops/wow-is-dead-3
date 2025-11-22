@@ -4,6 +4,9 @@ use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
+#[cfg(target_os = "windows")]
+use super::vpn::VpnManager;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlayerInfo {
     pub name: String,
@@ -216,6 +219,43 @@ fn extract_motd_text(description: &serde_json::Value) -> String {
         }
         _ => String::new(),
     }
+}
+
+/// Determine which server address to use based on VPN settings
+/// Returns VPN address (10.8.0.1:25565) if VPN is enabled and running,
+/// otherwise returns direct address (mc.frostdev.io:25565)
+pub fn get_server_address(vpn_enabled: bool) -> &'static str {
+    #[cfg(target_os = "windows")]
+    {
+        if vpn_enabled {
+            // Check if VPN tunnel is running
+            if let Ok(manager) = VpnManager::new() {
+                if manager.is_tunnel_running() {
+                    eprintln!("[Server] Using VPN address: 10.8.0.1:25565");
+                    return "10.8.0.1:25565";
+                } else {
+                    eprintln!("[Server] VPN enabled but tunnel not running, using direct connection");
+                }
+            } else {
+                eprintln!("[Server] VPN enabled but manager failed to initialize, using direct connection");
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = vpn_enabled; // Suppress unused variable warning on non-Windows
+    }
+
+    eprintln!("[Server] Using direct address: mc.frostdev.io:25565");
+    "mc.frostdev.io:25565"
+}
+
+/// Ping Minecraft server with VPN-aware address selection
+/// Automatically selects VPN or direct address based on VPN settings
+pub async fn ping_server_with_vpn(vpn_enabled: bool) -> Result<ServerStatus> {
+    let address = get_server_address(vpn_enabled);
+    ping_server(address).await
 }
 
 /// Ping Minecraft server and get status
@@ -609,7 +649,7 @@ mod tests {
         Ok(result)
     }
 
-    /// Mock Minecraft server for testing
+    /// Mock Minecraft server for testing (Legacy Protocol)
     /// Returns a JoinHandle that MUST be joined or aborted to prevent resource leaks
     fn start_mock_server(port: u16, response_json: String) -> thread::JoinHandle<()> {
         thread::spawn(move || {
@@ -632,43 +672,45 @@ mod tests {
                         stream.set_read_timeout(Some(Duration::from_secs(2))).ok();
                         stream.set_write_timeout(Some(Duration::from_secs(2))).ok();
 
-                        // Read handshake packet properly using Minecraft protocol
-                        if let Ok(handshake_len) = read_test_varint(&mut stream) {
-                            // Validate packet length to prevent panic or excessive allocation
-                            if handshake_len <= 0 || handshake_len > 1048576 {
-                                eprintln!("[Mock Server] Invalid handshake length: {}", handshake_len);
-                                return;
-                            }
-                            let mut handshake_buf = vec![0u8; handshake_len as usize];
-                            if stream.read_exact(&mut handshake_buf).is_ok() {
-                                // Read status request packet
-                                if let Ok(request_len) = read_test_varint(&mut stream) {
-                                    // Validate packet length to prevent panic or excessive allocation
-                                    if request_len <= 0 || request_len > 1048576 {
-                                        eprintln!("[Mock Server] Invalid request length: {}", request_len);
-                                        return;
-                                    }
-                                    let mut request_buf = vec![0u8; request_len as usize];
-                                    if stream.read_exact(&mut request_buf).is_ok() {
-                                        // Send status response
-                                        let json_bytes = response_json.as_bytes();
-                                        let json_len = write_test_varint(json_bytes.len() as i32);
+                        // Read legacy ping packet (FE 01)
+                        let mut legacy_buf = [0u8; 2];
+                        if stream.read_exact(&mut legacy_buf).is_ok() {
+                            if legacy_buf[0] == 0xFE && legacy_buf[1] == 0x01 {
+                                // This is a legacy ping request
+                                // Create a legacy response in the format expected by our code
+                                // Format: §1\x00<protocol>\x00<mc_version>\x00<motd>\x00<online>\x00<max>
 
-                                        // Calculate total packet length (packet ID + string length + string data)
-                                        let packet_data_len = 1 + json_len.len() + json_bytes.len();
-                                        let packet_len = write_test_varint(packet_data_len as i32);
+                                // Parse the JSON to extract values
+                                let parsed: serde_json::Value = serde_json::from_str(&response_json)
+                                    .expect("Failed to parse response JSON");
 
-                                        // Write packet
-                                        stream.write_all(&packet_len).ok();
-                                        stream.write_all(&[0x00]).ok(); // Packet ID
-                                        stream.write_all(&json_len).ok();
-                                        stream.write_all(json_bytes).ok();
-                                        stream.flush().ok();
-                                        
-                                        // Give client time to read before closing connection
-                                        thread::sleep(Duration::from_millis(50));
-                                    }
+                                let version = parsed["version"]["name"].as_str().unwrap_or("1.20.4");
+                                let motd = parsed["description"]["text"].as_str().unwrap_or("Test Server");
+                                let online = parsed["players"]["online"].as_u64().unwrap_or(5);
+                                let max = parsed["players"]["max"].as_u64().unwrap_or(20);
+
+                                // Build legacy response string
+                                // Protocol version 127 is for 1.6.4, but we'll use it for simplicity
+                                let legacy_response = format!("§1\x00127\x00{}\x00{}\x00{}\x00{}",
+                                    version, motd, online, max);
+
+                                // Convert to UTF-16BE
+                                let utf16_bytes: Vec<u16> = legacy_response.encode_utf16().collect();
+                                let mut response_bytes = Vec::new();
+                                for val in utf16_bytes {
+                                    response_bytes.extend_from_slice(&val.to_be_bytes());
                                 }
+
+                                // Send legacy response
+                                // Format: [FF] [Length: Short] [String: UTF-16BE]
+                                stream.write_all(&[0xFF]).ok(); // Packet ID
+                                let len = (response_bytes.len() / 2) as u16; // Length in UTF-16 characters
+                                stream.write_all(&len.to_be_bytes()).ok(); // Length
+                                stream.write_all(&response_bytes).ok(); // Data
+                                stream.flush().ok();
+
+                                // Give client time to read before closing connection
+                                thread::sleep(Duration::from_millis(50));
                             }
                         }
                         // Connection handled, exit
@@ -786,11 +828,8 @@ mod tests {
         assert_eq!(status.online, true);
         assert_eq!(status.player_count, Some(5));
         assert_eq!(status.max_players, Some(20));
-        assert_eq!(status.players.len(), 2);
-        assert_eq!(status.players[0].name, "Player1");
-        assert_eq!(status.players[0].id, "uuid1");
-        assert_eq!(status.players[1].name, "Player2");
-        assert_eq!(status.players[1].id, "uuid2");
+        // Legacy ping doesn't support player list, so it should be empty
+        assert_eq!(status.players.len(), 0);
         assert_eq!(status.version, Some("1.20.4".to_string()));
         assert_eq!(status.motd, Some("Test Server".to_string()));
         

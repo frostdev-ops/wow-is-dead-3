@@ -9,6 +9,7 @@ mod services;
 mod storage;
 mod tcp_test_server;
 mod utils;
+mod vpn;
 
 use api::admin::{
     clear_cache, clear_jar_cache, clear_manifest_cache, copy_release_to_draft, create_release,
@@ -130,6 +131,14 @@ async fn main() -> anyhow::Result<()> {
     let bluemap_state = Arc::new(BlueMapState::new());
     info!("BlueMap state initialized");
 
+    // Create shared state for VPN API
+    let ip_allocator = Arc::new(vpn::IpAllocator::new(db.conn.clone()));
+    let vpn_state = vpn::api::VpnState {
+        db: db.clone(),
+        ip_allocator,
+    };
+    info!("VPN state initialized");
+
     // Build CORS layer
     let cors = if let Some(origin) = &config.cors_origin {
         CorsLayer::permissive() // Dev mode
@@ -228,6 +237,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(bluemap_routes)
         .merge(admin_login)
         .merge(admin_routes)
+        .merge(vpn::api::vpn_routes(vpn_state))
         .layer(DefaultBodyLimit::max(20 * 1024 * 1024 * 1024)) // 20GB limit
         .layer(cors);
 

@@ -271,9 +271,8 @@ mod tests {
         let profile = MinecraftProfile {
             uuid: "test-uuid".to_string(),
             username: "testuser".to_string(),
-            access_token: "test-token".to_string(),
+            session_id: "test-session-id".to_string(),
             skin_url: Some("https://example.com/skin.png".to_string()),
-            refresh_token: Some("test-refresh".to_string()),
             expires_at: None,
         };
 

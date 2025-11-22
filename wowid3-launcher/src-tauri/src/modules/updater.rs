@@ -854,6 +854,7 @@ mod tests {
             minecraft_version: "1.20.1".to_string(),
             fabric_loader: "0.15.0".to_string(),
             changelog: "Initial release".to_string(),
+            ignore_patterns: vec![],
             files: vec![
                 ManifestFile {
                     path: "mods/mod1.jar".to_string(),
@@ -892,6 +893,7 @@ mod tests {
             minecraft_version: "1.20.1".to_string(),
             fabric_loader: "0.15.0".to_string(),
             changelog: "Update".to_string(),
+            ignore_patterns: vec![],
             files: vec![
                 ManifestFile {
                     path: "mods/mod1.jar".to_string(),
@@ -933,6 +935,7 @@ mod tests {
             minecraft_version: "1.20.1".to_string(),
             fabric_loader: "0.15.0".to_string(),
             changelog: "Update".to_string(),
+            ignore_patterns: vec![],
             files: vec![
                 ManifestFile {
                     path: "mods/mod1.jar".to_string(),
@@ -1164,6 +1167,7 @@ mod integration_tests {
             minecraft_version: "1.20.1".to_string(),
             fabric_loader: "0.15.0".to_string(),
             changelog: "Initial release".to_string(),
+            ignore_patterns: vec![],
             files: vec![
                 ManifestFile {
                     path: "mods/mod1.jar".to_string(),
@@ -1235,6 +1239,7 @@ mod integration_tests {
             minecraft_version: "1.20.1".to_string(),
             fabric_loader: "0.15.0".to_string(),
             changelog: "Update".to_string(),
+            ignore_patterns: vec![],
             files: vec![
                 ManifestFile {
                     path: "mods/mod1.jar".to_string(),
@@ -1293,6 +1298,7 @@ mod integration_tests {
             minecraft_version: "1.20.1".to_string(),
             fabric_loader: "0.15.0".to_string(),
             changelog: "No changes".to_string(),
+            ignore_patterns: vec![],
             files: vec![ManifestFile {
                 path: "mods/mod1.jar".to_string(),
                 url: "http://example.com/mod1.jar".to_string(),
