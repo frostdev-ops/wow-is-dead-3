@@ -192,6 +192,19 @@ pub async fn get_launcher_installer(
     serve_launcher_file_by_type(&state, &platform, "installer").await
 }
 
+/// GET /api/launcher/latest/installer/{platform}
+pub async fn get_launcher_installer_platform(
+    Path(platform): Path<String>,
+    State(state): State<PublicState>,
+) -> Result<Response, AppError> {
+    // Validate platform
+    if !matches!(platform.as_str(), "windows" | "linux" | "macos") {
+        return Err(AppError::BadRequest(format!("Invalid platform: {}", platform)));
+    }
+
+    serve_launcher_file_by_type(&state, &platform, "installer").await
+}
+
 /// GET /files/launcher/:filename - Serve launcher files (legacy, for current Windows-only release)
 pub async fn serve_launcher_file(
     State(state): State<PublicState>,
