@@ -50,7 +50,7 @@ export function Sidebar() {
     },
     {
       label: 'Launcher',
-      path: '/launcher',
+      path: '/admin/launcher',
       icon: <Rocket className="w-5 h-5" />,
     },
     {
@@ -71,7 +71,7 @@ export function Sidebar() {
     if (path === '/releases' && location.pathname.startsWith('/releases')) return true;
     if (path === '/upload' && location.pathname === '/upload') return true;
     if (path === '/resources' && location.pathname === '/resources') return true;
-    if (path === '/launcher' && location.pathname === '/launcher') return true;
+    if (path === '/admin/launcher' && location.pathname.startsWith('/admin/launcher')) return true;
     if (path === '/vpn' && location.pathname === '/vpn') return true;
     if (path === '/settings' && location.pathname === '/settings') return true;
     return false;
