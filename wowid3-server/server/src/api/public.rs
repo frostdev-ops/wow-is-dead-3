@@ -95,6 +95,7 @@ pub async fn get_latest_launcher_manifest(
                 files: vec![
                     crate::models::manifest::LauncherFile {
                         platform: "windows".to_string(),
+                        file_type: None,
                         filename: "WOWID3Launcher.exe".to_string(),
                         url: manifest.url,
                         sha256: manifest.sha256,

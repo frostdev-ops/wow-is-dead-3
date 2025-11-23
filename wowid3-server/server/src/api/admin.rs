@@ -978,6 +978,7 @@ pub async fn upload_launcher_release(
         files: vec![
             crate::models::manifest::LauncherFile {
                 platform: "windows".to_string(),
+                file_type: None,
                 filename: file_name.clone(),
                 url: format!("{}/files/launcher/{}", state.config.base_url, file_name),
                 sha256: manifest.sha256.clone(),
@@ -1126,6 +1127,7 @@ pub async fn upload_launcher_version_file(
     // Add or update file for this platform
     let launcher_file = LauncherFile {
         platform: platform.clone(),
+        file_type: None,
         filename: original_filename.clone(),
         url: format!("{}/files/launcher/versions/{}/{}", state.config.base_url, version, original_filename),
         sha256: file_sha256,
