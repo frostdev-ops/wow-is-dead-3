@@ -9,7 +9,7 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use futures_util::StreamExt;
 
-const LAUNCHER_MANIFEST_URL: &str = "https://wowid-launcher.frostdev.io/api/launcher/latest";
+const LAUNCHER_MANIFEST_URL: &str = "https://wowid-launcher.frostdev.io/api/launcher/latest/executable";
 
 // Old single-file manifest format (for backward compatibility)
 #[derive(Debug, Clone, Serialize, Deserialize)]
