@@ -290,8 +290,8 @@ export default function DownloadPage() {
         });
     }
 
-    // Fetch manifest - try new API first, fall back to old format
-    api.get('/launcher/latest')
+    // Fetch manifest - use installer endpoint for first-time downloads
+    api.get('/launcher/latest/installer')
       .then(res => {
         const data = res.data;
         // Check if it's the new multi-platform format
