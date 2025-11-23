@@ -1,12 +1,8 @@
-// This module is Windows-only because it uses Windows-specific APIs:
-// - sc.exe (Service Control Manager) for WireGuard tunnel status
-// - PROGRAMDATA environment variable for config storage
-// - WireGuardNT service naming convention
+// Cross-platform VPN management module
+// - Windows: Uses sc.exe for service control, PROGRAMDATA for storage
+// - Linux: Uses wg-quick for tunnel control, ~/.config for storage
 //
-// Cross-platform support would require:
-// - Linux: wg show command, /etc/wireguard/ paths
-// - macOS: different WireGuard installation paths and service management
-#![cfg(target_os = "windows")]
+// Both platforms use WireGuard with identical config format
 
 use anyhow::Result;
 use base64::{engine::general_purpose, Engine as _};
@@ -26,10 +22,70 @@ impl VpnManager {
         Ok(Self { config_dir })
     }
 
+    /// Check if WireGuard is installed on the system
+    #[cfg(target_os = "windows")]
+    pub fn is_wireguard_installed() -> bool {
+        // Strategy 1: Check if wg.exe is in PATH
+        let in_path = Command::new("where")
+            .arg("wg.exe")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        if in_path {
+            eprintln!("[VPN] WireGuard found in PATH");
+            return true;
+        }
+
+        // Strategy 2: Check common installation directories
+        let common_paths = vec![
+            r"C:\Program Files\WireGuard\wg.exe",
+            r"C:\Program Files (x86)\WireGuard\wg.exe",
+        ];
+
+        for path in common_paths {
+            if std::path::Path::new(path).exists() {
+                eprintln!("[VPN] WireGuard found at: {}", path);
+                return true;
+            }
+        }
+
+        eprintln!("[VPN] WireGuard not found in PATH or common install locations");
+        false
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn is_wireguard_installed() -> bool {
+        // Check if wg-quick is available
+        Command::new("which")
+            .arg("wg-quick")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    pub fn is_wireguard_installed() -> bool {
+        false
+    }
+
+    #[cfg(target_os = "windows")]
     fn get_config_dir() -> Result<PathBuf> {
         let program_data =
             std::env::var("PROGRAMDATA").unwrap_or_else(|_| "C:\\ProgramData".to_string());
         Ok(Path::new(&program_data).join("wowid3-launcher").join("vpn"))
+    }
+
+    #[cfg(target_os = "linux")]
+    fn get_config_dir() -> Result<PathBuf> {
+        let home = std::env::var("HOME")
+            .map_err(|_| anyhow::anyhow!("HOME environment variable not set"))?;
+        Ok(Path::new(&home).join(".config").join("wowid3-launcher").join("vpn"))
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    fn get_config_dir() -> Result<PathBuf> {
+        Err(anyhow::anyhow!("Unsupported platform"))
     }
 
     pub fn generate_keypair() -> Result<(String, String)> {
@@ -60,7 +116,16 @@ impl VpnManager {
 
     pub fn write_config(&self, config_content: &str) -> Result<()> {
         let config_path = self.config_dir.join("wowid3.conf");
-        std::fs::write(config_path, config_content)?;
+        std::fs::write(&config_path, config_content)?;
+
+        // Set secure permissions (600 - owner read/write only)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let permissions = std::fs::Permissions::from_mode(0o600);
+            std::fs::set_permissions(&config_path, permissions)?;
+        }
+
         Ok(())
     }
 
@@ -68,6 +133,7 @@ impl VpnManager {
         Ok(self.config_dir.join("wowid3.conf"))
     }
 
+    #[cfg(target_os = "windows")]
     pub fn tunnel_exists(&self) -> bool {
         // Check if WireGuard service exists
         let output = Command::new("sc")
@@ -77,6 +143,26 @@ impl VpnManager {
         output.map(|o| o.status.success()).unwrap_or(false)
     }
 
+    #[cfg(target_os = "linux")]
+    pub fn tunnel_exists(&self) -> bool {
+        // Check if wg-quick is installed and config exists
+        let wg_quick_exists = Command::new("which")
+            .arg("wg-quick")
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+        let config_exists = self.config_dir.join("wowid3.conf").exists();
+
+        wg_quick_exists && config_exists
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    pub fn tunnel_exists(&self) -> bool {
+        false
+    }
+
+    #[cfg(target_os = "windows")]
     pub fn is_tunnel_running(&self) -> bool {
         let output = Command::new("sc")
             .args(&["query", "WireGuardTunnel$wowid3"])
@@ -88,6 +174,202 @@ impl VpnManager {
         } else {
             false
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn is_tunnel_running(&self) -> bool {
+        // Check if wowid3 interface is active
+        let output = Command::new("wg")
+            .args(&["show", "wowid3"])
+            .output();
+
+        output.map(|o| o.status.success()).unwrap_or(false)
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    pub fn is_tunnel_running(&self) -> bool {
+        false
+    }
+
+    #[cfg(target_os = "windows")]
+    pub fn start_tunnel(&self) -> Result<()> {
+        let output = Command::new("net")
+            .args(&["start", "WireGuardTunnel$wowid3"])
+            .output()?;
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Failed to start VPN tunnel"))
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn start_tunnel(&self) -> Result<()> {
+        let config_path = self.get_config_path()?;
+
+        // Verify config exists
+        if !config_path.exists() {
+            return Err(anyhow::anyhow!(
+                "VPN config not found at: {}\nPlease complete VPN setup first.",
+                config_path.display()
+            ));
+        }
+
+        // Try to load WireGuard kernel module if not already loaded
+        eprintln!("[VPN] Checking WireGuard kernel module...");
+        let modprobe_result = Command::new("sudo")
+            .args(&["modprobe", "wireguard"])
+            .output();
+
+        match modprobe_result {
+            Ok(out) if !out.status.success() => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                eprintln!("[VPN] Warning: Could not load wireguard module: {}", stderr);
+                eprintln!("[VPN] Continuing anyway (module might already be built-in)...");
+            }
+            Ok(_) => eprintln!("[VPN] WireGuard module loaded successfully"),
+            Err(e) => eprintln!("[VPN] Warning: Could not run modprobe: {}", e),
+        }
+
+        // Use full path to wg-quick
+        let wg_quick_path = which::which("wg-quick")
+            .unwrap_or_else(|_| std::path::PathBuf::from("/usr/bin/wg-quick"));
+
+        eprintln!("[VPN] Starting tunnel with config: {}", config_path.display());
+        eprintln!("[VPN] Using wg-quick at: {}", wg_quick_path.display());
+
+        // Try pkexec first (graphical sudo prompt)
+        let output = Command::new("pkexec")
+            .args(&[
+                wg_quick_path.to_str().unwrap(),
+                "up",
+                config_path.to_str().unwrap()
+            ])
+            .output();
+
+        match output {
+            Ok(out) => {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                let stderr = String::from_utf8_lossy(&out.stderr);
+
+                eprintln!("[VPN] Exit code: {:?}", out.status.code());
+                eprintln!("[VPN] Stdout: {}", stdout);
+                eprintln!("[VPN] Stderr: {}", stderr);
+
+                if out.status.success() {
+                    Ok(())
+                } else {
+                    // Check if pkexec was denied or failed
+                    if stderr.contains("dismissed") || stderr.contains("Not authorized") || out.status.code() == Some(127) {
+                        Err(anyhow::anyhow!(
+                            "PolicyKit authorization required. To fix this, configure passwordless sudo for wg-quick:\n\n\
+                            1. Run this command:\n   sudo visudo -f /etc/sudoers.d/wowid3-vpn\n\n\
+                            2. Add this line:\n   {} ALL=(ALL) NOPASSWD: {}\n\n\
+                            3. Save and exit (Ctrl+X, then Y, then Enter)\n\n\
+                            4. Try enabling VPN again\n\n\
+                            This allows the launcher to manage the VPN without password prompts.",
+                            whoami::username(),
+                            wg_quick_path.display()
+                        ))
+                    } else if stderr.contains("already exists") || stdout.contains("already exists") {
+                        // Interface already up, that's fine
+                        Ok(())
+                    } else if stderr.contains("Protocol not supported") || stderr.contains("Unknown device type") {
+                        // WireGuard kernel module not available
+                        Err(anyhow::anyhow!(
+                            "WireGuard kernel module not available.\n\n\
+                            On Arch Linux, try:\n\
+                            1. sudo modprobe wireguard\n\
+                            2. If that fails, install the module:\n   sudo pacman -S wireguard-dkms\n\n\
+                            On other distros:\n\
+                            - Ubuntu/Debian: sudo apt install wireguard-dkms\n\
+                            - Fedora: sudo dnf install wireguard-tools\n\n\
+                            Alternatively, update your kernel to 5.6+ (WireGuard is built-in).\n\n\
+                            Original error: {}",
+                            stderr
+                        ))
+                    } else {
+                        Err(anyhow::anyhow!(
+                            "Failed to start VPN tunnel (exit code: {:?})\nStdout: {}\nStderr: {}",
+                            out.status.code(),
+                            stdout,
+                            stderr
+                        ))
+                    }
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // pkexec not found, show instructions for sudo setup
+                Err(anyhow::anyhow!(
+                    "pkexec not found. Please configure passwordless sudo for wg-quick:\n\n\
+                    sudo visudo -f /etc/sudoers.d/wowid3-vpn\n\
+                    Add: {} ALL=(ALL) NOPASSWD: {}\n\n\
+                    Then try again.",
+                    whoami::username(),
+                    wg_quick_path.display()
+                ))
+            }
+            Err(e) => Err(anyhow::anyhow!("Failed to execute pkexec: {}", e))
+        }
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    pub fn start_tunnel(&self) -> Result<()> {
+        Err(anyhow::anyhow!("Unsupported platform"))
+    }
+
+    #[cfg(target_os = "windows")]
+    pub fn stop_tunnel(&self) -> Result<()> {
+        let output = Command::new("net")
+            .args(&["stop", "WireGuardTunnel$wowid3"])
+            .output()?;
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Failed to stop VPN tunnel"))
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn stop_tunnel(&self) -> Result<()> {
+        // Try pkexec first (graphical sudo prompt)
+        let output = Command::new("pkexec")
+            .args(&["wg-quick", "down", "wowid3"])
+            .output();
+
+        match output {
+            Ok(out) if out.status.success() => Ok(()),
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+
+                // If interface doesn't exist, that's fine (already stopped)
+                if stderr.contains("does not exist") || stderr.contains("Cannot find device") {
+                    return Ok(());
+                }
+
+                // Check if pkexec was denied
+                if stderr.contains("dismissed") || stderr.contains("Not authorized") {
+                    Err(anyhow::anyhow!(
+                        "Authorization required to stop VPN tunnel. \
+                        Please grant permission when prompted."
+                    ))
+                } else {
+                    Err(anyhow::anyhow!("Failed to stop VPN tunnel: {}", stderr))
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // pkexec not found, try without sudo (might already be down)
+                Ok(())
+            }
+            Err(e) => Err(anyhow::anyhow!("Failed to execute pkexec: {}", e))
+        }
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    pub fn stop_tunnel(&self) -> Result<()> {
+        Err(anyhow::anyhow!("Unsupported platform"))
     }
 }
 

@@ -1,6 +1,9 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use base64::{engine::general_purpose::STANDARD, Engine};
+use std::path::PathBuf;
+use std::fs;
+use tauri::Manager;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AvatarData {
@@ -100,3 +103,74 @@ pub async fn fetch_avatar(username_or_uuid: &str) -> Result<AvatarData> {
 
 // Simple 1x1 transparent PNG as a fallback
 const DEFAULT_AVATAR_BASE64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+/// Get the avatar cache directory path
+pub fn get_avatar_cache_dir(app_handle: &tauri::AppHandle) -> Result<PathBuf> {
+    let cache_dir = app_handle
+        .path()
+        .app_cache_dir()
+        .map_err(|e| anyhow::anyhow!("Failed to get cache dir: {}", e))?;
+
+    let avatar_cache = cache_dir.join("avatars");
+
+    // Create directory if it doesn't exist
+    if !avatar_cache.exists() {
+        fs::create_dir_all(&avatar_cache)?;
+    }
+
+    Ok(avatar_cache)
+}
+
+/// Check if an avatar is cached on disk
+pub fn is_avatar_cached(app_handle: &tauri::AppHandle, identifier: &str) -> Result<bool> {
+    let cache_dir = get_avatar_cache_dir(app_handle)?;
+    let cache_file = cache_dir.join(format!("{}.png", identifier));
+    Ok(cache_file.exists())
+}
+
+/// Read cached avatar from disk (returns base64 data URI)
+pub fn read_cached_avatar(app_handle: &tauri::AppHandle, identifier: &str) -> Result<String> {
+    let cache_dir = get_avatar_cache_dir(app_handle)?;
+    let cache_file = cache_dir.join(format!("{}.png", identifier));
+
+    if !cache_file.exists() {
+        return Err(anyhow::anyhow!("Avatar not cached"));
+    }
+
+    let data = fs::read(&cache_file)?;
+    let base64_data = STANDARD.encode(&data);
+    Ok(format!("data:image/png;base64,{}", base64_data))
+}
+
+/// Write processed avatar head to disk cache
+/// Accepts base64 data URI from frontend (already processed head image)
+pub fn write_cached_avatar(
+    app_handle: &tauri::AppHandle,
+    identifier: &str,
+    data_uri: &str,
+) -> Result<()> {
+    let cache_dir = get_avatar_cache_dir(app_handle)?;
+    let cache_file = cache_dir.join(format!("{}.png", identifier));
+
+    // Extract base64 data from data URI (format: "data:image/png;base64,...")
+    let base64_data = data_uri
+        .strip_prefix("data:image/png;base64,")
+        .ok_or_else(|| anyhow::anyhow!("Invalid data URI format"))?;
+
+    let bytes = STANDARD.decode(base64_data)?;
+    fs::write(&cache_file, bytes)?;
+
+    Ok(())
+}
+
+/// Clear the entire avatar cache
+pub fn clear_avatar_cache(app_handle: &tauri::AppHandle) -> Result<()> {
+    let cache_dir = get_avatar_cache_dir(app_handle)?;
+
+    if cache_dir.exists() {
+        fs::remove_dir_all(&cache_dir)?;
+        fs::create_dir_all(&cache_dir)?;
+    }
+
+    Ok(())
+}

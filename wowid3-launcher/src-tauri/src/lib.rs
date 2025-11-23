@@ -1,7 +1,7 @@
 mod modules;
 
 use modules::auth::{authenticate_from_official_launcher, get_current_user, logout, refresh_token, get_device_code, complete_device_code_auth, MinecraftProfile, DeviceCodeInfo};
-use modules::avatar_proxy::{fetch_avatar, AvatarData};
+use modules::avatar_proxy::{fetch_avatar, AvatarData, is_avatar_cached, read_cached_avatar, write_cached_avatar, clear_avatar_cache};
 use modules::discord::{DiscordClient, GamePresence};
 use modules::minecraft::{launch_game, launch_game_with_metadata, analyze_crash, LaunchConfig, stop_game, kill_game, is_game_running};
 use modules::minecraft_version::{list_versions, get_latest_release, get_latest_snapshot, VersionInfo};
@@ -19,11 +19,10 @@ use modules::paths::{get_default_game_directory, resolve_game_directory, validat
 use modules::launcher_updater::{check_launcher_update, install_launcher_update, LauncherUpdateInfo};
 use modules::map_viewer::{check_bluemap_available, open_map_viewer, close_map_viewer, get_bluemap_url, BlueMapStatus};
 use modules::network_test::{test_game_server_reachability, test_latency_and_jitter, test_download_speed, test_upload_speed, test_packet_loss, run_full_network_analysis};
-#[cfg(target_os = "windows")]
 use modules::VpnManager;
 use serde::Serialize;
 use std::path::PathBuf;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 // Authentication Commands
 #[tauri::command]
@@ -76,10 +75,30 @@ async fn cmd_complete_device_code_auth(device_code: String, interval: u64) -> Re
     result.map_err(|e| e.to_string())
 }
 
-// Avatar Proxy Command
+// Avatar Proxy Commands
 #[tauri::command]
 async fn cmd_fetch_avatar(username: String) -> Result<AvatarData, String> {
     fetch_avatar(&username).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn cmd_is_avatar_cached(app: AppHandle, identifier: String) -> Result<bool, String> {
+    is_avatar_cached(&app, &identifier).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn cmd_read_cached_avatar(app: AppHandle, identifier: String) -> Result<String, String> {
+    read_cached_avatar(&app, &identifier).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn cmd_write_cached_avatar(app: AppHandle, identifier: String, data_uri: String) -> Result<(), String> {
+    write_cached_avatar(&app, &identifier, &data_uri).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn cmd_clear_avatar_cache(app: AppHandle) -> Result<(), String> {
+    clear_avatar_cache(&app).map_err(|e| e.to_string())
 }
 
 // Launcher Update Commands
@@ -743,22 +762,142 @@ fn cmd_validate_game_directory(path: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-// VPN Commands (Windows only)
-#[cfg(target_os = "windows")]
+// VPN Commands (Cross-platform)
 #[tauri::command]
 async fn vpn_generate_keypair() -> Result<(String, String), String> {
     VpnManager::generate_keypair()
         .map_err(|e| e.to_string())
 }
 
-#[cfg(target_os = "windows")]
 #[tauri::command]
 async fn vpn_has_keypair() -> Result<bool, String> {
     let manager = VpnManager::new().map_err(|e| e.to_string())?;
     Ok(manager.has_keypair())
 }
 
+#[tauri::command]
+async fn vpn_check_wireguard_installed() -> Result<bool, String> {
+    Ok(VpnManager::is_wireguard_installed())
+}
+
 #[cfg(target_os = "windows")]
+#[tauri::command]
+async fn vpn_install_wireguard_windows(app: tauri::AppHandle) -> Result<(), String> {
+    use std::process::Command;
+    use std::path::PathBuf;
+
+    eprintln!("[VPN Installer] Starting WireGuard installer search...");
+
+    let mut tried_paths: Vec<String> = Vec::new();
+    let mut resource_path: Option<PathBuf> = None;
+
+    // Strategy 1: Try relative to executable directory
+    if let Ok(exe_dir) = app.path().resolve("", tauri::path::BaseDirectory::Resource) {
+        eprintln!("[VPN Installer] Resource base directory: {}", exe_dir.display());
+
+        let candidates = vec![
+            exe_dir.join("wireguard-installer.exe"),
+            exe_dir.join("binaries/wireguard-installer.exe"),
+            exe_dir.join("../binaries/wireguard-installer.exe"),
+        ];
+
+        for candidate in candidates {
+            let path_str = candidate.display().to_string();
+            tried_paths.push(path_str.clone());
+            eprintln!("[VPN Installer] Checking: {}", path_str);
+            if candidate.exists() {
+                eprintln!("[VPN Installer] ✓ Found installer at: {}", candidate.display());
+                resource_path = Some(candidate);
+                break;
+            } else {
+                eprintln!("[VPN Installer] ✗ Not found: {}", candidate.display());
+            }
+        }
+    }
+
+    // Strategy 2: Try using PathResolver with different base directories
+    if resource_path.is_none() {
+        let base_dirs = vec![
+            ("Resource", tauri::path::BaseDirectory::Resource),
+            ("AppData", tauri::path::BaseDirectory::AppData),
+            ("AppLocalData", tauri::path::BaseDirectory::AppLocalData),
+        ];
+
+        for (name, base_dir) in base_dirs {
+            let paths_to_try = vec![
+                "wireguard-installer.exe",
+                "binaries/wireguard-installer.exe",
+            ];
+
+            for path in paths_to_try {
+                match app.path().resolve(path, base_dir) {
+                    Ok(p) => {
+                        let path_str = format!("{}:{} -> {}", name, path, p.display());
+                        tried_paths.push(path_str.clone());
+                        eprintln!("[VPN Installer] Checking {}", path_str);
+                        if p.exists() {
+                            eprintln!("[VPN Installer] ✓ Found installer at: {}", p.display());
+                            resource_path = Some(p);
+                            break;
+                        } else {
+                            eprintln!("[VPN Installer] ✗ Not found");
+                        }
+                    }
+                    Err(e) => {
+                        let err_str = format!("{}:{} (resolve error: {})", name, path, e);
+                        tried_paths.push(err_str.clone());
+                        eprintln!("[VPN Installer] Error: {}", err_str);
+                    }
+                }
+            }
+            if resource_path.is_some() {
+                break;
+            }
+        }
+    }
+
+    let resource_path = resource_path.ok_or_else(|| {
+        let error_msg = format!(
+            "WireGuard installer not found. Tried {} locations:\n{}",
+            tried_paths.len(),
+            tried_paths.join("\n")
+        );
+        eprintln!("[VPN Installer] {}", error_msg);
+        error_msg
+    })?;
+
+    eprintln!("[VPN Installer] Launching installer from: {}", resource_path.display());
+
+    // Launch the EXE installer with elevation (UAC prompt)
+    // Use PowerShell's Start-Process with -Verb RunAs to request admin rights
+    let installer_path = resource_path.to_str().unwrap();
+    eprintln!("[VPN Installer] Requesting elevation for installer...");
+
+    let status = Command::new("powershell")
+        .args(&[
+            "-NoProfile",
+            "-Command",
+            &format!("Start-Process -FilePath '{}' -Verb RunAs -Wait", installer_path)
+        ])
+        .spawn()
+        .map_err(|e| format!("Failed to launch installer: {}", e))?
+        .wait()
+        .map_err(|e| format!("Installer process error: {}", e))?;
+
+    if status.success() {
+        eprintln!("[VPN Installer] Installer completed successfully");
+        Ok(())
+    } else {
+        Err(format!("Installer exited with code: {:?}", status.code()))
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+async fn vpn_install_wireguard_windows(_app: tauri::AppHandle) -> Result<(), String> {
+    Err("This command is only available on Windows".to_string())
+}
+
 #[tauri::command]
 async fn vpn_tunnel_status() -> Result<String, String> {
     let manager = VpnManager::new().map_err(|e| e.to_string())?;
@@ -774,35 +913,99 @@ async fn vpn_tunnel_status() -> Result<String, String> {
     }
 }
 
-#[cfg(target_os = "windows")]
 #[tauri::command]
 async fn vpn_start_tunnel() -> Result<(), String> {
-    // Start the WireGuard service
-    let output = std::process::Command::new("net")
-        .args(&["start", "WireGuardTunnel$wowid3"])
-        .output()
-        .map_err(|e| e.to_string())?;
+    // Check if WireGuard is installed first
+    if !VpnManager::is_wireguard_installed() {
+        #[cfg(target_os = "windows")]
+        return Err("WireGuard is not installed. Please install WireGuard from the bundled installer.".to_string());
 
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err("Failed to start VPN tunnel".to_string())
+        #[cfg(target_os = "linux")]
+        return Err("WireGuard is not installed. Please install it using your package manager:\n\nArch/Manjaro: sudo pacman -S wireguard-tools\nUbuntu/Debian: sudo apt install wireguard-tools\nFedora: sudo dnf install wireguard-tools".to_string());
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+        return Err("WireGuard is not installed or unsupported platform.".to_string());
     }
+
+    let manager = VpnManager::new().map_err(|e| e.to_string())?;
+    manager.start_tunnel().map_err(|e| e.to_string())
 }
 
-#[cfg(target_os = "windows")]
 #[tauri::command]
 async fn vpn_stop_tunnel() -> Result<(), String> {
-    let output = std::process::Command::new("net")
-        .args(&["stop", "WireGuardTunnel$wowid3"])
-        .output()
-        .map_err(|e| e.to_string())?;
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err("Failed to stop VPN tunnel".to_string())
+    // Check if WireGuard is installed first
+    if !VpnManager::is_wireguard_installed() {
+        // Don't error on stop if WireGuard isn't installed - just succeed silently
+        return Ok(());
     }
+
+    let manager = VpnManager::new().map_err(|e| e.to_string())?;
+    manager.stop_tunnel().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn vpn_register_with_server(public_key: String, manifest_url: String) -> Result<serde_json::Value, String> {
+    use modules::auth::get_current_user;
+
+    // Get current Minecraft profile
+    let profile_option = get_current_user()
+        .map_err(|e| format!("Authentication error: {}", e))?;
+
+    let profile = profile_option
+        .ok_or_else(|| "Not logged in. Please log in with Microsoft first.".to_string())?;
+
+    // Derive base URL from manifest URL
+    let base_url = manifest_url.trim_end_matches("/api/manifest/latest");
+
+    // Call server registration API
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!("{}/api/vpn/register", base_url))
+        .json(&serde_json::json!({
+            "minecraft_uuid": profile.uuid,
+            "minecraft_username": profile.username,
+            "public_key": public_key,
+            "auth_token": profile.session_id
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to connect to VPN server: {}", e))?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        return Err(format!("Server returned error: {}", error_text));
+    }
+
+    let result: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse server response: {}", e))?;
+
+    Ok(result)
+}
+
+#[tauri::command]
+async fn vpn_write_config(
+    private_key: String,
+    assigned_ip: String,
+    server_public_key: String,
+    endpoint: String,
+) -> Result<(), String> {
+    let manager = VpnManager::new().map_err(|e| e.to_string())?;
+
+    // Store keypair
+    manager.store_keypair(&private_key, &server_public_key).map_err(|e| e.to_string())?;
+
+    // Generate WireGuard config
+    let config_content = format!(
+        "[Interface]\nPrivateKey = {}\nAddress = {}/24\nDNS = 1.1.1.1\n\n[Peer]\nPublicKey = {}\nEndpoint = {}\nAllowedIPs = 10.8.0.0/24\nPersistentKeepalive = 25",
+        private_key, assigned_ip, server_public_key, endpoint
+    );
+
+    // Write config file
+    manager.write_config(&config_content).map_err(|e| e.to_string())?;
+
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -827,6 +1030,10 @@ pub fn run() {
             cmd_get_device_code,
             cmd_complete_device_code_auth,
             cmd_fetch_avatar,
+            cmd_is_avatar_cached,
+            cmd_read_cached_avatar,
+            cmd_write_cached_avatar,
+            cmd_clear_avatar_cache,
             cmd_launch_game,
             cmd_launch_game_with_metadata,
             cmd_list_minecraft_versions,
@@ -878,9 +1085,13 @@ pub fn run() {
             cmd_get_bluemap_url,
             vpn_generate_keypair,
             vpn_has_keypair,
+            vpn_check_wireguard_installed,
+            vpn_install_wireguard_windows,
             vpn_tunnel_status,
             vpn_start_tunnel,
-            vpn_stop_tunnel
+            vpn_stop_tunnel,
+            vpn_register_with_server,
+            vpn_write_config
         ]);
     }
 
@@ -894,6 +1105,10 @@ pub fn run() {
             cmd_get_device_code,
             cmd_complete_device_code_auth,
             cmd_fetch_avatar,
+            cmd_is_avatar_cached,
+            cmd_read_cached_avatar,
+            cmd_write_cached_avatar,
+            cmd_clear_avatar_cache,
             cmd_launch_game,
             cmd_launch_game_with_metadata,
             cmd_list_minecraft_versions,
@@ -948,7 +1163,16 @@ pub fn run() {
             test_download_speed,
             test_upload_speed,
             test_packet_loss,
-            run_full_network_analysis
+            run_full_network_analysis,
+            vpn_generate_keypair,
+            vpn_has_keypair,
+            vpn_check_wireguard_installed,
+            vpn_install_wireguard_windows,
+            vpn_tunnel_status,
+            vpn_start_tunnel,
+            vpn_stop_tunnel,
+            vpn_register_with_server,
+            vpn_write_config
         ]);
     }
 

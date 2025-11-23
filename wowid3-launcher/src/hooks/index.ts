@@ -9,4 +9,5 @@ export { useAccessibility, useFocusTrap } from './useAccessibility';
 export { useRetry, retry } from './useRetry';
 export { useAudio } from './useAudio';
 export { useNetworkTest } from './useNetworkTest';
+export { useVpnInitialization } from './useVpnInitialization';
 export * from './useTauriCommands';

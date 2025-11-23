@@ -20,9 +20,6 @@ pub mod launcher_updater;
 pub mod stats;
 pub mod map_viewer;
 pub mod network_test;
-
-#[cfg(target_os = "windows")]
 pub mod vpn;
 
-#[cfg(target_os = "windows")]
 pub use vpn::VpnManager;

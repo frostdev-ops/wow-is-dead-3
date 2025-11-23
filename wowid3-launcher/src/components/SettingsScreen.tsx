@@ -4,6 +4,7 @@ import { useVpnStore } from '../stores/vpnStore';
 import { useAudio } from '../hooks';
 import { Input } from './ui/Input';
 import { NetworkTest } from './NetworkTest';
+import { VpnSetupModal } from './VpnSetupModal';
 // Logger import for future use
 // import { logger, LogCategory } from '../utils/logger';
 
@@ -53,6 +54,7 @@ export const SettingsScreen: FC = () => {
   const { volume, setVolume } = useAudio();
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showVpnSetupModal, setShowVpnSetupModal] = useState(false);
 
   const handleGamePathChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     const newPath = e.target.value;
@@ -107,12 +109,68 @@ export const SettingsScreen: FC = () => {
 
   const handleVpnToggle = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
     const enabled = e.target.checked;
-    setVpnEnabled(enabled);
+
     if (enabled) {
-      // Show VPN setup modal
-      // TODO: Implement VPN setup
+      // Check if VPN is already configured
+      const { invoke } = await import('@tauri-apps/api/core');
+      try {
+        const hasKeypair = await invoke<boolean>('vpn_has_keypair');
+
+        if (!hasKeypair) {
+          // Show setup modal for first-time setup
+          setShowVpnSetupModal(true);
+        } else {
+          // VPN already configured, just enable it
+          setVpnEnabled(true);
+
+          // Try to start the tunnel
+          try {
+            await invoke('vpn_start_tunnel');
+            useVpnStore.getState().setStatus('connected');
+          } catch (err) {
+            console.error('Failed to start VPN tunnel:', err);
+            useVpnStore.getState().setStatus('error');
+            useVpnStore.getState().setError(String(err));
+          }
+        }
+      } catch (err) {
+        console.error('Failed to check VPN status:', err);
+        setVpnEnabled(false);
+      }
+    } else {
+      // Disable VPN
+      setVpnEnabled(false);
+
+      // Try to stop the tunnel
+      const { invoke } = await import('@tauri-apps/api/core');
+      try {
+        await invoke('vpn_stop_tunnel');
+      } catch (err) {
+        console.error('Failed to stop VPN tunnel:', err);
+      }
     }
+  }, [setVpnEnabled, vpnStatus]);
+
+  const handleVpnSetupSuccess = useCallback((assignedIp: string) => {
+    setVpnEnabled(true);
+    useVpnStore.getState().setAssignedIp(assignedIp);
+    useVpnStore.getState().setStatus('connected');
+    setShowVpnSetupModal(false);
   }, [setVpnEnabled]);
+
+  const handleVpnSetupError = useCallback((error: string) => {
+    setVpnEnabled(false);
+    useVpnStore.getState().setStatus('error');
+    useVpnStore.getState().setError(error);
+  }, [setVpnEnabled]);
+
+  const handleVpnSetupClose = useCallback(() => {
+    setShowVpnSetupModal(false);
+    // If modal closed without completing setup, disable the toggle
+    if (!vpnEnabled) {
+      setVpnEnabled(false);
+    }
+  }, [vpnEnabled, setVpnEnabled]);
 
   return (
     <div className="max-w-4xl mx-auto w-full pt-8 px-4 pb-20">
@@ -193,7 +251,7 @@ export const SettingsScreen: FC = () => {
         </div>
       </div>
 
-      {/* Performance Section */}
+      {/* Performance Section - VPN */}
       <div className="bg-black bg-opacity-40 p-6 rounded-lg backdrop-blur-sm border border-white border-opacity-10 mb-8">
         <h2 className="text-xl font-semibold mb-6 text-white">Performance</h2>
 
@@ -239,10 +297,18 @@ export const SettingsScreen: FC = () => {
       <div className="bg-black bg-opacity-40 p-6 rounded-lg backdrop-blur-sm border border-white border-opacity-10">
         <NetworkTest />
       </div>
-      
+
       <div className="mt-8 text-center text-xs text-gray-500">
         <p>WOWID3 Launcher v{import.meta.env.PACKAGE_VERSION || '0.1.0'}</p>
       </div>
+
+      {/* VPN Setup Modal */}
+      <VpnSetupModal
+        isOpen={showVpnSetupModal}
+        onClose={handleVpnSetupClose}
+        onSuccess={handleVpnSetupSuccess}
+        onError={handleVpnSetupError}
+      />
     </div>
   );
 };

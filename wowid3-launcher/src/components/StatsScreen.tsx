@@ -143,44 +143,49 @@ export function StatsScreen() {
   const topMobsKilled = getTopItems(stats.mobs_killed);
   const topMobsTamed = getTopItems(stats.mobs_tamed);
   const topOresMined = getTopItems(stats.ores_mined);
+  const topFoodEaten = getTopItems(stats.food_eaten);
 
   const maxBlocks = topBlocksBroken[0]?.[1] || 1;
   const maxMobs = topMobsKilled[0]?.[1] || 1;
   const maxOres = topOresMined[0]?.[1] || 1;
+  const maxFood = topFoodEaten[0]?.[1] || 1;
 
   return (
-    <div className="container mx-auto p-6 space-y-6 max-w-7xl">
-      {/* Header with Refresh */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-4xl font-bold text-white mb-2">
-            📊 Player Statistics
-          </h1>
-          <p className="text-gray-400">Track your progress and achievements</p>
-        </div>
-        <button
-          onClick={refresh}
-          disabled={loading}
-          className="px-6 py-3 bg-gradient-to-br from-yellow-500 to-yellow-600 text-slate-900 rounded-lg hover:from-yellow-400 hover:to-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:scale-105 font-bold shadow-xl border-2 border-yellow-400/50"
-        >
-          {loading ? (
-            <span className="flex items-center gap-2">
-              <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
-              Refreshing...
-            </span>
-          ) : (
-            <span className="flex items-center gap-2">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Refresh
-            </span>
-          )}
-        </button>
+    <div className="container mx-auto p-6 space-y-6 max-w-7xl flex flex-col items-center">
+      {/* Centered Title */}
+      <div className="text-center w-full">
+        <h1 className="text-4xl font-bold text-white mb-2">
+          📊 Player Statistics
+        </h1>
+        <p className="text-gray-400">Track your progress and achievements</p>
       </div>
+
+      {/* Refresh Button */}
+      <button
+        onClick={refresh}
+        disabled={loading}
+        className="px-6 py-3 bg-gradient-to-br from-yellow-500 to-yellow-600 text-slate-900 rounded-lg hover:from-yellow-400 hover:to-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:scale-105 font-bold shadow-xl border-2 border-yellow-400/50"
+      >
+        {loading ? (
+          <span className="flex items-center gap-2">
+            <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+            Refreshing...
+          </span>
+        ) : (
+          <span className="flex items-center gap-2">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh
+          </span>
+        )}
+      </button>
+
+      {/* Content */}
+      <div className="w-full">
 
       {/* Hero Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
@@ -222,7 +227,7 @@ export function StatsScreen() {
       </div>
 
       {/* Activity Overview */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <StatCard
           label="Blocks Broken"
           value={stats.total_blocks_broken.toLocaleString()}
@@ -246,6 +251,12 @@ export function StatsScreen() {
           value={stats.total_ores_mined.toLocaleString()}
           icon="💎"
           color="purple"
+        />
+        <StatCard
+          label="Food Eaten"
+          value={stats.total_food_eaten.toLocaleString()}
+          icon="🍗"
+          color="red"
         />
       </div>
 
@@ -339,6 +350,29 @@ export function StatsScreen() {
         </CollapsibleSection>
       )}
 
+      {/* Food Consumed */}
+      {topFoodEaten.length > 0 && (
+        <CollapsibleSection
+          title="Food Consumed"
+          icon="🍗"
+          count={stats.total_food_eaten}
+          defaultOpen={false}
+        >
+          <div className="space-y-2">
+            {topFoodEaten.map(([foodId, count], idx) => (
+              <LeaderboardItem
+                key={foodId}
+                rank={idx + 1}
+                name={formatItemId(foodId)}
+                value={count}
+                iconUrl={getItemIconUrl(foodId)}
+                maxValue={maxFood}
+              />
+            ))}
+          </div>
+        </CollapsibleSection>
+      )}
+
       {/* Exploration */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {stats.dimensions_visited.length > 0 && (
@@ -386,6 +420,7 @@ export function StatsScreen() {
             </div>
           </CollapsibleSection>
         )}
+      </div>
       </div>
     </div>
   );

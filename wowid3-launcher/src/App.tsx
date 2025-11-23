@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
 import { logger, LogCategory } from './utils/logger';
-import { useModpack, useServer, useTheme, useAudio, useDiscord } from './hooks';
+import { useModpack, useServer, useTheme, useAudio, useDiscord, useVpnInitialization } from './hooks';
 import { usePolling } from './hooks/usePolling';
 import { useSettingsStore } from './stores/settingsStore';
 import { useUIStore } from './stores/uiStore';
@@ -31,6 +31,7 @@ function AppContent() {
   const { launcherUpdate, setLauncherUpdate, showLauncherUpdateModal } = useUpdateStore();
   const { isMuted, toggleMute, fallbackRef, mainRef, fallbackUrl } = useAudio();
   useTheme(); // Apply theme on mount
+  useVpnInitialization(); // Initialize VPN tunnel if enabled
 
   // Get launcher version on mount
   useEffect(() => {

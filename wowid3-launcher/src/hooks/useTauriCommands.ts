@@ -112,6 +112,22 @@ export const fetchAvatar = async (username: string): Promise<AvatarData> => {
   return await invoke<AvatarData>('cmd_fetch_avatar', { username });
 };
 
+export const isAvatarCached = async (identifier: string): Promise<boolean> => {
+  return await invoke<boolean>('cmd_is_avatar_cached', { identifier });
+};
+
+export const readCachedAvatar = async (identifier: string): Promise<string> => {
+  return await invoke<string>('cmd_read_cached_avatar', { identifier });
+};
+
+export const writeCachedAvatar = async (identifier: string, dataUri: string): Promise<void> => {
+  return await invoke<void>('cmd_write_cached_avatar', { identifier, dataUri });
+};
+
+export const clearAvatarCache = async (): Promise<void> => {
+  return await invoke<void>('cmd_clear_avatar_cache');
+};
+
 // Minecraft launch commands
 export const launchGame = async (config: LaunchConfig): Promise<string> => {
   return await invoke<string>('cmd_launch_game', { config });

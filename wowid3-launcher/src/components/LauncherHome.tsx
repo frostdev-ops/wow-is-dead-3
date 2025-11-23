@@ -205,7 +205,9 @@ export default function LauncherHome() {
     };
 
     checkModpackUpdates();
-  }, [isAuthenticated, authLoading, installedVersion, checkUpdates, setModpackUpdate]);
+    // Note: installedVersion removed from dependencies to prevent infinite loop
+    // checkUpdates() already fetches the current version internally
+  }, [isAuthenticated, authLoading, checkUpdates, setModpackUpdate]);
 
   // 6. Modpack Error Toast
   useEffect(() => {

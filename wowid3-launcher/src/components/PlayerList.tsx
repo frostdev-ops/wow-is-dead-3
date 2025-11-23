@@ -2,7 +2,7 @@ import { useState, useEffect, memo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ServerStatus, PlayerInfo } from '../stores/serverStore';
 import { Card } from './ui/Card';
-import { resolvePlayerName } from '../hooks/useTauriCommands';
+import { resolvePlayerName, isAvatarCached, readCachedAvatar, writeCachedAvatar } from '../hooks/useTauriCommands';
 import { TrackerState, PlayerExt } from '../types/tracker';
 
 interface PlayerListProps {
@@ -35,70 +35,60 @@ const PlayerItem = memo(({ player }: { player: PlayerInfo | PlayerExt }) => {
     let mounted = true;
     let imageLoadTimeout: NodeJS.Timeout;
 
-    const fetchAvatar = async () => {
-      console.log('[PlayerList] 1️⃣ Starting avatar fetch for:', skinIdentifier);
+    const loadAvatar = async () => {
+      console.log('[PlayerList] Starting avatar load for:', skinIdentifier);
 
       try {
-        // Fetch skin from backend
-        console.log('[PlayerList] 2️⃣ Invoking cmd_fetch_avatar...');
+        // Check if avatar is cached on disk
+        const cached = await isAvatarCached(skinIdentifier);
+
+        if (cached) {
+          console.log('[PlayerList] ✅ Avatar found in cache:', skinIdentifier);
+          const cachedDataUri = await readCachedAvatar(skinIdentifier);
+
+          if (!mounted) return;
+
+          setAvatarUrl(cachedDataUri);
+          console.log('[PlayerList] ✅ Cached avatar loaded successfully');
+          return;
+        }
+
+        console.log('[PlayerList] Cache miss, fetching from API:', skinIdentifier);
+
+        // Not cached - fetch from API
         const data = await invoke<AvatarData>('cmd_fetch_avatar', {
           username: skinIdentifier
         });
 
-        console.log('[PlayerList] 3️⃣ Avatar data received:', {
-          content_type: data.content_type,
-          data_length: data.data?.length || 0,
-          data_preview: data.data?.substring(0, 50) + '...'
-        });
-
-        if (!mounted) {
-          console.log('[PlayerList] ❌ Component unmounted, aborting');
-          return;
-        }
+        if (!mounted) return;
 
         // Convert to data URI
         const fullSkinDataUri = `data:${data.content_type};base64,${data.data}`;
-        console.log('[PlayerList] 4️⃣ Created data URI, length:', fullSkinDataUri.length);
 
-        // Load and crop to just the head
+        // Process the skin to extract head
         const img = new Image();
-        console.log('[PlayerList] 5️⃣ Created Image element');
 
-        // Set timeout for image loading (5 seconds max)
+        // Set timeout for image loading
         imageLoadTimeout = setTimeout(() => {
           if (mounted) {
-            console.error('[PlayerList] ⏱️ TIMEOUT: Image load timeout after 5s for:', skinIdentifier);
+            console.error('[PlayerList] ⏱️ Image load timeout for:', skinIdentifier);
             setImgError(true);
           }
         }, 5000);
 
         img.onload = () => {
-          console.log('[PlayerList] 6️⃣ Image onload fired!', {
-            width: img.width,
-            height: img.height,
-            naturalWidth: img.naturalWidth,
-            naturalHeight: img.naturalHeight
-          });
-
           clearTimeout(imageLoadTimeout);
-          if (!mounted) {
-            console.log('[PlayerList] ❌ Component unmounted in onload');
-            return;
-          }
+          if (!mounted) return;
 
           try {
             // Create canvas to extract head (8x8 face from skin)
-            console.log('[PlayerList] 7️⃣ Creating canvas...');
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d', { willReadFrequently: false });
 
             if (!ctx) {
-              console.error('[PlayerList] ❌ FAILED: Could not get canvas context');
               setImgError(true);
               return;
             }
-
-            console.log('[PlayerList] 8️⃣ Got canvas context, setting up...');
 
             // Scale up for crisp rendering
             const scale = 8;
@@ -106,75 +96,46 @@ const PlayerItem = memo(({ player }: { player: PlayerInfo | PlayerExt }) => {
             canvas.height = 8 * scale;
             ctx.imageSmoothingEnabled = false;
 
-            console.log('[PlayerList] 9️⃣ Drawing to canvas...');
             // Extract face (8x8 at position 8,8 in the 64x64 skin)
             ctx.drawImage(img, 8, 8, 8, 8, 0, 0, 8 * scale, 8 * scale);
             // Extract overlay/hat layer (8x8 at position 40,8) and draw on top
             ctx.drawImage(img, 40, 8, 8, 8, 0, 0, 8 * scale, 8 * scale);
 
-            console.log('[PlayerList] 🔟 Converting canvas to data URL...');
             const headDataUri = canvas.toDataURL('image/png');
-            console.log('[PlayerList] ✅ SUCCESS: Head data URI created, length:', headDataUri.length);
-
             setAvatarUrl(headDataUri);
-            console.log('[PlayerList] ✅ Avatar URL set successfully for:', skinIdentifier);
+
+            // Write to cache for next time (async, don't await)
+            writeCachedAvatar(skinIdentifier, headDataUri)
+              .then(() => {
+                console.log('[PlayerList] ✅ Avatar cached to disk:', skinIdentifier);
+              })
+              .catch((err) => {
+                console.warn('[PlayerList] Failed to cache avatar:', err);
+              });
+
           } catch (canvasError) {
-            console.error('[PlayerList] ❌ CANVAS ERROR:', canvasError);
-            console.error('[PlayerList] Canvas error stack:', (canvasError as Error).stack);
+            console.error('[PlayerList] Canvas error:', canvasError);
             setImgError(true);
           }
         };
 
-        img.onerror = (e) => {
+        img.onerror = () => {
           clearTimeout(imageLoadTimeout);
-          console.error('[PlayerList] ❌ IMAGE ERROR:', {
-            event: e,
-            skinIdentifier,
-            dataUriLength: fullSkinDataUri.length,
-            dataUriPrefix: fullSkinDataUri.substring(0, 100)
-          });
           if (mounted) setImgError(true);
         };
 
-        console.log('[PlayerList] 🖼️ Setting img.src to data URI...');
         img.src = fullSkinDataUri;
 
-        // Check if image is already complete (cached)
-        if (img.complete) {
-          console.log('[PlayerList] ⚡ Image already complete (cached), dispatching load event');
-          img.dispatchEvent(new Event('load'));
-        }
-
-        // Try decode if available
-        if (img.decode) {
-          console.log('[PlayerList] 🔄 Calling img.decode()...');
-          img.decode()
-            .then(() => {
-              console.log('[PlayerList] ✅ img.decode() succeeded');
-            })
-            .catch((err) => {
-              console.error('[PlayerList] ❌ img.decode() failed:', err);
-              if (mounted) setImgError(true);
-            });
-        } else {
-          console.log('[PlayerList] ⚠️ img.decode() not available in this browser');
-        }
-
       } catch (error) {
-        console.error('[PlayerList] ❌ FETCH ERROR:', error);
-        console.error('[PlayerList] Error details:', {
-          message: (error as Error).message,
-          stack: (error as Error).stack,
-          error: error
-        });
+        console.error('[PlayerList] Avatar load error:', error);
         if (mounted) setImgError(true);
       }
     };
 
-    fetchAvatar();
+    loadAvatar();
 
     return () => {
-      console.log('[PlayerList] 🧹 Cleanup for:', skinIdentifier);
+      console.log('[PlayerList] Cleanup for:', skinIdentifier);
       mounted = false;
       if (imageLoadTimeout) clearTimeout(imageLoadTimeout);
     };

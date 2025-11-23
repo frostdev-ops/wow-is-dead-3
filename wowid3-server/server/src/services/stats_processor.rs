@@ -120,6 +120,10 @@ impl StatsProcessor {
                     StatEvent::ItemGathered { item_id, count } => {
                         *stats.items_gathered.entry(item_id).or_insert(0) += count;
                     }
+                    StatEvent::FoodEaten { item_id, count } => {
+                        *stats.food_eaten.entry(item_id).or_insert(0) += count;
+                        stats.total_food_eaten += count;
+                    }
                     StatEvent::DamageDealt { amount } => {
                         stats.damage_dealt += amount;
                     }

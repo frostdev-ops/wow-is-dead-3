@@ -18,7 +18,9 @@ pub struct PlayerStats {
     pub ores_mined: HashMap<String, u64>,
     #[serde(default)]
     pub items_gathered: HashMap<String, u64>,
-    
+    #[serde(default)]
+    pub food_eaten: HashMap<String, u64>,
+
     #[serde(default)]
     pub damage_dealt: f64,
     #[serde(default)]
@@ -46,7 +48,9 @@ pub struct PlayerStats {
     pub total_mobs_tamed: u64,
     #[serde(default)]
     pub total_ores_mined: u64,
-    
+    #[serde(default)]
+    pub total_food_eaten: u64,
+
     #[serde(default)]
     pub first_seen: u64,
     #[serde(default)]
@@ -62,6 +66,7 @@ pub enum StatEvent {
     MobTamed { entity_id: String },
     OreMined { block_id: String },
     ItemGathered { item_id: String, count: u64 },
+    FoodEaten { item_id: String, count: u64 },
     DamageDealt { amount: f64 },
     DamageTaken { amount: f64 },
     PlayerDeath,

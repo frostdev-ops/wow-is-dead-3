@@ -7,12 +7,19 @@ export function useServerTracker(baseUrl: string, intervalMs: number = 5000) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const hasLoadedInitial = useRef(false);
+  const prevBaseUrl = useRef(baseUrl);
 
   useEffect(() => {
     let mounted = true;
     let timer: number | undefined;
-    hasLoadedInitial.current = false;
-    setState(null);
+
+    // Only reset state if baseUrl actually changed (switching servers)
+    // This preserves stale data instead of showing empty state during refetches
+    if (prevBaseUrl.current !== baseUrl) {
+      hasLoadedInitial.current = false;
+      setState(null);
+      prevBaseUrl.current = baseUrl;
+    }
 
     const fetchStatus = async () => {
       const shouldShowLoading = !hasLoadedInitial.current;

@@ -76,18 +76,14 @@ export const useModpack = () => {
           } 
         });
         
-        // Only update if we found a version, OR if store is empty
-        // This prevents overwriting a valid version with null
+        // Always update store with disk value (or null if no file found)
+        // This ensures disk is source of truth
         if (version) {
           logger.debug(LogCategory.MODPACK, `Modpack ${version} detected on disk`);
           setInstalledVersion(version);
-        } else if (!installedVersion) {
-          // Only set to null if store is also empty (first load scenario)
+        } else {
           logger.debug(LogCategory.MODPACK, 'No .wowid3-version file found');
           setInstalledVersion(null);
-        } else {
-          // File missing but store has version - keep the store version
-          logger.debug(LogCategory.MODPACK, `.wowid3-version file missing, keeping store value: ${installedVersion}`);
         }
       } catch (err) {
         logger.error(LogCategory.MODPACK, 'Failed to check installed version', err instanceof Error ? err : new Error(String(err)));
@@ -95,7 +91,9 @@ export const useModpack = () => {
     };
 
     checkInstalled();
-  }, [gameDirectory, installedVersion, setInstalledVersion]);
+    // Note: installedVersion removed from dependencies to prevent feedback loop
+    // This effect only needs to run when gameDirectory changes or on mount
+  }, [gameDirectory, setInstalledVersion]);
 
   const checkUpdates = useCallback(async () => {
     try {
@@ -139,7 +137,9 @@ export const useModpack = () => {
       setError(error);
       throw err;
     }
-  }, [manifestUrl, installedVersion, gameDirectory, setError, setLatestManifest, setUpdateAvailable, setInstalledVersion, rateLimitedCheck]);
+  }, [manifestUrl, gameDirectory, setError, setLatestManifest, setUpdateAvailable, setInstalledVersion, rateLimitedCheck]);
+  // Note: installedVersion removed from dependencies to prevent infinite loop
+  // checkUpdates() fetches current version from disk (line 105), so installedVersion is just a fallback
 
   const install = useCallback(async (options?: { blockUi?: boolean }) => {
     if (!latestManifest) {
@@ -229,7 +229,9 @@ export const useModpack = () => {
         setDownloading(false);
       }
     }
-  }, [latestManifest, gameDirectory, installedVersion, setBlockedForInstall, setDownloading, setError, setDownloadProgress, setInstalledVersion, setUpdateAvailable, reset]);
+  }, [latestManifest, gameDirectory, setBlockedForInstall, setDownloading, setError, setDownloadProgress, setInstalledVersion, setUpdateAvailable, reset]);
+  // Note: installedVersion removed from dependencies
+  // The function captures installedVersion at execution time (line 148), not dependency time
 
   const verifyAndRepair = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;

@@ -7,6 +7,7 @@ export interface PlayerStats {
   mobs_tamed: Record<string, number>;
   ores_mined: Record<string, number>;
   items_gathered: Record<string, number>;
+  food_eaten: Record<string, number>;
   damage_dealt: number;
   damage_taken: number;
   deaths: number;
@@ -18,6 +19,7 @@ export interface PlayerStats {
   total_mobs_killed: number;
   total_mobs_tamed: number;
   total_ores_mined: number;
+  total_food_eaten: number;
   first_seen: number;
   last_updated: number;
 }

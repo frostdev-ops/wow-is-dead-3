@@ -64,7 +64,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["wowid3-launcher.sh"],
+    "resources": [
+      "wowid3-launcher.sh",
+      "binaries/wireguard-installer.exe"
+    ],
     "externalBin": [],
     "windows": {
       "nsis": {
@@ -75,7 +78,7 @@
     },
     "linux": {
       "appimage": {
-        "bundleMediaFramework": false
+        "bundleMediaFramework": true
       },
       "deb": {
         "files": {
