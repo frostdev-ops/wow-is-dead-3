@@ -7,7 +7,7 @@ use axum::{
     body::Body,
     extract::{Path, State},
     http::{header, StatusCode},
-    response::{IntoResponse, Response},
+    response::{IntoResponse, Redirect, Response},
     Json,
 };
 use serde::Serialize;
@@ -233,6 +233,11 @@ pub async fn get_launcher_executable_platform(
     }
 
     serve_launcher_file_by_type(&state, &platform, "executable").await
+}
+
+/// GET /api/launcher/latest - Redirect to executable endpoint (backward compat)
+pub async fn get_latest_launcher_redirect() -> Redirect {
+    Redirect::permanent("/api/launcher/latest/executable")
 }
 
 /// GET /files/launcher/:filename - Serve launcher files (legacy, for current Windows-only release)
