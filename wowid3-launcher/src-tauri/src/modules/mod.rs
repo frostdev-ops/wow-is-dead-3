@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod avatar_proxy;
+pub mod cms_config;
 pub mod discord;
 pub mod download_manager;
 pub mod minecraft;
@@ -22,4 +23,5 @@ pub mod map_viewer;
 pub mod network_test;
 pub mod vpn;
 
+pub use cms_config::CMSConfigManager;
 pub use vpn::VpnManager;
