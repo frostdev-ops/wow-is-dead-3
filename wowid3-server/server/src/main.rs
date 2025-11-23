@@ -15,7 +15,8 @@ use api::admin::{
     clear_cache, clear_jar_cache, clear_manifest_cache, copy_release_to_draft, create_release,
     delete_release, delete_resource, get_blacklist, get_cache_stats, list_releases, login,
     update_blacklist, upload_files, upload_resource, upload_launcher_release,
-    upload_launcher_version_file, delete_launcher_version, create_launcher_release, AdminState as AdminApiState,
+    upload_launcher_version_file, delete_launcher_version, create_launcher_release,
+    list_launcher_releases, AdminState as AdminApiState,
 };
 use api::bluemap::{
     get_global_settings, get_live_markers, get_live_players, get_map_asset, get_map_settings,
@@ -205,7 +206,7 @@ async fn main() -> anyhow::Result<()> {
     let admin_routes = Router::new()
         .route("/api/admin/upload", post(upload_files))
         .route("/api/admin/launcher", post(upload_launcher_release))
-        .route("/api/admin/launcher/releases", post(create_launcher_release))
+        .route("/api/admin/launcher/releases", post(create_launcher_release).get(list_launcher_releases))
         .route("/api/admin/launcher/version", post(upload_launcher_version_file))
         .route("/api/admin/launcher/:version", delete(delete_launcher_version))
         .route("/api/admin/resources", post(upload_resource))

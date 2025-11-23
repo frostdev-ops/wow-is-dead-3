@@ -1301,6 +1301,27 @@ pub async fn create_launcher_release(
     Ok(Json(launcher_version))
 }
 
+/// GET /api/admin/launcher/releases - List all launcher releases
+pub async fn list_launcher_releases(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+) -> Result<Json<Vec<LauncherVersion>>, AppError> {
+    // Load versions index
+    let index = storage::launcher::load_launcher_versions_index(&state.config)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to load versions: {}", e)))?;
+
+    // Load all versions
+    let mut versions = Vec::new();
+    for version_num in &index.versions {
+        if let Ok(version) = storage::launcher::load_launcher_version(&state.config, version_num).await {
+            versions.push(version);
+        }
+    }
+
+    Ok(Json(versions))
+}
+
 
 // Error handling
 pub enum AppError {
