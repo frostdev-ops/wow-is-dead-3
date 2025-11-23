@@ -44,6 +44,16 @@ mod tests {
     }
 
     #[test]
+    fn test_detect_macos() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::USER_AGENT,
+            HeaderValue::from_static("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")
+        );
+        assert_eq!(detect_platform_from_user_agent(&headers), Some("macos".to_string()));
+    }
+
+    #[test]
     fn test_detect_unknown() {
         let mut headers = HeaderMap::new();
         headers.insert(
