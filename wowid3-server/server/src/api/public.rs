@@ -115,6 +115,83 @@ pub async fn get_latest_launcher_manifest(
     }
 }
 
+/// Helper: Serve launcher file by platform and file type
+async fn serve_launcher_file_by_type(
+    state: &PublicState,
+    platform: &str,
+    file_type: &str,
+) -> Result<Response, AppError> {
+    // Load latest version
+    let index = storage::launcher::load_launcher_versions_index(&state.config)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to load versions: {}", e)))?;
+
+    if index.latest.is_empty() {
+        return Err(AppError::NotFound("No launcher versions available".to_string()));
+    }
+
+    let version = storage::launcher::load_launcher_version(&state.config, &index.latest)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to load version: {}", e)))?;
+
+    // Find matching file
+    let file = version
+        .files
+        .iter()
+        .find(|f| {
+            f.platform == platform &&
+            f.file_type.as_deref() == Some(file_type)
+        })
+        .ok_or_else(|| {
+            AppError::NotFound(format!("No {} available for {}", file_type, platform))
+        })?;
+
+    // Get file path
+    let file_path = state.config.launcher_version_path(&version.version).join(&file.filename);
+
+    if !file_path.exists() {
+        return Err(AppError::NotFound(format!("File not found: {}", file.filename)));
+    }
+
+    // Stream file
+    let file_handle = fs::File::open(&file_path)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to open file: {}", e)))?;
+
+    let stream = ReaderStream::new(file_handle);
+    let body = Body::from_stream(stream);
+
+    let response = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{}\"", file.filename),
+        )
+        .header(header::CONTENT_LENGTH, file.size.to_string())
+        .body(body)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to build response: {}", e)))?;
+
+    Ok(response)
+}
+
+/// GET /api/launcher/latest/installer - Auto-detect platform and serve installer
+pub async fn get_launcher_installer(
+    headers: axum::http::HeaderMap,
+    State(state): State<PublicState>,
+) -> Result<Response, AppError> {
+    use crate::utils::platform::detect_platform_from_user_agent;
+
+    let platform = detect_platform_from_user_agent(&headers)
+        .ok_or_else(|| {
+            AppError::BadRequest(
+                "Could not detect platform from User-Agent. Use /api/launcher/latest/installer/{platform}".to_string()
+            )
+        })?;
+
+    serve_launcher_file_by_type(&state, &platform, "installer").await
+}
+
 /// GET /files/launcher/:filename - Serve launcher files (legacy, for current Windows-only release)
 pub async fn serve_launcher_file(
     State(state): State<PublicState>,
@@ -544,6 +621,7 @@ pub enum AppError {
     Internal(anyhow::Error),
     NotFound(String),
     Forbidden(String),
+    BadRequest(String),
 }
 
 impl From<anyhow::Error> for AppError {
@@ -561,6 +639,7 @@ impl IntoResponse for AppError {
             }
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
+            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
         };
 
         (status, Json(serde_json::json!({ "error": message }))).into_response()
