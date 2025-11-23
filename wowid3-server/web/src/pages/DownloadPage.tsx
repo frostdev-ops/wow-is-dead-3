@@ -290,8 +290,8 @@ export default function DownloadPage() {
         });
     }
 
-    // Fetch manifest - use installer endpoint for first-time downloads
-    api.get('/launcher/latest/installer')
+    // Fetch manifest metadata (JSON) - NOT the installer file
+    api.get('/launcher/manifest/latest')
       .then(res => {
         const data = res.data;
         // Check if it's the new multi-platform format
@@ -452,12 +452,15 @@ export default function DownloadPage() {
     ]
   };
 
-  // Get platform-specific file from launcher version
-  const selectedFile = launcherVersion?.files.find(f => f.platform === selectedPlatform);
+  // Get platform-specific installer file from launcher version
+  const selectedFile = launcherVersion?.files.find(f =>
+    f.platform === selectedPlatform &&
+    (f.file_type === 'installer' || !f.file_type) // installer or unspecified (backward compat)
+  );
 
-  // Backward compatibility: Use old manifest format if new format not available
+  // Use installer endpoint for downloads
   const downloadUrl = selectedFile
-    ? selectedFile.url
+    ? `/api/launcher/latest/installer/${selectedPlatform}`
     : manifest
     ? `/files/launcher/WOWID3Launcher.exe`
     : '#';
