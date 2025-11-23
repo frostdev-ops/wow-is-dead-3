@@ -9,7 +9,7 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use futures_util::StreamExt;
 
-const LAUNCHER_MANIFEST_URL: &str = "https://wowid-launcher.frostdev.io/api/launcher/latest";
+const LAUNCHER_MANIFEST_URL: &str = "https://wowid-launcher.frostdev.io/api/launcher/latest/executable";
 
 // Old single-file manifest format (for backward compatibility)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +35,8 @@ pub struct LauncherVersion {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LauncherFile {
     pub platform: String,
+    #[serde(default)]
+    pub file_type: Option<String>,  // "installer" or "executable"
     pub filename: String,
     pub url: String,
     pub sha256: String,
@@ -103,10 +105,13 @@ pub async fn check_launcher_update(app: &AppHandle) -> Result<LauncherUpdateInfo
             "unknown"
         };
 
-        // Find the file for the current platform
+        // Find the file for the current platform with file_type = "executable"
         let platform_file = launcher_version.files.iter()
-            .find(|f| f.platform == current_platform)
-            .context(format!("No launcher file found for platform: {}", current_platform))?;
+            .find(|f| {
+                f.platform == current_platform &&
+                (f.file_type.as_deref() == Some("executable") || f.file_type.is_none())
+            })
+            .context(format!("No executable found for platform: {}", current_platform))?;
 
         eprintln!("[Launcher Updater] Found file for platform {}: {}", current_platform, platform_file.filename);
 

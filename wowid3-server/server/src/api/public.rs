@@ -7,7 +7,7 @@ use axum::{
     body::Body,
     extract::{Path, State},
     http::{header, StatusCode},
-    response::{IntoResponse, Response},
+    response::{IntoResponse, Redirect, Response},
     Json,
 };
 use serde::Serialize;
@@ -37,81 +37,129 @@ pub struct PublicState {
     pub stats_processor: Arc<StatsProcessor>,
 }
 
-/// GET /api/launcher/latest - Returns multi-platform launcher version info
-/// Falls back to old manifest format for backward compatibility
-pub async fn get_latest_launcher_manifest(
+/// Helper: Serve launcher file by platform and file type
+async fn serve_launcher_file_by_type(
+    state: &PublicState,
+    platform: &str,
+    file_type: &str,
+) -> Result<Response, AppError> {
+    // Load latest version
+    let index = storage::launcher::load_launcher_versions_index(&state.config)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to load versions: {}", e)))?;
+
+    if index.latest.is_empty() {
+        return Err(AppError::NotFound("No launcher versions available".to_string()));
+    }
+
+    let version = storage::launcher::load_launcher_version(&state.config, &index.latest)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to load version: {}", e)))?;
+
+    // Find matching file
+    let file = version
+        .files
+        .iter()
+        .find(|f| {
+            f.platform == platform &&
+            f.file_type.as_deref() == Some(file_type)
+        })
+        .ok_or_else(|| {
+            AppError::NotFound(format!("No {} available for {}", file_type, platform))
+        })?;
+
+    // Get file path
+    let file_path = state.config.launcher_version_path(&version.version).join(&file.filename);
+
+    if !file_path.exists() {
+        return Err(AppError::NotFound(format!("File not found: {}", file.filename)));
+    }
+
+    // Stream file
+    let file_handle = fs::File::open(&file_path)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to open file: {}", e)))?;
+
+    let stream = ReaderStream::new(file_handle);
+    let body = Body::from_stream(stream);
+
+    let response = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{}\"", file.filename),
+        )
+        .header(header::CONTENT_LENGTH, file.size.to_string())
+        .body(body)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to build response: {}", e)))?;
+
+    Ok(response)
+}
+
+/// GET /api/launcher/latest/installer - Auto-detect platform and serve installer
+pub async fn get_launcher_installer(
+    headers: axum::http::HeaderMap,
     State(state): State<PublicState>,
-) -> Result<Json<LauncherVersion>, AppError> {
-    // Try to load the latest version from the versions index (new multi-platform format)
-    match storage::launcher::load_launcher_versions_index(&state.config).await {
-        Ok(index) => {
-            let latest_version = &index.latest;
+) -> Result<Response, AppError> {
+    use crate::utils::platform::detect_platform_from_user_agent;
 
-            match storage::launcher::load_launcher_version(&state.config, latest_version).await {
-                Ok(version) => return Ok(Json(version)),
-                Err(e) => {
-                    eprintln!("[Launcher API] Failed to load version {}: {:?}", latest_version, e);
-                    // Fall through to try old format
-                }
-            }
-        }
-        Err(e) => {
-            eprintln!("[Launcher API] No versions index found: {:?}, falling back to old manifest format", e);
-            // Fall through to try old format
-        }
+    let platform = detect_platform_from_user_agent(&headers)
+        .ok_or_else(|| {
+            AppError::BadRequest(
+                "Could not detect platform from User-Agent. Use /api/launcher/latest/installer/{platform}".to_string()
+            )
+        })?;
+
+    serve_launcher_file_by_type(&state, &platform, "installer").await
+}
+
+/// GET /api/launcher/latest/installer/{platform}
+pub async fn get_launcher_installer_platform(
+    Path(platform): Path<String>,
+    State(state): State<PublicState>,
+) -> Result<Response, AppError> {
+    // Validate platform
+    if !matches!(platform.as_str(), "windows" | "linux" | "macos") {
+        return Err(AppError::BadRequest(format!("Invalid platform: {}", platform)));
     }
 
-    // Fallback: Try old single-file manifest format and convert to LauncherVersion
-    match storage::launcher::read_latest_launcher_manifest(&state.config).await {
-        Ok(manifest) => {
-            // Get the manifest file's modification time to use as released_at
-            // This provides a stable timestamp representing when the launcher was published
-            let manifest_path = state.config.launcher_manifest_path();
-            let released_at = match tokio::fs::metadata(&manifest_path).await {
-                Ok(metadata) => {
-                    match metadata.modified() {
-                        Ok(modified) => {
-                            // Convert SystemTime to DateTime<Utc>
-                            let datetime: chrono::DateTime<chrono::Utc> = modified.into();
-                            datetime.to_rfc3339()
-                        }
-                        Err(e) => {
-                            eprintln!("[Launcher API] Failed to get file modified time: {:?}, using fallback", e);
-                            // Fallback to a fixed timestamp for legacy manifest (not current time)
-                            "2024-01-01T00:00:00Z".to_string()
-                        }
-                    }
-                }
-                Err(e) => {
-                    eprintln!("[Launcher API] Failed to get file metadata: {:?}, using fallback", e);
-                    // Fallback to a fixed timestamp for legacy manifest (not current time)
-                    "2024-01-01T00:00:00Z".to_string()
-                }
-            };
+    serve_launcher_file_by_type(&state, &platform, "installer").await
+}
 
-            // Convert old LauncherManifest to new LauncherVersion format
-            let launcher_version = LauncherVersion {
-                version: manifest.version,
-                files: vec![
-                    crate::models::manifest::LauncherFile {
-                        platform: "windows".to_string(),
-                        filename: "WOWID3Launcher.exe".to_string(),
-                        url: manifest.url,
-                        sha256: manifest.sha256,
-                        size: manifest.size,
-                    }
-                ],
-                changelog: manifest.changelog,
-                mandatory: manifest.mandatory,
-                released_at,
-            };
+/// GET /api/launcher/latest/executable - Auto-detect platform and serve executable
+pub async fn get_launcher_executable(
+    headers: axum::http::HeaderMap,
+    State(state): State<PublicState>,
+) -> Result<Response, AppError> {
+    use crate::utils::platform::detect_platform_from_user_agent;
 
-            Ok(Json(launcher_version))
-        }
-        Err(e) => {
-            Err(AppError::NotFound(format!("No launcher update available: {:?}", e)))
-        }
+    let platform = detect_platform_from_user_agent(&headers)
+        .ok_or_else(|| {
+            AppError::BadRequest(
+                "Could not detect platform from User-Agent. Use /api/launcher/latest/executable/{platform}".to_string()
+            )
+        })?;
+
+    serve_launcher_file_by_type(&state, &platform, "executable").await
+}
+
+/// GET /api/launcher/latest/executable/{platform}
+pub async fn get_launcher_executable_platform(
+    Path(platform): Path<String>,
+    State(state): State<PublicState>,
+) -> Result<Response, AppError> {
+    // Validate platform
+    if !matches!(platform.as_str(), "windows" | "linux" | "macos") {
+        return Err(AppError::BadRequest(format!("Invalid platform: {}", platform)));
     }
+
+    serve_launcher_file_by_type(&state, &platform, "executable").await
+}
+
+/// GET /api/launcher/latest - Redirect to executable endpoint (backward compat)
+pub async fn get_latest_launcher_redirect() -> Redirect {
+    Redirect::permanent("/api/launcher/latest/executable")
 }
 
 /// GET /files/launcher/:filename - Serve launcher files (legacy, for current Windows-only release)
@@ -543,6 +591,7 @@ pub enum AppError {
     Internal(anyhow::Error),
     NotFound(String),
     Forbidden(String),
+    BadRequest(String),
 }
 
 impl From<anyhow::Error> for AppError {
@@ -560,6 +609,7 @@ impl IntoResponse for AppError {
             }
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
+            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
         };
 
         (status, Json(serde_json::json!({ "error": message }))).into_response()

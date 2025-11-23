@@ -1,3 +1,5 @@
+pub mod platform;
+
 use crate::config::Config;
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use tokio::fs;

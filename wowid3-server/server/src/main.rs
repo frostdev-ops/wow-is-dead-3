@@ -15,7 +15,8 @@ use api::admin::{
     clear_cache, clear_jar_cache, clear_manifest_cache, copy_release_to_draft, create_release,
     delete_release, delete_resource, get_blacklist, get_cache_stats, list_releases, login,
     update_blacklist, upload_files, upload_resource, upload_launcher_release,
-    upload_launcher_version_file, delete_launcher_version, AdminState as AdminApiState,
+    upload_launcher_version_file, delete_launcher_version, create_launcher_release,
+    list_launcher_releases, AdminState as AdminApiState,
 };
 use api::bluemap::{
     get_global_settings, get_live_markers, get_live_players, get_map_asset, get_map_settings,
@@ -29,8 +30,10 @@ use api::drafts::{
 };
 use api::public::{
     get_latest_manifest, get_manifest_by_version, list_resources, serve_audio_file, serve_file,
-    serve_java_runtime, serve_resource, get_latest_launcher_manifest, serve_launcher_file,
-    serve_versioned_launcher_file, get_launcher_versions, get_launcher_version, PublicState,
+    serve_java_runtime, serve_resource, serve_launcher_file,
+    serve_versioned_launcher_file, get_launcher_versions, get_launcher_version,
+    get_latest_launcher_redirect, get_launcher_installer, get_launcher_installer_platform,
+    get_launcher_executable, get_launcher_executable_platform, PublicState,
 };
 use api::tracker::{get_tracker_status, submit_chat_message, update_tracker_state, submit_stat_events, get_player_stats};
 use axum::{
@@ -151,7 +154,12 @@ async fn main() -> anyhow::Result<()> {
     let public_routes = Router::new()
         .route("/api/manifest/latest", get(get_latest_manifest))
         .route("/api/manifest/:version", get(get_manifest_by_version))
-        .route("/api/launcher/latest", get(get_latest_launcher_manifest))
+        // Launcher endpoints
+        .route("/api/launcher/latest", get(get_latest_launcher_redirect))
+        .route("/api/launcher/latest/installer", get(get_launcher_installer))
+        .route("/api/launcher/latest/installer/:platform", get(get_launcher_installer_platform))
+        .route("/api/launcher/latest/executable", get(get_launcher_executable))
+        .route("/api/launcher/latest/executable/:platform", get(get_launcher_executable_platform))
         .route("/api/launcher/versions", get(get_launcher_versions))
         .route("/api/launcher/:version", get(get_launcher_version))
         .route("/api/assets/:filename", get(serve_audio_file))
@@ -198,6 +206,7 @@ async fn main() -> anyhow::Result<()> {
     let admin_routes = Router::new()
         .route("/api/admin/upload", post(upload_files))
         .route("/api/admin/launcher", post(upload_launcher_release))
+        .route("/api/admin/launcher/releases", post(create_launcher_release).get(list_launcher_releases))
         .route("/api/admin/launcher/version", post(upload_launcher_version_file))
         .route("/api/admin/launcher/:version", delete(delete_launcher_version))
         .route("/api/admin/resources", post(upload_resource))

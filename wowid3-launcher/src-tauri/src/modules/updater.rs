@@ -863,7 +863,6 @@ mod tests {
                     size: 1024,
                 },
             ],
-            ignore_patterns: vec![],
         };
 
         let files_to_download = get_files_to_download(&manifest, &temp_dir.path().to_path_buf())
@@ -908,7 +907,6 @@ mod tests {
                     size: 2048,
                 },
             ],
-            ignore_patterns: vec![],
         };
 
         let files_to_download = get_files_to_download(&manifest, &temp_dir.path().to_path_buf())
@@ -944,7 +942,6 @@ mod tests {
                     size: 1024,
                 },
             ],
-            ignore_patterns: vec![],
         };
 
         let files_to_download = get_files_to_download(&manifest, &temp_dir.path().to_path_buf())
@@ -1182,7 +1179,6 @@ mod integration_tests {
                     size: file2_content.len() as u64,
                 },
             ],
-            ignore_patterns: vec![],
         };
 
         let result = install_modpack(&manifest, &temp_dir.path().to_path_buf(), |current, total, filename, _current_bytes, _total_bytes| {
@@ -1254,7 +1250,6 @@ mod integration_tests {
                     size: file2_content.len() as u64,
                 },
             ],
-            ignore_patterns: vec![],
         };
 
         let result = install_modpack(&manifest, &temp_dir.path().to_path_buf(), |current, total, filename, _current_bytes, _total_bytes| {
@@ -1305,7 +1300,6 @@ mod integration_tests {
                 sha256: checksum,
                 size: file_content.len() as u64,
             }],
-            ignore_patterns: vec![],
         };
 
         let result = install_modpack(&manifest, &temp_dir.path().to_path_buf(), |_current, _total, _filename, _current_bytes, _total_bytes| {

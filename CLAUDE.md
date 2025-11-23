@@ -170,8 +170,10 @@ The server is a **modpack distribution and release management system**, NOT a Mi
 - `pages/`: Admin pages
   - `LoginPage.tsx`: Admin authentication
   - `Dashboard.tsx`: Main dashboard with release overview
-  - `ReleasesList.tsx`: List of all releases
+  - `ReleasesList.tsx`: List of all modpack releases
   - `ReleaseEditor.tsx`: Draft editor with tabbed interface
+  - `LauncherReleasesList.tsx`: List of all launcher releases
+  - `LauncherReleaseEditor.tsx`: Launcher release upload form
 - `components/`: UI components
   - `FileBrowser.tsx`: File browser with upload and management
   - `tabs/`: Release editor tabs
@@ -317,6 +319,15 @@ These are automatically set by:
 - `POST /api/tracker/stats-events` - Submit player stat events from Minecraft mod
 - `GET /api/stats/:uuid` - Get player statistics (supports ETag caching)
 
+**Launcher Distribution**:
+- `GET /api/launcher/latest` - Redirect to executable endpoint (backward compatibility)
+- `GET /api/launcher/latest/installer` - Auto-detect platform, serve installer
+- `GET /api/launcher/latest/installer/:platform` - Explicit platform installer (windows/linux/macos)
+- `GET /api/launcher/latest/executable` - Auto-detect platform, serve executable
+- `GET /api/launcher/latest/executable/:platform` - Explicit platform executable (windows/linux/macos)
+- `GET /api/launcher/manifest/latest` - Get latest launcher version manifest
+- `GET /api/launcher/manifest/:version` - Get specific launcher version manifest
+
 ### Admin API (Requires authentication)
 
 **Authentication**:
@@ -360,6 +371,11 @@ These are automatically set by:
 **Blacklist**:
 - `GET /api/admin/blacklist` - Get blacklisted file patterns
 - `PUT /api/admin/blacklist` - Update blacklist (newline-separated globs)
+
+**Launcher Release Management**:
+- `GET /api/admin/launcher/releases` - List all launcher releases
+- `POST /api/admin/launcher/releases` - Upload new launcher release (multipart form)
+  - Form fields: `version`, `changelog`, `mandatory`, `windows_installer`, `windows_executable`, `linux_appimage`
 
 ## Testing
 

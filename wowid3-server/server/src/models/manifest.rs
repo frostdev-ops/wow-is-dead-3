@@ -66,6 +66,8 @@ pub struct LauncherManifest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LauncherFile {
     pub platform: String,  // "windows", "linux", "macos"
+    #[serde(default)]
+    pub file_type: Option<String>,  // "installer" or "executable"
     pub filename: String,   // e.g., "WOWID3Launcher.exe" or "WOWID3Launcher-x86_64.AppImage"
     pub url: String,
     pub sha256: String,
