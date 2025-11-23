@@ -1173,6 +1173,134 @@ pub async fn delete_launcher_version(
     })))
 }
 
+/// POST /api/admin/launcher/releases - Upload new launcher release
+pub async fn create_launcher_release(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+    mut multipart: Multipart,
+) -> Result<Json<LauncherVersion>, AppError> {
+    let mut version = String::new();
+    let mut changelog = String::new();
+    let mut mandatory = false;
+    let mut files: Vec<(String, String, String, Vec<u8>)> = vec![]; // (platform, file_type, filename, bytes)
+
+    // Parse multipart form
+    while let Some(field) = multipart.next_field().await.map_err(|e| {
+        AppError::BadRequest(format!("Failed to read multipart field: {}", e))
+    })? {
+        let name = field.name().unwrap_or("").to_string();
+
+        match name.as_str() {
+            "version" => {
+                version = field.text().await.map_err(|e| {
+                    AppError::BadRequest(format!("Failed to read version: {}", e))
+                })?;
+            }
+            "changelog" => {
+                changelog = field.text().await.map_err(|e| {
+                    AppError::BadRequest(format!("Failed to read changelog: {}", e))
+                })?;
+            }
+            "mandatory" => {
+                let text = field.text().await.map_err(|e| {
+                    AppError::BadRequest(format!("Failed to read mandatory: {}", e))
+                })?;
+                mandatory = text == "true";
+            }
+            "windows_installer" => {
+                let bytes = field.bytes().await.map_err(|e| {
+                    AppError::BadRequest(format!("Failed to read windows_installer: {}", e))
+                })?.to_vec();
+                let filename = format!("WOWID3Launcher-Setup-{}.exe", version);
+                files.push(("windows".to_string(), "installer".to_string(), filename, bytes));
+            }
+            "windows_executable" => {
+                let bytes = field.bytes().await.map_err(|e| {
+                    AppError::BadRequest(format!("Failed to read windows_executable: {}", e))
+                })?.to_vec();
+                let filename = "WOWID3Launcher.exe".to_string();
+                files.push(("windows".to_string(), "executable".to_string(), filename, bytes));
+            }
+            "linux_appimage" => {
+                let bytes = field.bytes().await.map_err(|e| {
+                    AppError::BadRequest(format!("Failed to read linux_appimage: {}", e))
+                })?.to_vec();
+                let filename = format!("WOWID3Launcher-{}.AppImage", version);
+                // Add for both installer and executable
+                files.push(("linux".to_string(), "installer".to_string(), filename.clone(), bytes.clone()));
+                files.push(("linux".to_string(), "executable".to_string(), filename, bytes));
+            }
+            _ => {
+                // Unknown field, skip
+            }
+        }
+    }
+
+    // Validate version
+    if version.is_empty() {
+        return Err(AppError::BadRequest("Version is required".to_string()));
+    }
+
+    if files.is_empty() {
+        return Err(AppError::BadRequest("At least one file is required".to_string()));
+    }
+
+    // Create version directory
+    let version_dir = state.config.launcher_version_path(&version);
+    fs::create_dir_all(&version_dir).await.map_err(|e| {
+        AppError::Internal(anyhow::anyhow!("Failed to create version directory: {}", e))
+    })?;
+
+    // Process and save files
+    let mut launcher_files = Vec::new();
+
+    for (platform, file_type, filename, bytes) in files {
+        // Calculate SHA256
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(&bytes);
+        let sha256 = format!("{:x}", hasher.finalize());
+
+        // Save file
+        let file_path = version_dir.join(&filename);
+        fs::write(&file_path, &bytes).await.map_err(|e| {
+            AppError::Internal(anyhow::anyhow!("Failed to write file: {}", e))
+        })?;
+
+        // Generate URL
+        let url = format!(
+            "{}/files/launcher/{}/{}",
+            state.config.base_url, version, filename
+        );
+
+        launcher_files.push(LauncherFile {
+            platform,
+            file_type: Some(file_type),
+            filename,
+            url,
+            sha256,
+            size: bytes.len() as u64,
+        });
+    }
+
+    // Create LauncherVersion
+    let launcher_version = LauncherVersion {
+        version: version.clone(),
+        files: launcher_files,
+        changelog,
+        mandatory,
+        released_at: chrono::Utc::now().to_rfc3339(),
+    };
+
+    // Save version manifest
+    storage::launcher::save_launcher_version(&state.config, &launcher_version)
+        .await
+        .map_err(|e| {
+            AppError::Internal(anyhow::anyhow!("Failed to save launcher version: {}", e))
+        })?;
+
+    Ok(Json(launcher_version))
+}
+
 
 // Error handling
 pub enum AppError {
