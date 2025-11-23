@@ -1013,12 +1013,37 @@ pub fn run() {
     // Initialize logger on startup
     initialize_logger();
 
+    // Initialize CMS Config Manager
+    // Default to official WOWID3 CMS endpoint
+    // This can be overridden with environment variable CMS_CONFIG_URL
+    let cms_url = std::env::var("CMS_CONFIG_URL")
+        .unwrap_or_else(|_| "https://wowid-launcher.frostdev.io/api/launcher/config".to_string());
+
+    let cms_manager = CMSConfigManager::new(cms_url)
+        .expect("Failed to initialize CMS Config Manager");
+
+    // Fetch Discord configuration from CMS (with fallback to embedded config)
+    let discord_app_id = {
+        let runtime = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+        runtime.block_on(async {
+            cms_manager.get_discord().await
+                .map(|config| config.application_id)
+                .unwrap_or_else(|e| {
+                    eprintln!("Failed to fetch Discord config from CMS, using fallback: {}", e);
+                    "1251233593062068315".to_string() // Fallback to WOWID3 app ID
+                })
+        })
+    };
+
+    let discord_client = DiscordClient::new(discord_app_id);
+
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_os::init())
-        .manage(DiscordClient::new());
+        .manage(discord_client)
+        .manage(cms_manager);
 
     #[cfg(target_os = "windows")]
     {

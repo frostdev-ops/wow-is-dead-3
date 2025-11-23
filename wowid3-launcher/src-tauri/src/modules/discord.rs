@@ -4,37 +4,28 @@ use discord_rich_presence::{DiscordIpc, DiscordIpcClient};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
-/// Discord application ID for WOWID3 Launcher
-///
-/// To get your own Application ID:
-/// 1. Go to https://discord.com/developers/applications
-/// 2. Click "New Application" and name it "WOW Is Dead 3!"
-/// 3. Copy the "Application ID" from General Information
-/// 4. Go to Rich Presence → Art Assets and upload:
-///    - Large icon named "wowid3-logo" (main launcher/server branding)
-///    - Small icons: "grass_block", "netherrack", "end_stone" (dimension indicators)
-/// 5. Replace the placeholder below with your real Application ID
-const DISCORD_APP_ID: &str = "1251233593062068315";
-
 /// Discord RPC client manager
 #[derive(Clone)]
 pub struct DiscordClient {
     /// The underlying Discord RPC client, wrapped in Arc<Mutex<>> for thread safety
     client: Arc<Mutex<Option<DiscordIpcClient>>>,
+    /// Discord Application ID from CMS config
+    app_id: Arc<String>,
 }
 
 impl DiscordClient {
-    /// Create a new Discord RPC client
-    pub fn new() -> Self {
+    /// Create a new Discord RPC client with application ID from CMS config
+    pub fn new(app_id: String) -> Self {
         DiscordClient {
             client: Arc::new(Mutex::new(None)),
+            app_id: Arc::new(app_id),
         }
     }
 
     /// Initialize Discord connection
     pub async fn connect(&self) -> Result<()> {
         // Run the connection in a blocking task since DiscordIpc is blocking
-        let app_id = DISCORD_APP_ID.to_string();
+        let app_id = self.app_id.to_string();
         let client = self.client.clone();
 
         tokio::task::spawn_blocking(move || {
@@ -222,13 +213,18 @@ pub struct GamePresence {
     pub player_count: Option<u32>,
 }
 
-impl Default for GamePresence {
-    fn default() -> Self {
+impl GamePresence {
+    /// Create a new GamePresence with values from CMS config
+    pub fn new(
+        state: String,
+        large_image: String,
+        large_image_text: String,
+    ) -> Self {
         GamePresence {
-            state: "Playing WOW Is Dead 3!".to_string(),
+            state,
             details: None,
-            large_image: Some("wowid3-logo".to_string()),
-            large_image_text: Some("WOW Is Dead 3!".to_string()),
+            large_image: Some(large_image),
+            large_image_text: Some(large_image_text),
             small_image: None,
             small_image_text: None,
             start_time: None,
@@ -245,11 +241,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_game_presence_default() {
-        let presence = GamePresence::default();
+    fn test_game_presence_new() {
+        let presence = GamePresence::new(
+            "Playing WOW Is Dead 3!".to_string(),
+            "wowid3-logo".to_string(),
+            "WOW Is Dead 3!".to_string(),
+        );
         assert_eq!(presence.state, "Playing WOW Is Dead 3!");
         assert_eq!(presence.details, None);
         assert_eq!(presence.party_size, None);
+        assert_eq!(presence.large_image, Some("wowid3-logo".to_string()));
     }
 
     #[test]
@@ -280,7 +281,7 @@ mod tests {
 
     #[test]
     fn test_discord_client_creation() {
-        let client = DiscordClient::new();
+        let client = DiscordClient::new("test-app-id".to_string());
         let _client_clone = client.clone();
         // Should create successfully
         assert!(true); // Just ensure no panics
@@ -288,14 +289,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_discord_client_not_connected_initially() {
-        let client = DiscordClient::new();
+        let client = DiscordClient::new("test-app-id".to_string());
         assert!(!client.is_connected().await);
     }
 
     #[tokio::test]
     async fn test_clear_presence_when_not_connected() {
         // Should not error even if not connected
-        let client = DiscordClient::new();
+        let client = DiscordClient::new("test-app-id".to_string());
         let result = client.clear_presence().await;
         assert!(result.is_ok());
     }
@@ -303,7 +304,7 @@ mod tests {
     #[tokio::test]
     async fn test_disconnect_when_not_connected() {
         // Should not error even if not connected
-        let client = DiscordClient::new();
+        let client = DiscordClient::new("test-app-id".to_string());
         let result = client.disconnect().await;
         assert!(result.is_ok());
     }

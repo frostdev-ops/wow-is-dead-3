@@ -16,7 +16,8 @@ use api::admin::{
     delete_release, delete_resource, get_blacklist, get_cache_stats, list_releases, login,
     update_blacklist, upload_files, upload_resource, upload_launcher_release,
     upload_launcher_version_file, delete_launcher_version, create_launcher_release,
-    list_launcher_releases, AdminState as AdminApiState,
+    list_launcher_releases, get_cms_config as admin_get_cms_config,
+    update_cms_config, reset_cms_config, AdminState as AdminApiState,
 };
 use api::bluemap::{
     get_global_settings, get_live_markers, get_live_players, get_map_asset, get_map_settings,
@@ -34,7 +35,7 @@ use api::public::{
     serve_versioned_launcher_file, get_launcher_versions, get_launcher_version,
     get_latest_launcher_redirect, get_launcher_installer, get_launcher_installer_platform,
     get_launcher_executable, get_launcher_executable_platform,
-    get_launcher_manifest_latest, get_launcher_manifest_version, PublicState,
+    get_launcher_manifest_latest, get_launcher_manifest_version, get_cms_config, PublicState,
 };
 use api::tracker::{get_tracker_status, submit_chat_message, update_tracker_state, submit_stat_events, get_player_stats};
 use axum::{
@@ -165,6 +166,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/launcher/manifest/:version", get(get_launcher_manifest_version))
         .route("/api/launcher/versions", get(get_launcher_versions))
         .route("/api/launcher/:version", get(get_launcher_version))
+        .route("/api/launcher/config", get(get_cms_config))
         .route("/api/assets/:filename", get(serve_audio_file))
         .route("/api/java/:filename", get(serve_java_runtime))
         .route("/api/resources", get(list_resources))
@@ -218,6 +220,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/admin/releases/:version/copy-to-draft", post(copy_release_to_draft))
         .route("/api/admin/releases/:version", delete(delete_release))
         .route("/api/admin/blacklist", get(get_blacklist).put(update_blacklist))
+        // CMS configuration routes
+        .route("/api/admin/cms-config", get(admin_get_cms_config).put(update_cms_config).delete(reset_cms_config))
         // Cache management routes
         .route("/api/admin/cache/stats", get(get_cache_stats))
         .route("/api/admin/cache/clear", post(clear_cache))
