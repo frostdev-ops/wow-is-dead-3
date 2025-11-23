@@ -2,6 +2,11 @@ mod modules;
 
 use modules::auth::{authenticate_from_official_launcher, get_current_user, logout, refresh_token, get_device_code, complete_device_code_auth, MinecraftProfile, DeviceCodeInfo};
 use modules::avatar_proxy::{fetch_avatar, AvatarData, is_avatar_cached, read_cached_avatar, write_cached_avatar, clear_avatar_cache};
+use modules::cms_config::{
+    cmd_get_cms_config, cmd_get_cms_branding, cmd_get_cms_urls, cmd_get_cms_theme,
+    cmd_get_cms_assets, cmd_get_cms_discord, cmd_get_cms_localization,
+    cmd_get_cms_defaults, cmd_get_cms_features, CMSConfigManager,
+};
 use modules::discord::{DiscordClient, GamePresence};
 use modules::minecraft::{launch_game, launch_game_with_metadata, analyze_crash, LaunchConfig, stop_game, kill_game, is_game_running};
 use modules::minecraft_version::{list_versions, get_latest_release, get_latest_snapshot, VersionInfo};
@@ -1013,12 +1018,22 @@ pub fn run() {
     // Initialize logger on startup
     initialize_logger();
 
+    // Initialize CMS Config Manager
+    // Default to official WOWID3 CMS endpoint
+    // This can be overridden with environment variable CMS_CONFIG_URL
+    let cms_url = std::env::var("CMS_CONFIG_URL")
+        .unwrap_or_else(|_| "https://wowid-launcher.frostdev.io/api/launcher/config".to_string());
+
+    let cms_manager = CMSConfigManager::new(cms_url)
+        .expect("Failed to initialize CMS Config Manager");
+
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_os::init())
-        .manage(DiscordClient::new());
+        .manage(DiscordClient::new())
+        .manage(cms_manager);
 
     #[cfg(target_os = "windows")]
     {
@@ -1083,6 +1098,15 @@ pub fn run() {
             cmd_open_map_viewer,
             cmd_close_map_viewer,
             cmd_get_bluemap_url,
+            cmd_get_cms_config,
+            cmd_get_cms_branding,
+            cmd_get_cms_urls,
+            cmd_get_cms_theme,
+            cmd_get_cms_assets,
+            cmd_get_cms_discord,
+            cmd_get_cms_localization,
+            cmd_get_cms_defaults,
+            cmd_get_cms_features,
             vpn_generate_keypair,
             vpn_has_keypair,
             vpn_check_wireguard_installed,
@@ -1158,6 +1182,15 @@ pub fn run() {
             cmd_open_map_viewer,
             cmd_close_map_viewer,
             cmd_get_bluemap_url,
+            cmd_get_cms_config,
+            cmd_get_cms_branding,
+            cmd_get_cms_urls,
+            cmd_get_cms_theme,
+            cmd_get_cms_assets,
+            cmd_get_cms_discord,
+            cmd_get_cms_localization,
+            cmd_get_cms_defaults,
+            cmd_get_cms_features,
             test_game_server_reachability,
             test_latency_and_jitter,
             test_download_speed,

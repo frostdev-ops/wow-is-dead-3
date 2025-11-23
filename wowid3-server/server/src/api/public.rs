@@ -569,6 +569,39 @@ pub async fn serve_resource(
         .unwrap())
 }
 
+/// Get latest launcher version manifest as JSON
+pub async fn get_launcher_manifest_latest(
+    State(state): State<PublicState>,
+) -> Result<Json<LauncherVersion>, AppError> {
+    // Load versions index to get latest version
+    let index = storage::launcher::load_launcher_versions_index(&state.config)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to load versions: {}", e)))?;
+
+    if index.latest.is_empty() {
+        return Err(AppError::NotFound("No launcher versions available".to_string()));
+    }
+
+    // Load the latest version
+    let version = storage::launcher::load_launcher_version(&state.config, &index.latest)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to load version: {}", e)))?;
+
+    Ok(Json(version))
+}
+
+/// Get specific launcher version manifest as JSON
+pub async fn get_launcher_manifest_version(
+    State(state): State<PublicState>,
+    Path(version): Path<String>,
+) -> Result<Json<LauncherVersion>, AppError> {
+    let launcher_version = storage::launcher::load_launcher_version(&state.config, &version)
+        .await
+        .map_err(|_| AppError::NotFound(format!("Version {} not found", version)))?;
+
+    Ok(Json(launcher_version))
+}
+
 /// Helper function to calculate SHA256 hash of a file
 async fn calculate_sha256(path: &std::path::Path) -> Result<String, anyhow::Error> {
     let mut file = fs::File::open(path).await?;

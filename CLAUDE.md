@@ -197,6 +197,27 @@ The server is a **modpack distribution and release management system**, NOT a Mi
 - File blacklist system to exclude config files from updates
 - Draft system allows preparing releases before publishing
 
+### Launcher Distribution (Admin Panel)
+
+The admin panel includes a dedicated interface for managing launcher releases with multi-file uploads (installers + executables):
+
+**Routes**:
+- **`/admin/launcher`** - List all launcher releases (accessible via "Launcher" in sidebar)
+- **`/admin/launcher/new`** - Upload new launcher release (button on list page)
+
+**Upload Interface** (`/admin/launcher/new`):
+- Upload **multiple files per release**:
+  - Windows Installer (NSIS .exe)
+  - Windows Executable (standalone .exe)
+  - Linux AppImage (.AppImage)
+- Each file is tagged with:
+  - `platform`: "windows", "linux", "macos"
+  - `file_type`: "installer" or "executable"
+- All files are automatically hashed (SHA256) and verified
+- Manifests support both installer distribution and auto-updates
+
+**Note**: The old `/launcher` route (single-file upload) is deprecated. Use `/admin/launcher` for full multi-file launcher management.
+
 ### Authentication Flow (Launcher)
 
 The launcher uses a complete Microsoft OAuth 2.0 flow:

@@ -33,7 +33,8 @@ use api::public::{
     serve_java_runtime, serve_resource, serve_launcher_file,
     serve_versioned_launcher_file, get_launcher_versions, get_launcher_version,
     get_latest_launcher_redirect, get_launcher_installer, get_launcher_installer_platform,
-    get_launcher_executable, get_launcher_executable_platform, PublicState,
+    get_launcher_executable, get_launcher_executable_platform,
+    get_launcher_manifest_latest, get_launcher_manifest_version, PublicState,
 };
 use api::tracker::{get_tracker_status, submit_chat_message, update_tracker_state, submit_stat_events, get_player_stats};
 use axum::{
@@ -160,6 +161,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/launcher/latest/installer/:platform", get(get_launcher_installer_platform))
         .route("/api/launcher/latest/executable", get(get_launcher_executable))
         .route("/api/launcher/latest/executable/:platform", get(get_launcher_executable_platform))
+        .route("/api/launcher/manifest/latest", get(get_launcher_manifest_latest))
+        .route("/api/launcher/manifest/:version", get(get_launcher_manifest_version))
         .route("/api/launcher/versions", get(get_launcher_versions))
         .route("/api/launcher/:version", get(get_launcher_version))
         .route("/api/assets/:filename", get(serve_audio_file))
