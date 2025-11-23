@@ -205,6 +205,36 @@ pub async fn get_launcher_installer_platform(
     serve_launcher_file_by_type(&state, &platform, "installer").await
 }
 
+/// GET /api/launcher/latest/executable - Auto-detect platform and serve executable
+pub async fn get_launcher_executable(
+    headers: axum::http::HeaderMap,
+    State(state): State<PublicState>,
+) -> Result<Response, AppError> {
+    use crate::utils::platform::detect_platform_from_user_agent;
+
+    let platform = detect_platform_from_user_agent(&headers)
+        .ok_or_else(|| {
+            AppError::BadRequest(
+                "Could not detect platform from User-Agent. Use /api/launcher/latest/executable/{platform}".to_string()
+            )
+        })?;
+
+    serve_launcher_file_by_type(&state, &platform, "executable").await
+}
+
+/// GET /api/launcher/latest/executable/{platform}
+pub async fn get_launcher_executable_platform(
+    Path(platform): Path<String>,
+    State(state): State<PublicState>,
+) -> Result<Response, AppError> {
+    // Validate platform
+    if !matches!(platform.as_str(), "windows" | "linux" | "macos") {
+        return Err(AppError::BadRequest(format!("Invalid platform: {}", platform)));
+    }
+
+    serve_launcher_file_by_type(&state, &platform, "executable").await
+}
+
 /// GET /files/launcher/:filename - Serve launcher files (legacy, for current Windows-only release)
 pub async fn serve_launcher_file(
     State(state): State<PublicState>,
