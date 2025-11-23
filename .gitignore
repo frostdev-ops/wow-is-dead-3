@@ -77,3 +77,4 @@ wowid3-mod-workdirs/test-server/config/*
 wowid3-mod-workdirs/test-server/config/betterdeserttemples-fabric-1_20.toml
 wowid3-mod-workdirs/test-server/config/betterdeserttemples-fabric-1_20.toml
 wowid3-mod-workdirs/test-server/config/betterdeserttemples-fabric-1_20.toml.worktrees/
+.worktrees/
