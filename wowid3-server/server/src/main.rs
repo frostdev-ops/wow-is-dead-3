@@ -29,8 +29,10 @@ use api::drafts::{
 };
 use api::public::{
     get_latest_manifest, get_manifest_by_version, list_resources, serve_audio_file, serve_file,
-    serve_java_runtime, serve_resource, get_latest_launcher_manifest, serve_launcher_file,
-    serve_versioned_launcher_file, get_launcher_versions, get_launcher_version, PublicState,
+    serve_java_runtime, serve_resource, serve_launcher_file,
+    serve_versioned_launcher_file, get_launcher_versions, get_launcher_version,
+    get_latest_launcher_redirect, get_launcher_installer, get_launcher_installer_platform,
+    get_launcher_executable, get_launcher_executable_platform, PublicState,
 };
 use api::tracker::{get_tracker_status, submit_chat_message, update_tracker_state, submit_stat_events, get_player_stats};
 use axum::{
@@ -151,7 +153,12 @@ async fn main() -> anyhow::Result<()> {
     let public_routes = Router::new()
         .route("/api/manifest/latest", get(get_latest_manifest))
         .route("/api/manifest/:version", get(get_manifest_by_version))
-        .route("/api/launcher/latest", get(get_latest_launcher_manifest))
+        // Launcher endpoints
+        .route("/api/launcher/latest", get(get_latest_launcher_redirect))
+        .route("/api/launcher/latest/installer", get(get_launcher_installer))
+        .route("/api/launcher/latest/installer/:platform", get(get_launcher_installer_platform))
+        .route("/api/launcher/latest/executable", get(get_launcher_executable))
+        .route("/api/launcher/latest/executable/:platform", get(get_launcher_executable_platform))
         .route("/api/launcher/versions", get(get_launcher_versions))
         .route("/api/launcher/:version", get(get_launcher_version))
         .route("/api/assets/:filename", get(serve_audio_file))
