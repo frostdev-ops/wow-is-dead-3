@@ -1322,6 +1322,89 @@ pub async fn list_launcher_releases(
     Ok(Json(versions))
 }
 
+/// GET /api/admin/cms-config - Get current CMS configuration
+pub async fn get_cms_config(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let config_path = state.config.storage_path().join("cms-config.json");
+
+    if config_path.exists() {
+        let content = fs::read_to_string(&config_path)
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read CMS config: {}", e)))?;
+
+        let json: serde_json::Value = serde_json::from_str(&content)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to parse CMS config: {}", e)))?;
+
+        Ok(Json(json))
+    } else {
+        // Return embedded default config
+        let default_config = include_str!("../../../launcher-cms-config.json");
+        let json: serde_json::Value = serde_json::from_str(default_config)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to parse default CMS config: {}", e)))?;
+
+        Ok(Json(json))
+    }
+}
+
+/// PUT /api/admin/cms-config - Update CMS configuration
+pub async fn update_cms_config(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+    Json(config): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    // Validate that the config is a valid JSON object
+    if !config.is_object() {
+        return Err(AppError::BadRequest("CMS config must be a JSON object".to_string()));
+    }
+
+    // Validate required fields exist
+    let required_fields = vec!["version", "branding", "urls", "theme", "assets", "discord", "localization", "defaults", "features"];
+    for field in required_fields {
+        if !config.get(field).is_some() {
+            return Err(AppError::BadRequest(format!("Missing required field: {}", field)));
+        }
+    }
+
+    // Save to storage
+    let config_path = state.config.storage_path().join("cms-config.json");
+    let config_json = serde_json::to_string_pretty(&config)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to serialize CMS config: {}", e)))?;
+
+    fs::write(&config_path, config_json)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to write CMS config: {}", e)))?;
+
+    tracing::info!("CMS configuration updated at {:?}", config_path);
+
+    Ok(Json(json!({
+        "success": true,
+        "message": "CMS configuration updated successfully"
+    })))
+}
+
+/// DELETE /api/admin/cms-config - Reset CMS configuration to defaults
+pub async fn reset_cms_config(
+    State(state): State<AdminState>,
+    Extension(_token): Extension<AdminToken>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let config_path = state.config.storage_path().join("cms-config.json");
+
+    if config_path.exists() {
+        fs::remove_file(&config_path)
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to delete CMS config: {}", e)))?;
+
+        tracing::info!("CMS configuration reset to defaults");
+    }
+
+    Ok(Json(json!({
+        "success": true,
+        "message": "CMS configuration reset to defaults"
+    })))
+}
+
 
 // Error handling
 pub enum AppError {

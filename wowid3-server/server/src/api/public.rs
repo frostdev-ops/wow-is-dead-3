@@ -619,6 +619,37 @@ async fn calculate_sha256(path: &std::path::Path) -> Result<String, anyhow::Erro
     Ok(format!("{:x}", hasher.finalize()))
 }
 
+/// Get CMS configuration for launcher customization
+///
+/// Returns the CMS configuration JSON that controls launcher appearance,
+/// branding, URLs, and feature flags. Falls back to embedded defaults if
+/// no custom config exists.
+pub async fn get_cms_config(
+    State(state): State<PublicState>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    // Check if custom CMS config exists in storage
+    let config_path = state.config.storage_path().join("cms-config.json");
+
+    if config_path.exists() {
+        // Serve custom config from storage
+        let content = fs::read_to_string(&config_path)
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read CMS config: {}", e)))?;
+
+        let json: serde_json::Value = serde_json::from_str(&content)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to parse CMS config: {}", e)))?;
+
+        Ok(Json(json))
+    } else {
+        // Return embedded default config
+        let default_config = include_str!("../../../launcher-cms-config.json");
+        let json: serde_json::Value = serde_json::from_str(default_config)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to parse default CMS config: {}", e)))?;
+
+        Ok(Json(json))
+    }
+}
+
 // Error handling
 pub enum AppError {
     Internal(anyhow::Error),

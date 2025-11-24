@@ -1,0 +1,210 @@
+{
+  "version": "1.0.0",
+  "branding": {
+    "appName": "WOW Is Dead 3!",
+    "shortName": "WOWID3",
+    "tagline": "The Ultimate Modded Minecraft Experience",
+    "publisher": "FrostDev",
+    "supportUrl": "https://discord.gg/your-server",
+    "websiteUrl": "https://wowid-launcher.frostdev.io"
+  },
+  "urls": {
+    "manifestUrl": "https://wowid-launcher.frostdev.io/api/manifest/latest",
+    "apiBaseUrl": "https://wowid-launcher.frostdev.io",
+    "serverAddress": "mc.frostdev.io:25565",
+    "avatarService": "https://mc-heads.net/avatar",
+    "microsoftClientId": "cd1d612b-3203-4622-88d2-4d1f58fb7762",
+    "trackerUrl": "https://wowid-launcher.frostdev.io/api/tracker",
+    "statsUrl": "https://wowid-launcher.frostdev.io/api/stats"
+  },
+  "theme": {
+    "defaultTheme": "christmas",
+    "themes": [
+      {
+        "id": "christmas",
+        "name": "Christmas",
+        "colors": {
+          "primary": "#dc2626",
+          "secondary": "#16a34a",
+          "background": "#1e40af",
+          "surface": "#1e3a8a",
+          "text": "#f8fafc",
+          "accent": "#fbbf24",
+          "error": "#ef4444",
+          "success": "#22c55e",
+          "warning": "#eab308"
+        },
+        "fonts": {
+          "heading": "Cinzel",
+          "body": "Inter"
+        },
+        "animations": {
+          "snowfall": true,
+          "lights": true
+        }
+      },
+      {
+        "id": "dark",
+        "name": "Dark",
+        "colors": {
+          "primary": "#3b82f6",
+          "secondary": "#8b5cf6",
+          "background": "#0f172a",
+          "surface": "#1e293b",
+          "text": "#f1f5f9",
+          "accent": "#06b6d4",
+          "error": "#ef4444",
+          "success": "#10b981",
+          "warning": "#f59e0b"
+        },
+        "fonts": {
+          "heading": "Inter",
+          "body": "Inter"
+        },
+        "animations": {}
+      },
+      {
+        "id": "light",
+        "name": "Light",
+        "colors": {
+          "primary": "#2563eb",
+          "secondary": "#7c3aed",
+          "background": "#ffffff",
+          "surface": "#f8fafc",
+          "text": "#0f172a",
+          "accent": "#0891b2",
+          "error": "#dc2626",
+          "success": "#059669",
+          "warning": "#d97706"
+        },
+        "fonts": {
+          "heading": "Inter",
+          "body": "Inter"
+        },
+        "animations": {}
+      }
+    ]
+  },
+  "assets": {
+    "logo": "https://wowid-launcher.frostdev.io/assets/logo.png",
+    "icon": "https://wowid-launcher.frostdev.io/assets/icon.png",
+    "backgrounds": {
+      "main": "https://wowid-launcher.frostdev.io/assets/bg-main.jpg"
+    },
+    "audio": {
+      "mainMusic": "https://wowid-launcher.frostdev.io/assets/audio/8-bit-christmas.mp3",
+      "fallbackMusic": "https://wowid-launcher.frostdev.io/assets/audio/wid3menu-fallback.mp3",
+      "soundEffects": {
+        "click": "https://wowid-launcher.frostdev.io/assets/audio/pop.mp3"
+      }
+    },
+    "decorations": {
+      "catTextures": [
+        "https://wowid-launcher.frostdev.io/assets/cats/tabby2.png",
+        "https://wowid-launcher.frostdev.io/assets/cats/tabby3.png",
+        "https://wowid-launcher.frostdev.io/assets/cats/ragdoll2.png",
+        "https://wowid-launcher.frostdev.io/assets/cats/red2.png"
+      ],
+      "christmas": {
+        "cookie": "https://wowid-launcher.frostdev.io/assets/christmas/cookie.png"
+      }
+    }
+  },
+  "discord": {
+    "enabled": true,
+    "applicationId": "1251233593062068315",
+    "assets": {
+      "largeImage": "wowid3-logo",
+      "dimensions": {
+        "overworld": "grass_block",
+        "nether": "netherrack",
+        "end": "end_stone"
+      }
+    },
+    "defaultPresence": {
+      "state": "Playing WOW Is Dead 3!",
+      "details": "In Game"
+    },
+    "partyMaxSize": 20
+  },
+  "localization": {
+    "defaultLanguage": "en-US",
+    "languages": [
+      {
+        "code": "en-US",
+        "name": "English",
+        "strings": {
+          "common": {
+            "play": "Play",
+            "settings": "Settings",
+            "logout": "Logout",
+            "cancel": "Cancel",
+            "confirm": "Confirm",
+            "save": "Save",
+            "close": "Close",
+            "loading": "Loading...",
+            "error": "Error",
+            "success": "Success"
+          },
+          "auth": {
+            "loginButton": "Login with Microsoft",
+            "loggingIn": "Logging in...",
+            "loginSuccess": "Successfully logged in!",
+            "loginError": "Failed to login",
+            "logout": "Logout"
+          },
+          "modpack": {
+            "checking": "Checking for updates...",
+            "downloading": "Downloading modpack...",
+            "installing": "Installing modpack...",
+            "upToDate": "Modpack is up to date",
+            "updateAvailable": "Update available",
+            "verifying": "Verifying files...",
+            "repairing": "Repairing files..."
+          },
+          "server": {
+            "online": "Online",
+            "offline": "Offline",
+            "connecting": "Connecting...",
+            "players": "players"
+          },
+          "settings": {
+            "title": "Settings",
+            "gameDirectory": "Game Directory",
+            "ramAllocation": "RAM Allocation",
+            "serverAddress": "Server Address",
+            "theme": "Theme",
+            "volume": "Volume"
+          },
+          "errors": {
+            "networkError": "Network error occurred",
+            "authFailed": "Authentication failed",
+            "downloadFailed": "Download failed",
+            "launchFailed": "Failed to launch game"
+          }
+        }
+      }
+    ]
+  },
+  "defaults": {
+    "minecraftVersion": "1.20.1",
+    "fabricEnabled": true,
+    "fabricVersion": "0.17.3",
+    "ramAllocation": 16384,
+    "minRam": 2048,
+    "maxRam": 32768,
+    "keepLauncherOpen": false,
+    "autoUpdate": false,
+    "defaultVolume": 0.3
+  },
+  "features": {
+    "enableDiscord": true,
+    "enableStats": true,
+    "enableMapViewer": true,
+    "enableAutoUpdate": true,
+    "enableCrashReporting": false,
+    "enableTelemetry": false,
+    "enableVPN": true,
+    "enableResourcePacks": true
+  }
+}
