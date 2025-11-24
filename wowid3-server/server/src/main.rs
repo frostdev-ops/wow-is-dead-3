@@ -22,6 +22,10 @@ use api::bluemap::{
     get_global_settings, get_live_markers, get_live_players, get_map_asset, get_map_settings,
     get_map_textures, get_map_textures_gz, get_map_tile, serve_webapp_file, BlueMapState,
 };
+use api::cms::{
+    admin_delete_asset, admin_get_cms_config, admin_list_assets, admin_reset_cms_config,
+    admin_update_cms_config, admin_upload_asset, get_cms_config, serve_asset, CmsState,
+};
 use api::drafts::{
     add_files, analyze_draft, browse_directory, create_directory, create_draft, delete_draft,
     duplicate_draft, generate_changelog_for_draft, get_draft, list_drafts, move_file,
@@ -143,6 +147,12 @@ async fn main() -> anyhow::Result<()> {
     };
     info!("VPN state initialized");
 
+    // Create shared state for CMS API
+    let cms_state = Arc::new(CmsState {
+        config: config.clone(),
+    });
+    info!("CMS state initialized");
+
     // Build CORS layer
     let cors = if let Some(origin) = &config.cors_origin {
         CorsLayer::permissive() // Dev mode
@@ -150,6 +160,12 @@ async fn main() -> anyhow::Result<()> {
     } else {
         CorsLayer::permissive() // Production
     };
+
+    // Build CMS public router
+    let cms_public_routes = Router::new()
+        .route("/api/cms/config", get(get_cms_config))
+        .route("/api/cms/assets/:filename", get(serve_asset))
+        .with_state(cms_state.clone());
 
     // Build public API router
     let public_routes = Router::new()
@@ -205,6 +221,15 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/admin/login", post(login))
         .with_state(admin_state.clone());
 
+    // Build CMS admin router (with auth middleware)
+    let cms_admin_routes = Router::new()
+        .route("/api/admin/cms/config", get(admin_get_cms_config).put(admin_update_cms_config))
+        .route("/api/admin/cms/config/reset", post(admin_reset_cms_config))
+        .route("/api/admin/cms/assets", get(admin_list_assets).post(admin_upload_asset))
+        .route("/api/admin/cms/assets/:filename", delete(admin_delete_asset))
+        .layer(axum_middleware::from_fn(auth_middleware))
+        .with_state(cms_state);
+
     // Build admin API router (with auth middleware)
     let admin_routes = Router::new()
         .route("/api/admin/upload", post(upload_files))
@@ -246,8 +271,10 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(health_check))
         .merge(public_routes)
+        .merge(cms_public_routes)
         .merge(bluemap_routes)
         .merge(admin_login)
+        .merge(cms_admin_routes)
         .merge(admin_routes)
         .merge(vpn::api::vpn_public_routes(vpn_state.clone()))
         .merge(vpn::api::vpn_admin_routes(vpn_state))

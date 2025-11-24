@@ -20,6 +20,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const LauncherPage = lazy(() => import('./pages/LauncherPage'));
 const DownloadPage = lazy(() => import('./pages/DownloadPage'));
 const VpnPage = lazy(() => import('./pages/VpnPage'));
+const CmsPage = lazy(() => import('./pages/CmsPage'));
 const LauncherReleasesList = lazy(() => import('./pages/LauncherReleasesList').then(m => ({ default: m.LauncherReleasesList })));
 const LauncherReleaseEditor = lazy(() => import('./pages/LauncherReleaseEditor').then(m => ({ default: m.LauncherReleaseEditor })));
 
@@ -63,6 +64,7 @@ function AnimatedRoutes() {
         <Route path="/launcher" element={<ProtectedRoute><LauncherPage /></ProtectedRoute>} />
         <Route path="/admin/launcher" element={<ProtectedRoute><LauncherReleasesList /></ProtectedRoute>} />
         <Route path="/admin/launcher/new" element={<ProtectedRoute><LauncherReleaseEditor /></ProtectedRoute>} />
+        <Route path="/cms" element={<ProtectedRoute><CmsPage /></ProtectedRoute>} />
         <Route path="/vpn" element={<ProtectedRoute><VpnPage /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
 
