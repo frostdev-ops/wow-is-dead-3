@@ -1,3 +1,4 @@
+pub mod cms;
 pub mod drafts;
 pub mod files;
 pub mod manifest;
@@ -5,7 +6,7 @@ pub mod launcher;
 
 use anyhow::Result;
 use crate::models::DraftRelease;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 // --- Drafts Wrappers ---
@@ -94,4 +95,48 @@ pub async fn read_latest_manifest(config: &crate::config::Config) -> Result<crat
 
 pub async fn read_manifest(config: &crate::config::Config, version: &str) -> Result<crate::models::Manifest> {
     manifest::read_manifest(config, version).await
+}
+
+// --- CMS Wrappers ---
+
+/// Load CMS configuration
+pub async fn load_cms_config(storage_path: &Path) -> Result<crate::models::CmsConfig> {
+    cms::load_cms_config(storage_path).await
+}
+
+/// Save CMS configuration
+pub async fn save_cms_config(storage_path: &Path, config: &crate::models::CmsConfig) -> Result<()> {
+    cms::save_cms_config(storage_path, config).await
+}
+
+/// Update CMS configuration
+pub async fn update_cms_config(
+    storage_path: &Path,
+    updater: impl FnOnce(&mut crate::models::CmsConfig),
+) -> Result<crate::models::CmsConfig> {
+    cms::update_cms_config(storage_path, updater).await
+}
+
+/// List all assets
+pub async fn list_assets(storage_path: &Path) -> Result<Vec<crate::models::AssetMetadata>> {
+    cms::list_assets(storage_path).await
+}
+
+/// Save an asset
+pub async fn save_asset(
+    storage_path: &Path,
+    filename: &str,
+    data: &[u8],
+) -> Result<crate::models::AssetMetadata> {
+    cms::save_asset(storage_path, filename, data).await
+}
+
+/// Delete an asset
+pub async fn delete_asset(storage_path: &Path, filename: &str) -> Result<()> {
+    cms::delete_asset(storage_path, filename).await
+}
+
+/// Get asset file path
+pub fn get_asset_file_path(storage_path: &Path, filename: &str) -> PathBuf {
+    cms::get_asset_file_path(storage_path, filename)
 }
